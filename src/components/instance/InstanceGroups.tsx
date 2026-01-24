@@ -116,14 +116,34 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
         const formattedGroups: Group[] = rawGroups.map((group: any) => {
           // UAZAPI retorna campos em PascalCase (JID, Name, Participants)
           const rawParticipants = group.Participants || group.participants || [];
-          const participants = rawParticipants.map((p: any) => ({
-            id: p.JID || p.jid || p.id || '',
-            // NÃO usar PhoneNumber como fallback - pode ser LID interno
-            name: p.DisplayName || p.Name || p.name || undefined,
-            admin: p.IsAdmin 
-              ? (p.IsSuperAdmin ? 'superadmin' : 'admin') 
-              : (p.isSuperAdmin ? 'superadmin' : (p.isAdmin ? 'admin' : undefined)),
-          }));
+          
+          // Função para validar se é um número de telefone real (não LID)
+          const isValidPhone = (jid: string) => {
+            if (!jid) return false;
+            const phone = jid.split('@')[0];
+            // Números válidos: 10-15 dígitos, começando com código país (1-3 dígitos)
+            // LIDs geralmente têm padrões diferentes ou começam com 1353...
+            return /^[1-9]\d{9,14}$/.test(phone) && !phone.startsWith('1353');
+          };
+          
+          const participants = rawParticipants.map((p: any) => {
+            const jid = p.JID || p.jid || p.id || '';
+            const lid = p.LID || p.lid || '';
+            
+            // Preferir JID se for número válido, senão ignorar LID
+            const phoneId = isValidPhone(jid) ? jid : (isValidPhone(lid) ? lid : jid);
+            
+            // PushName é o nome que o usuário configurou no WhatsApp
+            const name = p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined;
+            
+            return {
+              id: phoneId,
+              name: name,
+              admin: p.IsAdmin 
+                ? (p.IsSuperAdmin ? 'superadmin' : 'admin') 
+                : (p.isSuperAdmin ? 'superadmin' : (p.isAdmin ? 'admin' : undefined)),
+            };
+          });
           
           return {
             id: group.JID || group.jid || group.id,
