@@ -67,6 +67,84 @@ const Instances = () => {
     }
   }, [isSuperAdmin]);
 
+  // Polling para atualizar status a cada 30 segundos
+  useEffect(() => {
+    const updateInstancesStatus = async () => {
+      try {
+        const session = await supabase.auth.getSession();
+        if (!session.data.session) return;
+
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.data.session.access_token}`,
+            },
+            body: JSON.stringify({ action: 'list' }),
+          }
+        );
+
+        if (!response.ok) return;
+
+        const uazapiInstances = await response.json();
+        if (!Array.isArray(uazapiInstances)) return;
+
+        // Criar mapa de status da UAZAPI
+        const statusMap = new Map<string, { status: string; owner: string | null; profilePic: string | null }>();
+        uazapiInstances.forEach((inst: any) => {
+          statusMap.set(inst.id, {
+            status: inst.status === 'connected' ? 'connected' : 'disconnected',
+            owner: inst.owner || null,
+            profilePic: inst.profilePicUrl || null,
+          });
+        });
+
+        // Atualizar instâncias locais que têm status diferente
+        const updates: (() => Promise<void>)[] = [];
+        const updatedInstances = instances.map((instance) => {
+          const uazapiStatus = statusMap.get(instance.id);
+          if (uazapiStatus && uazapiStatus.status !== instance.status) {
+            updates.push(async () => {
+              await supabase
+                .from('instances')
+                .update({
+                  status: uazapiStatus.status,
+                  owner_jid: uazapiStatus.owner || instance.owner_jid,
+                  profile_pic_url: uazapiStatus.profilePic || instance.profile_pic_url,
+                })
+                .eq('id', instance.id);
+            });
+            return {
+              ...instance,
+              status: uazapiStatus.status,
+              owner_jid: uazapiStatus.owner || instance.owner_jid,
+              profile_pic_url: uazapiStatus.profilePic || instance.profile_pic_url,
+            };
+          }
+          return instance;
+        });
+
+        if (updates.length > 0) {
+          await Promise.all(updates.map(fn => fn()));
+          setInstances(updatedInstances);
+        }
+      } catch (error) {
+        console.error('Error updating instances status:', error);
+      }
+    };
+
+    // Atualizar status imediatamente ao carregar
+    if (instances.length > 0) {
+      updateInstancesStatus();
+    }
+
+    // Polling a cada 30 segundos
+    const interval = setInterval(updateInstancesStatus, 30000);
+    return () => clearInterval(interval);
+  }, [instances.length > 0]); // Executar quando tiver instâncias
+
   const fetchInstances = async () => {
     try {
       // Fetch instances
