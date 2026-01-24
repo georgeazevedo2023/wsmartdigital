@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -10,7 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Server, Wifi, WifiOff, QrCode, Users, MoreVertical, Trash2 } from 'lucide-react';
+import { Server, Wifi, WifiOff, QrCode, Users, MoreVertical, Trash2, Eye } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,6 +52,7 @@ const InstanceCard = ({
   qrCode,
   isLoadingQr,
 }: InstanceCardProps) => {
+  const navigate = useNavigate();
   const [showQrDialog, setShowQrDialog] = useState(false);
 
   const isConnected = instance.status === 'connected' || instance.status === 'online';
@@ -58,6 +60,10 @@ const InstanceCard = ({
   const handleConnect = () => {
     onConnect?.(instance);
     setShowQrDialog(true);
+  };
+
+  const handleViewDetails = () => {
+    navigate(`/dashboard/instances/${instance.id}`);
   };
 
   const phoneNumber = instance.owner_jid?.split('@')[0];
@@ -144,17 +150,15 @@ const InstanceCard = ({
                 Conectar
               </Button>
             )}
-            {isConnected && (
-              <Button
-                variant="outline"
-                size="sm"
-                className="flex-1"
-                onClick={() => onViewGroups?.(instance)}
-              >
-                <Users className="w-4 h-4 mr-2" />
-                Ver Grupos
-              </Button>
-            )}
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={handleViewDetails}
+            >
+              <Eye className="w-4 h-4 mr-2" />
+              Detalhes
+            </Button>
           </div>
         </CardContent>
       </Card>
