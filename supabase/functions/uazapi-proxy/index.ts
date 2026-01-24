@@ -94,15 +94,41 @@ Deno.serve(async (req) => {
           )
         }
         console.log('Fetching groups with token (first 10 chars):', instanceToken.substring(0, 10))
-        response = await fetch(`${uazapiUrl}/group/list?noparticipants=false`, {
+        const groupsResponse = await fetch(`${uazapiUrl}/group/list?noparticipants=false`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
             'token': instanceToken,
           },
         })
-        console.log('Groups response status:', response.status)
-        break
+        console.log('Groups response status:', groupsResponse.status)
+        
+        const groupsData = await groupsResponse.json()
+        console.log('Groups raw response type:', typeof groupsData, Array.isArray(groupsData) ? 'is array' : 'not array')
+        
+        // UAZAPI pode retornar { groups: [...] } ou array direto
+        // Normalizar para sempre retornar array
+        let normalizedGroups: unknown[]
+        if (Array.isArray(groupsData)) {
+          normalizedGroups = groupsData
+        } else if (groupsData?.groups && Array.isArray(groupsData.groups)) {
+          normalizedGroups = groupsData.groups
+          console.log('Unwrapped groups from object, count:', normalizedGroups.length)
+        } else if (groupsData?.data && Array.isArray(groupsData.data)) {
+          normalizedGroups = groupsData.data
+          console.log('Unwrapped groups from data, count:', normalizedGroups.length)
+        } else {
+          console.log('Unexpected groups format:', JSON.stringify(groupsData).substring(0, 200))
+          normalizedGroups = []
+        }
+        
+        return new Response(
+          JSON.stringify(normalizedGroups),
+          { 
+            status: groupsResponse.status, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
       }
 
       case 'group-info': {
