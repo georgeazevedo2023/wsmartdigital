@@ -1,20 +1,14 @@
 import { useState, useEffect } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { Users, Search, RefreshCw, MessageSquare, WifiOff } from 'lucide-react';
+import { Users, Search, RefreshCw, MessageSquare, WifiOff, ChevronRight } from 'lucide-react';
 
 interface Instance {
   id: string;
@@ -48,6 +42,7 @@ interface InstanceGroupsProps {
 }
 
 const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
+  const navigate = useNavigate();
   const [groups, setGroups] = useState<Group[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -205,7 +200,7 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
         </div>
         {[1, 2, 3].map((i) => (
           <Card key={i}>
-            <CardHeader>
+            <CardContent className="p-4">
               <div className="flex items-center gap-3">
                 <Skeleton className="w-12 h-12 rounded-full" />
                 <div className="space-y-2">
@@ -213,7 +208,7 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
                   <Skeleton className="h-3 w-24" />
                 </div>
               </div>
-            </CardHeader>
+            </CardContent>
           </Card>
         ))}
       </div>
@@ -265,78 +260,31 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
           </CardContent>
         </Card>
       ) : (
-        <Accordion type="single" collapsible className="space-y-2">
+        <div className="space-y-2">
           {filteredGroups.map((group) => (
-            <AccordionItem
+            <Card
               key={group.id}
-              value={group.id}
-              className="border rounded-lg bg-card overflow-hidden"
+              className="cursor-pointer hover:bg-muted/50 transition-colors"
+              onClick={() => navigate(`/dashboard/instances/${instance.id}/groups/${encodeURIComponent(group.id)}`)}
             >
-              <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-muted/50">
-                <div className="flex items-center gap-3 w-full">
-                  <Avatar className="w-12 h-12 border">
-                    <AvatarImage src={group.pictureUrl} />
-                    <AvatarFallback className="bg-primary/10 text-primary">
-                      <Users className="w-5 h-5" />
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex-1 text-left">
-                    <h4 className="font-medium">{group.name}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {group.size} participante{group.size !== 1 ? 's' : ''}
-                    </p>
-                  </div>
+              <CardContent className="flex items-center gap-3 p-4">
+                <Avatar className="w-12 h-12 border">
+                  <AvatarImage src={group.pictureUrl} />
+                  <AvatarFallback className="bg-primary/10 text-primary">
+                    <Users className="w-5 h-5" />
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1">
+                  <h4 className="font-medium">{group.name}</h4>
+                  <p className="text-sm text-muted-foreground">
+                    {group.size} participante{group.size !== 1 ? 's' : ''}
+                  </p>
                 </div>
-              </AccordionTrigger>
-              <AccordionContent className="px-4 pb-4">
-                <div className="pt-2 border-t">
-                  <h5 className="text-sm font-medium mb-3">
-                    Participantes ({group.participants.length})
-                  </h5>
-                  <ScrollArea className="h-64">
-                    <div className="space-y-2">
-                      {/* Ordenar: superadmin primeiro, depois admin, depois membros */}
-                      {[...group.participants]
-                        .sort((a, b) => {
-                          const roleOrder: Record<string, number> = { 'superadmin': 0, 'admin': 1 };
-                          return (roleOrder[a.admin || ''] ?? 2) - (roleOrder[b.admin || ''] ?? 2);
-                        })
-                        .map((participant, idx) => (
-                        <div
-                          key={participant.id || idx}
-                          className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50"
-                        >
-                          <div className="flex items-center gap-3">
-                            <Avatar className="w-8 h-8">
-                              <AvatarFallback className="bg-secondary text-xs">
-                                {idx + 1}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <p className="text-sm font-medium">
-                                {participant.name || formatPhone(participant.id)}
-                              </p>
-                              {participant.name && (
-                                <p className="text-xs text-muted-foreground">
-                                  {formatPhone(participant.id)}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                          {participant.admin && (
-                            <Badge variant="outline" className="text-xs">
-                              {participant.admin === 'superadmin' ? 'Dono' : 'Admin'}
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                </div>
-              </AccordionContent>
-            </AccordionItem>
+                <ChevronRight className="w-5 h-5 text-muted-foreground" />
+              </CardContent>
+            </Card>
           ))}
-        </Accordion>
+        </div>
       )}
     </div>
   );
