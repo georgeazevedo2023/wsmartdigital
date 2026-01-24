@@ -71,12 +71,17 @@ Deno.serve(async (req) => {
 
       case 'list': {
         // List all instances
+        console.log('Fetching instances from:', `${uazapiUrl}/instance/all`)
+        console.log('Using admin token (first 10 chars):', adminToken?.substring(0, 10))
         response = await fetch(`${uazapiUrl}/instance/all`, {
           method: 'GET',
           headers: {
+            'Content-Type': 'application/json',
             'admintoken': adminToken,
+            'token': adminToken,
           },
         })
+        console.log('UAZAPI response status:', response.status)
         break
       }
 
