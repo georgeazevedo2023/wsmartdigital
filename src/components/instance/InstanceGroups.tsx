@@ -93,13 +93,32 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
 
       const data = await response.json();
       console.log('Groups API response:', data);
+      console.log('Response type:', typeof data, 'Is array:', Array.isArray(data));
       
+      // Normalizar resposta - backend já deve enviar array, mas ser tolerante
+      let rawGroups: any[];
       if (Array.isArray(data)) {
-        const formattedGroups: Group[] = data.map((group: any) => {
+        rawGroups = data;
+      } else if (data?.groups && Array.isArray(data.groups)) {
+        rawGroups = data.groups;
+        console.log('Fallback: extracted from groups property');
+      } else if (data?.data && Array.isArray(data.data)) {
+        rawGroups = data.data;
+        console.log('Fallback: extracted from data property');
+      } else {
+        console.log('Unexpected response format:', data);
+        rawGroups = [];
+      }
+      
+      console.log('Raw groups count:', rawGroups.length);
+      
+      if (rawGroups.length > 0) {
+        const formattedGroups: Group[] = rawGroups.map((group: any) => {
           // UAZAPI retorna campos em PascalCase (JID, Name, Participants)
-          const participants = (group.Participants || group.participants || []).map((p: any) => ({
-            id: p.JID || p.jid || p.id,
-            name: p.Name || p.name || undefined,
+          const rawParticipants = group.Participants || group.participants || [];
+          const participants = rawParticipants.map((p: any) => ({
+            id: p.JID || p.jid || p.id || '',
+            name: p.DisplayName || p.Name || p.name || p.PhoneNumber || undefined,
             admin: p.IsAdmin 
               ? (p.IsSuperAdmin ? 'superadmin' : 'admin') 
               : undefined,
@@ -107,17 +126,17 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
           
           return {
             id: group.JID || group.jid || group.id,
-            name: group.Name || group.name || group.Subject || group.subject || 'Grupo sem nome',
-            subject: group.Subject || group.subject || '',
-            pictureUrl: group.profilePicUrl || group.pictureUrl,
+            name: group.Name || group.name || group.Subject || group.Topic || group.subject || 'Grupo sem nome',
+            subject: group.Subject || group.Topic || group.subject || '',
+            pictureUrl: group.profilePicUrl || group.pictureUrl || group.PictureUrl,
             participants,
-            size: participants.length,
+            size: participants.length || group.ParticipantCount || 0,
           };
         });
-        console.log('Formatted groups:', formattedGroups);
+        console.log('Formatted groups:', formattedGroups.length, 'first:', formattedGroups[0]);
         setGroups(formattedGroups);
       } else {
-        console.log('Response is not an array:', data);
+        console.log('No groups found in response');
         setGroups([]);
       }
     } catch (error) {
