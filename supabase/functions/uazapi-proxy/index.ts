@@ -93,12 +93,15 @@ Deno.serve(async (req) => {
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
+        console.log('Fetching groups with token (first 10 chars):', instanceToken.substring(0, 10))
         response = await fetch(`${uazapiUrl}/group/list?noparticipants=false`, {
           method: 'GET',
           headers: {
+            'Content-Type': 'application/json',
             'token': instanceToken,
           },
         })
+        console.log('Groups response status:', response.status)
         break
       }
 
