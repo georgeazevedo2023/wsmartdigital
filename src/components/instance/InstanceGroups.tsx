@@ -117,21 +117,14 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
           // UAZAPI retorna campos em PascalCase (JID, Name, Participants)
           const rawParticipants = group.Participants || group.participants || [];
           
-          // Função para validar se é um número de telefone real (não LID)
-          const isValidPhone = (jid: string) => {
-            if (!jid) return false;
-            const phone = jid.split('@')[0];
-            // Números válidos: 10-15 dígitos, começando com código país (1-3 dígitos)
-            // LIDs geralmente têm padrões diferentes ou começam com 1353...
-            return /^[1-9]\d{9,14}$/.test(phone) && !phone.startsWith('1353');
-          };
-          
           const participants = rawParticipants.map((p: any) => {
+            // PhoneNumber contém o número real (ex: 558199669495@s.whatsapp.net)
+            // JID/LID são IDs internos do WhatsApp (ex: 135300193980622@lid)
+            const phoneNumber = p.PhoneNumber || p.phoneNumber || '';
             const jid = p.JID || p.jid || p.id || '';
-            const lid = p.LID || p.lid || '';
             
-            // Preferir JID se for número válido, senão ignorar LID
-            const phoneId = isValidPhone(jid) ? jid : (isValidPhone(lid) ? lid : jid);
+            // Priorizar PhoneNumber (número real), usar JID como fallback
+            const phoneId = phoneNumber || jid;
             
             // PushName é o nome que o usuário configurou no WhatsApp
             const name = p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined;
@@ -181,9 +174,12 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
   );
 
   const formatPhone = (jid: string) => {
-    const phone = jid?.split('@')[0];
+    if (!jid) return 'Desconhecido';
+    // Remove @s.whatsapp.net, @lid ou qualquer sufixo @...
+    const phone = jid.split('@')[0];
     if (!phone) return 'Desconhecido';
-    return `+${phone}`;
+    // Retornar apenas os dígitos, sem o sinal de +
+    return phone;
   };
 
   if (!isConnected) {
