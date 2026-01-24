@@ -40,7 +40,7 @@ interface Group {
 interface Participant {
   id: string;
   name?: string;
-  admin?: string;
+  admin?: 'admin' | 'superadmin';
 }
 
 interface InstanceGroupsProps {
@@ -92,18 +92,32 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
       }
 
       const data = await response.json();
+      console.log('Groups API response:', data);
       
       if (Array.isArray(data)) {
-        const formattedGroups: Group[] = data.map((group: any) => ({
-          id: group.id || group.jid,
-          name: group.name || group.subject || 'Grupo sem nome',
-          subject: group.subject || group.name || '',
-          pictureUrl: group.pictureUrl || group.profilePicUrl,
-          participants: group.participants || [],
-          size: group.size || group.participants?.length || 0,
-        }));
+        const formattedGroups: Group[] = data.map((group: any) => {
+          // UAZAPI retorna campos em PascalCase (JID, Name, Participants)
+          const participants = (group.Participants || group.participants || []).map((p: any) => ({
+            id: p.JID || p.jid || p.id,
+            name: p.Name || p.name || undefined,
+            admin: p.IsAdmin 
+              ? (p.IsSuperAdmin ? 'superadmin' : 'admin') 
+              : undefined,
+          }));
+          
+          return {
+            id: group.JID || group.jid || group.id,
+            name: group.Name || group.name || group.Subject || group.subject || 'Grupo sem nome',
+            subject: group.Subject || group.subject || '',
+            pictureUrl: group.profilePicUrl || group.pictureUrl,
+            participants,
+            size: participants.length,
+          };
+        });
+        console.log('Formatted groups:', formattedGroups);
         setGroups(formattedGroups);
       } else {
+        console.log('Response is not an array:', data);
         setGroups([]);
       }
     } catch (error) {
