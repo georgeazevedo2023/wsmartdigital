@@ -188,6 +188,21 @@ export default function SyncInstancesDialog({
 
       if (insertError) throw insertError;
 
+      // Also create access records in user_instance_access table
+      const accessInserts = toSync.map((inst) => ({
+        instance_id: inst.id,
+        user_id: userAssignments[inst.id],
+      }));
+
+      const { error: accessError } = await supabase
+        .from('user_instance_access')
+        .insert(accessInserts);
+
+      if (accessError) {
+        console.error('Error creating access records:', accessError);
+        // Don't throw - instances were created successfully
+      }
+
       toast.success(`${inserts.length} instância(s) importada(s) com sucesso!`);
       onSync();
       onOpenChange(false);

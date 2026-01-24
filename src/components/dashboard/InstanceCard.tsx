@@ -11,11 +11,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Server, Wifi, WifiOff, QrCode, Users, MoreVertical, Trash2, Eye } from 'lucide-react';
+import { Server, Wifi, WifiOff, QrCode, Users, MoreVertical, Trash2, Eye, UserCog } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,7 @@ interface InstanceCardProps {
   onConnect?: (instance: Instance) => void;
   onDelete?: (instance: Instance) => void;
   onViewGroups?: (instance: Instance) => void;
+  onManageAccess?: (instance: Instance) => void;
   qrCode?: string;
   isLoadingQr?: boolean;
 }
@@ -49,6 +51,7 @@ const InstanceCard = ({
   onConnect,
   onDelete,
   onViewGroups,
+  onManageAccess,
   qrCode,
   isLoadingQr,
 }: InstanceCardProps) => {
@@ -94,6 +97,13 @@ const InstanceCard = ({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                {onManageAccess && (
+                  <DropdownMenuItem onClick={() => onManageAccess(instance)}>
+                    <UserCog className="w-4 h-4 mr-2" />
+                    Gerenciar Acesso
+                  </DropdownMenuItem>
+                )}
+                {onDelete && onManageAccess && <DropdownMenuSeparator />}
                 {onDelete && (
                   <DropdownMenuItem
                     onClick={() => onDelete(instance)}

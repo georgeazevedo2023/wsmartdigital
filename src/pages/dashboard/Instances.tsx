@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import InstanceCard from '@/components/dashboard/InstanceCard';
 import SyncInstancesDialog from '@/components/dashboard/SyncInstancesDialog';
+import ManageInstanceAccessDialog from '@/components/dashboard/ManageInstanceAccessDialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -54,6 +55,8 @@ const Instances = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [isSyncDialogOpen, setIsSyncDialogOpen] = useState(false);
+  const [isAccessDialogOpen, setIsAccessDialogOpen] = useState(false);
+  const [selectedInstanceForAccess, setSelectedInstanceForAccess] = useState<Instance | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
@@ -243,8 +246,9 @@ const Instances = () => {
       }
 
       // Save to database
+      const instanceId = result.instance?.instanceId || `inst_${Date.now()}`;
       const { error: dbError } = await supabase.from('instances').insert({
-        id: result.instance?.instanceId || `inst_${Date.now()}`,
+        id: instanceId,
         name: newInstanceName,
         token,
         user_id: targetUserId,
@@ -252,6 +256,16 @@ const Instances = () => {
       });
 
       if (dbError) throw dbError;
+
+      // Create access record for the assigned user
+      const { error: accessError } = await supabase.from('user_instance_access').insert({
+        instance_id: instanceId,
+        user_id: targetUserId,
+      });
+
+      if (accessError) {
+        console.error('Error creating access record:', accessError);
+      }
 
       toast.success('Instância criada com sucesso!');
       setIsCreateDialogOpen(false);
@@ -322,6 +336,11 @@ const Instances = () => {
       console.error('Error deleting instance:', error);
       toast.error('Erro ao excluir instância');
     }
+  };
+
+  const handleManageAccess = (instance: Instance) => {
+    setSelectedInstanceForAccess(instance);
+    setIsAccessDialogOpen(true);
   };
 
   const filteredInstances = instances.filter(
@@ -430,6 +449,14 @@ const Instances = () => {
           onOpenChange={setIsSyncDialogOpen}
           onSync={fetchInstances}
         />
+
+        {/* Manage Access Dialog */}
+        <ManageInstanceAccessDialog
+          open={isAccessDialogOpen}
+          onOpenChange={setIsAccessDialogOpen}
+          instance={selectedInstanceForAccess}
+          onSave={fetchInstances}
+        />
       </div>
 
       {/* Search */}
@@ -463,6 +490,7 @@ const Instances = () => {
               showOwner={isSuperAdmin}
               onConnect={handleConnect}
               onDelete={isSuperAdmin ? handleDelete : undefined}
+              onManageAccess={isSuperAdmin ? handleManageAccess : undefined}
               qrCode={currentQrCode || undefined}
               isLoadingQr={loadingQrId === instance.id}
             />
