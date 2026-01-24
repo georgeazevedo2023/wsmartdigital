@@ -118,10 +118,11 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
           const rawParticipants = group.Participants || group.participants || [];
           const participants = rawParticipants.map((p: any) => ({
             id: p.JID || p.jid || p.id || '',
-            name: p.DisplayName || p.Name || p.name || p.PhoneNumber || undefined,
+            // NÃO usar PhoneNumber como fallback - pode ser LID interno
+            name: p.DisplayName || p.Name || p.name || undefined,
             admin: p.IsAdmin 
               ? (p.IsSuperAdmin ? 'superadmin' : 'admin') 
-              : undefined,
+              : (p.isSuperAdmin ? 'superadmin' : (p.isAdmin ? 'admin' : undefined)),
           }));
           
           return {
@@ -278,7 +279,13 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
                   </h5>
                   <ScrollArea className="h-64">
                     <div className="space-y-2">
-                      {group.participants.map((participant, idx) => (
+                      {/* Ordenar: superadmin primeiro, depois admin, depois membros */}
+                      {[...group.participants]
+                        .sort((a, b) => {
+                          const roleOrder: Record<string, number> = { 'superadmin': 0, 'admin': 1 };
+                          return (roleOrder[a.admin || ''] ?? 2) - (roleOrder[b.admin || ''] ?? 2);
+                        })
+                        .map((participant, idx) => (
                         <div
                           key={participant.id || idx}
                           className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-muted/50"
@@ -286,8 +293,7 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
                           <div className="flex items-center gap-3">
                             <Avatar className="w-8 h-8">
                               <AvatarFallback className="bg-secondary text-xs">
-                                {participant.name?.charAt(0)?.toUpperCase() ||
-                                  formatPhone(participant.id).charAt(1)}
+                                {idx + 1}
                               </AvatarFallback>
                             </Avatar>
                             <div>
