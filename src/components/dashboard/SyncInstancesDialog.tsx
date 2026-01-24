@@ -178,7 +178,7 @@ export default function SyncInstancesDialog({
         id: inst.id,
         name: inst.instanceName,
         token: inst.token,
-        status: inst.connectionStatus === 'open' ? 'connected' : 'disconnected',
+        status: inst.connectionStatus === 'connected' ? 'connected' : 'disconnected',
         owner_jid: inst.ownerJid || null,
         profile_pic_url: inst.profilePicUrl || null,
         user_id: userAssignments[inst.id],
@@ -200,7 +200,7 @@ export default function SyncInstancesDialog({
   };
 
   const getStatusBadge = (status: string) => {
-    const isConnected = status === 'open' || status === 'connected';
+    const isConnected = status === 'connected';
     return (
       <Badge variant={isConnected ? 'default' : 'secondary'} className="gap-1">
         {isConnected ? (
