@@ -40,8 +40,10 @@ import {
   Search,
   X,
   FolderOpen,
-  Plus
+  Plus,
+  Pencil
 } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Collapsible,
   CollapsibleContent,
@@ -107,6 +109,15 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['uncategorized']));
+  
+  // Edit state
+  const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editContent, setEditContent] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editNewCategory, setEditNewCategory] = useState('');
+  const [showEditNewCategory, setShowEditNewCategory] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const filteredTemplates = useMemo(() => {
     let filtered = templates;
@@ -206,6 +217,39 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
     setDeletingId(null);
   };
 
+  const handleEdit = (e: React.MouseEvent, template: MessageTemplate) => {
+    e.stopPropagation();
+    setEditingTemplate(template);
+    setEditName(template.name);
+    setEditContent(template.content || '');
+    setEditCategory(template.category || '');
+    setEditNewCategory('');
+    setShowEditNewCategory(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingTemplate || !editName.trim()) return;
+
+    const finalCategory = showEditNewCategory ? editNewCategory.trim() : editCategory;
+
+    setIsUpdating(true);
+    const success = await updateTemplate(editingTemplate.id, {
+      name: editName.trim(),
+      content: editContent || undefined,
+      category: finalCategory || null,
+    });
+    setIsUpdating(false);
+
+    if (success) {
+      setEditingTemplate(null);
+      setEditName('');
+      setEditContent('');
+      setEditCategory('');
+      setEditNewCategory('');
+      setShowEditNewCategory(false);
+    }
+  };
+
   const renderTemplateItem = (template: typeof templates[0]) => (
     <DropdownMenuItem
       key={template.id}
@@ -221,19 +265,31 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
           </span>
         )}
       </div>
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-        onClick={(e) => handleDelete(e, template.id)}
-        disabled={deletingId === template.id}
-      >
-        {deletingId === template.id ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
-        ) : (
-          <Trash2 className="w-3 h-3 text-destructive" />
-        )}
-      </Button>
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={(e) => handleEdit(e, template)}
+          title="Editar template"
+        >
+          <Pencil className="w-3 h-3 text-muted-foreground" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-6 w-6"
+          onClick={(e) => handleDelete(e, template.id)}
+          disabled={deletingId === template.id}
+          title="Excluir template"
+        >
+          {deletingId === template.id ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <Trash2 className="w-3 h-3 text-destructive" />
+          )}
+        </Button>
+      </div>
     </DropdownMenuItem>
   );
 
@@ -442,6 +498,119 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
                 </>
               ) : (
                 'Salvar'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Template Dialog */}
+      <Dialog open={!!editingTemplate} onOpenChange={(open) => !open && setEditingTemplate(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Editar Template</DialogTitle>
+            <DialogDescription>
+              Edite o nome, conteúdo e categoria do template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-template-name">Nome do template</Label>
+              <Input
+                id="edit-template-name"
+                placeholder="Ex: Boas-vindas, Promoção..."
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+              />
+            </div>
+            {editingTemplate?.message_type === 'text' && (
+              <div className="space-y-2">
+                <Label htmlFor="edit-template-content">Conteúdo</Label>
+                <Textarea
+                  id="edit-template-content"
+                  placeholder="Texto da mensagem..."
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  rows={4}
+                />
+              </div>
+            )}
+            {editingTemplate?.message_type !== 'text' && editingTemplate?.media_url && (
+              <div className="space-y-2">
+                <Label>URL da Mídia</Label>
+                <Input
+                  value={editingTemplate.media_url}
+                  disabled
+                  className="text-muted-foreground"
+                />
+                <p className="text-xs text-muted-foreground">
+                  A URL da mídia não pode ser editada. Crie um novo template se precisar alterar.
+                </p>
+              </div>
+            )}
+            <div className="space-y-2">
+              <Label>Categoria</Label>
+              {!showEditNewCategory ? (
+                <div className="flex gap-2">
+                  <Select value={editCategory} onValueChange={setEditCategory}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Selecione uma categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Sem categoria</SelectItem>
+                      {categories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowEditNewCategory(true)}
+                    title="Criar nova categoria"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Nome da nova categoria..."
+                    value={editNewCategory}
+                    onChange={(e) => setEditNewCategory(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      setShowEditNewCategory(false);
+                      setEditNewCategory('');
+                    }}
+                    title="Cancelar"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingTemplate(null)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleUpdate} 
+              disabled={!editName.trim() || isUpdating}
+            >
+              {isUpdating ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Salvando...
+                </>
+              ) : (
+                'Salvar alterações'
               )}
             </Button>
           </DialogFooter>
