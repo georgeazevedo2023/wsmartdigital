@@ -174,18 +174,27 @@ Deno.serve(async (req) => {
           )
         }
 
-        console.log('Sending message to group:', groupjid)
-        response = await fetch(`${uazapiUrl}/message/send-text`, {
+        // UAZAPI uses /chat/send endpoint for text messages
+        const sendUrl = `${uazapiUrl}/chat/send`
+        const sendBody = {
+          number: groupjid,
+          message: message,
+        }
+        
+        console.log('Sending message to:', sendUrl)
+        console.log('Payload:', JSON.stringify(sendBody))
+        console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
+        
+        response = await fetch(sendUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'token': instanceToken,
           },
-          body: JSON.stringify({
-            number: groupjid,
-            message: message,
-          }),
+          body: JSON.stringify(sendBody),
         })
+        
+        console.log('Send response status:', response.status)
         break
       }
 
