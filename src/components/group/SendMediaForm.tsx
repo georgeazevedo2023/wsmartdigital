@@ -4,14 +4,17 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
-import { Image, FileIcon, Upload, Send, X, Video, Mic } from 'lucide-react';
+import { Image, FileIcon, Upload, Send, X, Video, Mic, Users } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
+import type { Participant } from '@/pages/dashboard/SendToGroup';
 
 interface SendMediaFormProps {
   instanceToken: string;
   groupJid: string;
+  participants?: Participant[];
   onMediaSent?: () => void;
 }
 
@@ -20,7 +23,9 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp
 const ALLOWED_VIDEO_TYPES = ['video/mp4'];
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3'];
 
-const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormProps) => {
+const SEND_DELAY_MS = 350; // Delay entre envios para rate limiting
+
+const SendMediaForm = ({ instanceToken, groupJid, participants, onMediaSent }: SendMediaFormProps) => {
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'file'>('image');
   const [isPtt, setIsPtt] = useState(false);
   const [mediaUrl, setMediaUrl] = useState('');
@@ -30,8 +35,14 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const [excludeAdmins, setExcludeAdmins] = useState(false);
+  const [sendingProgress, setSendingProgress] = useState({ current: 0, total: 0 });
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Contagem de membros comuns (não admins/donos)
+  const regularMembers = participants?.filter(p => !p.isAdmin && !p.isSuperAdmin) || [];
+  const regularMemberCount = regularMembers.length;
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -92,6 +103,56 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
     }
   };
 
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const sendMediaToNumber = async (number: string, finalMediaUrl: string, accessToken: string) => {
+    const payload: Record<string, unknown> = {
+      action: 'send-media',
+      token: instanceToken,
+      groupjid: number,
+      mediaUrl: finalMediaUrl,
+      mediaType: mediaType === 'image' 
+        ? 'image' 
+        : mediaType === 'video' 
+          ? 'video' 
+          : mediaType === 'audio' 
+            ? (isPtt ? 'ptt' : 'audio') 
+            : 'document',
+      caption: caption.trim(),
+    };
+
+    if (mediaType === 'file' && filename.trim()) {
+      payload.filename = filename.trim();
+    }
+
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      let errorMsg = errorData.error || errorData.message || 'Erro ao enviar mídia';
+      
+      if (errorMsg.includes('certificate') || errorMsg.includes('tls')) {
+        errorMsg = 'URL com certificado SSL inválido. Tente fazer upload direto ou usar outra URL.';
+      } else if (errorMsg.includes('fetch') && errorMsg.includes('URL')) {
+        errorMsg = 'Não foi possível acessar a URL. Verifique se o link é válido ou faça upload direto.';
+      }
+      
+      throw new Error(errorMsg);
+    }
+
+    return response.json();
+  };
+
   const handleSend = async () => {
     const finalMediaUrl = selectedFile ? await fileToBase64(selectedFile) : mediaUrl.trim();
 
@@ -118,51 +179,37 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
         return;
       }
 
-      // Use unified send-media action with proper mediaType
-      const payload: Record<string, unknown> = {
-        action: 'send-media',
-        token: instanceToken,
-        groupjid: groupJid,
-        mediaUrl: finalMediaUrl,
-        mediaType: mediaType === 'image' 
-          ? 'image' 
-          : mediaType === 'video' 
-            ? 'video' 
-            : mediaType === 'audio' 
-              ? (isPtt ? 'ptt' : 'audio') 
-              : 'document',
-        caption: caption.trim(),
-      };
+      const accessToken = session.data.session.access_token;
 
-      // For documents, add filename
-      if (mediaType === 'file' && filename.trim()) {
-        payload.filename = filename.trim();
-      }
+      if (excludeAdmins && participants && regularMembers.length > 0) {
+        // Envio individual para membros não-admins
+        setSendingProgress({ current: 0, total: regularMembers.length });
+        let failCount = 0;
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.data.session.access_token}`,
-          },
-          body: JSON.stringify(payload),
+        for (let i = 0; i < regularMembers.length; i++) {
+          try {
+            await sendMediaToNumber(regularMembers[i].jid, finalMediaUrl, accessToken);
+          } catch (err) {
+            console.error(`Erro ao enviar para ${regularMembers[i].jid}:`, err);
+            failCount++;
+          }
+          
+          setSendingProgress({ current: i + 1, total: regularMembers.length });
+          
+          // Delay entre envios (exceto no último)
+          if (i < regularMembers.length - 1) {
+            await delay(SEND_DELAY_MS);
+          }
         }
-      );
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        let errorMsg = errorData.error || errorData.message || 'Erro ao enviar mídia';
-        
-        // Improve error messages for common issues
-        if (errorMsg.includes('certificate') || errorMsg.includes('tls')) {
-          errorMsg = 'URL com certificado SSL inválido. Tente fazer upload direto ou usar outra URL.';
-        } else if (errorMsg.includes('fetch') && errorMsg.includes('URL')) {
-          errorMsg = 'Não foi possível acessar a URL. Verifique se o link é válido ou faça upload direto.';
+        if (failCount > 0) {
+          setErrorMessage(`${failCount} de ${regularMembers.length} envios falharam`);
+          setSendStatus('error');
+          return;
         }
-        
-        throw new Error(errorMsg);
+      } else {
+        // Envio normal para o grupo
+        await sendMediaToNumber(groupJid, finalMediaUrl, accessToken);
       }
 
       setSendStatus('success');
@@ -172,6 +219,7 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
       setCaption('');
       setFilename('');
       clearFile();
+      setSendingProgress({ current: 0, total: 0 });
       
       onMediaSent?.();
     } catch (error) {
@@ -193,9 +241,12 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
   const handleCloseModal = () => {
     setSendStatus('idle');
     setErrorMessage('');
+    setSendingProgress({ current: 0, total: 0 });
   };
 
-  const canSend = (mediaUrl.trim() || selectedFile) && (mediaType === 'image' || mediaType === 'video' || mediaType === 'audio' || filename.trim());
+  const isSending = sendStatus === 'sending';
+
+  const canSend = (mediaUrl.trim() || selectedFile) && (mediaType === 'image' || mediaType === 'video' || mediaType === 'audio' || filename.trim()) && (!excludeAdmins || regularMemberCount > 0);
 
   return (
     <>
@@ -208,6 +259,7 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
           mediaType === 'audio' ? (isPtt ? 'ptt' : 'audio') : 
           'document'
         }
+        progress={sendingProgress.total > 1 ? sendingProgress : undefined}
         onClose={handleCloseModal}
       />
 
@@ -497,22 +549,52 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
             onChange={(e) => setCaption(e.target.value)}
             className="min-h-[60px] resize-none"
             maxLength={1024}
+            disabled={isSending}
           />
         </div>
+
+        {/* Toggle para excluir admins */}
+        {participants && participants.length > 0 && (
+          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
+            <div className="flex items-center gap-3">
+              <Users className="w-5 h-5 text-muted-foreground" />
+              <div className="space-y-0.5">
+                <Label htmlFor="exclude-admins-media" className="text-sm font-medium cursor-pointer">
+                  Não enviar para Admins/Donos
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {excludeAdmins 
+                    ? `Enviará para ${regularMemberCount} membro${regularMemberCount !== 1 ? 's' : ''} comum${regularMemberCount !== 1 ? 'ns' : ''}`
+                    : 'Envia para todos do grupo'
+                  }
+                </p>
+              </div>
+            </div>
+            <Switch
+              id="exclude-admins-media"
+              checked={excludeAdmins}
+              onCheckedChange={setExcludeAdmins}
+              disabled={isSending}
+            />
+          </div>
+        )}
 
         {/* Send button */}
         <div className="flex justify-end">
           <Button
             onClick={handleSend}
-            disabled={!canSend}
+            disabled={!canSend || isSending}
             size="sm"
           >
             <Send className="w-4 h-4 mr-2" />
-            Enviar {
-              mediaType === 'image' ? 'Imagem' : 
-              mediaType === 'video' ? 'Vídeo' : 
-              mediaType === 'audio' ? (isPtt ? 'Mensagem de Voz' : 'Áudio') : 
-              'Arquivo'
+            {excludeAdmins 
+              ? `Enviar para ${regularMemberCount} Membro${regularMemberCount !== 1 ? 's' : ''}`
+              : `Enviar ${
+                  mediaType === 'image' ? 'Imagem' : 
+                  mediaType === 'video' ? 'Vídeo' : 
+                  mediaType === 'audio' ? (isPtt ? 'Mensagem de Voz' : 'Áudio') : 
+                  'Arquivo'
+                }`
             }
           </Button>
         </div>

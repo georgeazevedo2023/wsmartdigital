@@ -1,22 +1,61 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
-import { Send } from 'lucide-react';
+import { Send, Users } from 'lucide-react';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
+import type { Participant } from '@/pages/dashboard/SendToGroup';
 
 interface SendMessageFormProps {
   instanceToken: string;
   groupJid: string;
+  participants?: Participant[];
   onMessageSent?: () => void;
 }
 
 const MAX_MESSAGE_LENGTH = 4096;
+const SEND_DELAY_MS = 350; // Delay entre envios para rate limiting
 
-const SendMessageForm = ({ instanceToken, groupJid, onMessageSent }: SendMessageFormProps) => {
+const SendMessageForm = ({ instanceToken, groupJid, participants, onMessageSent }: SendMessageFormProps) => {
   const [message, setMessage] = useState('');
+  const [excludeAdmins, setExcludeAdmins] = useState(false);
   const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
+  const [sendingProgress, setSendingProgress] = useState({ current: 0, total: 0 });
+
+  // Contagem de membros comuns (não admins/donos)
+  const regularMembers = participants?.filter(p => !p.isAdmin && !p.isSuperAdmin) || [];
+  const regularMemberCount = regularMembers.length;
+
+  const sendToNumber = async (number: string, text: string, accessToken: string) => {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          action: 'send-message',
+          token: instanceToken,
+          groupjid: number,
+          message: text,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || 'Erro ao enviar');
+    }
+
+    return response.json();
+  };
+
+  const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
   const handleSend = async () => {
     const trimmedMessage = message.trim();
@@ -44,31 +83,42 @@ const SendMessageForm = ({ instanceToken, groupJid, onMessageSent }: SendMessage
         return;
       }
 
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.data.session.access_token}`,
-          },
-          body: JSON.stringify({
-            action: 'send-message',
-            token: instanceToken,
-            groupjid: groupJid,
-            message: trimmedMessage,
-          }),
-        }
-      );
+      const accessToken = session.data.session.access_token;
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || errorData.message || 'Erro ao enviar mensagem';
-        throw new Error(errorMsg);
+      if (excludeAdmins && participants && regularMembers.length > 0) {
+        // Envio individual para membros não-admins
+        setSendingProgress({ current: 0, total: regularMembers.length });
+        let failCount = 0;
+
+        for (let i = 0; i < regularMembers.length; i++) {
+          try {
+            await sendToNumber(regularMembers[i].jid, trimmedMessage, accessToken);
+          } catch (err) {
+            console.error(`Erro ao enviar para ${regularMembers[i].jid}:`, err);
+            failCount++;
+          }
+          
+          setSendingProgress({ current: i + 1, total: regularMembers.length });
+          
+          // Delay entre envios (exceto no último)
+          if (i < regularMembers.length - 1) {
+            await delay(SEND_DELAY_MS);
+          }
+        }
+
+        if (failCount > 0) {
+          setErrorMessage(`${failCount} de ${regularMembers.length} mensagens falharam`);
+          setSendStatus('error');
+          return;
+        }
+      } else {
+        // Envio normal para o grupo
+        await sendToNumber(groupJid, trimmedMessage, accessToken);
       }
 
       setSendStatus('success');
       setMessage('');
+      setSendingProgress({ current: 0, total: 0 });
       onMessageSent?.();
     } catch (error) {
       console.error('Error sending message:', error);
@@ -87,6 +137,7 @@ const SendMessageForm = ({ instanceToken, groupJid, onMessageSent }: SendMessage
   const handleCloseModal = () => {
     setSendStatus('idle');
     setErrorMessage('');
+    setSendingProgress({ current: 0, total: 0 });
   };
 
   const characterCount = message.length;
@@ -99,6 +150,7 @@ const SendMessageForm = ({ instanceToken, groupJid, onMessageSent }: SendMessage
         status={sendStatus}
         message={errorMessage}
         onClose={handleCloseModal}
+        progress={sendingProgress.total > 1 ? sendingProgress : undefined}
       />
 
       <div className="space-y-3">
@@ -116,14 +168,42 @@ const SendMessageForm = ({ instanceToken, groupJid, onMessageSent }: SendMessage
           <span className={`text-xs ${isOverLimit ? 'text-destructive' : 'text-muted-foreground'}`}>
             {characterCount.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()} caracteres
           </span>
-          
+        </div>
+
+        {/* Toggle para excluir admins */}
+        {participants && participants.length > 0 && (
+          <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
+            <div className="flex items-center gap-3">
+              <Users className="w-5 h-5 text-muted-foreground" />
+              <div className="space-y-0.5">
+                <Label htmlFor="exclude-admins" className="text-sm font-medium cursor-pointer">
+                  Não enviar para Admins/Donos
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {excludeAdmins 
+                    ? `Enviará para ${regularMemberCount} membro${regularMemberCount !== 1 ? 's' : ''} comum${regularMemberCount !== 1 ? 'ns' : ''}`
+                    : 'Envia para todos do grupo'
+                  }
+                </p>
+              </div>
+            </div>
+            <Switch
+              id="exclude-admins"
+              checked={excludeAdmins}
+              onCheckedChange={setExcludeAdmins}
+              disabled={isSending}
+            />
+          </div>
+        )}
+
+        <div className="flex justify-end">
           <Button
             onClick={handleSend}
-            disabled={isSending || !message.trim() || isOverLimit}
+            disabled={isSending || !message.trim() || isOverLimit || (excludeAdmins && regularMemberCount === 0)}
             size="sm"
           >
             <Send className="w-4 h-4 mr-2" />
-            Enviar Mensagem
+            {excludeAdmins ? `Enviar para ${regularMemberCount} Membro${regularMemberCount !== 1 ? 's' : ''}` : 'Enviar Mensagem'}
           </Button>
         </div>
         
