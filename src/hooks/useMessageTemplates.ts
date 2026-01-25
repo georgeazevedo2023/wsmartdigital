@@ -120,7 +120,7 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
   const updateTemplate = async (id: string, updates: {
     name?: string;
     content?: string;
-    category?: string;
+    category?: string | null;
   }): Promise<boolean> => {
     try {
       const { error } = await supabase
