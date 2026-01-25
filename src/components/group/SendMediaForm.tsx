@@ -95,16 +95,18 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
         return;
       }
 
-      const action = mediaType === 'image' ? 'send-image' : 'send-file';
+      // Use unified send-media action with proper mediaType
       const payload: Record<string, unknown> = {
-        action,
+        action: 'send-media',
         token: instanceToken,
         groupjid: groupJid,
         mediaUrl: finalMediaUrl,
+        mediaType: mediaType === 'image' ? 'image' : 'document',
         caption: caption.trim(),
       };
 
-      if (mediaType === 'file') {
+      // For documents, add filename
+      if (mediaType === 'file' && filename.trim()) {
         payload.filename = filename.trim();
       }
 
