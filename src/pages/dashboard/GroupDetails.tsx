@@ -6,10 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { ArrowLeft, Users, Search, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Users, Search, MessageSquare, Image } from 'lucide-react';
 import SendMessageForm from '@/components/group/SendMessageForm';
+import SendMediaForm from '@/components/group/SendMediaForm';
 
 interface Participant {
   id: string;
@@ -234,20 +236,39 @@ const GroupDetails = () => {
         </div>
       </div>
 
-      {/* Seção de envio de mensagem */}
+      {/* Seção de envio */}
       {instance && (
         <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <MessageSquare className="w-5 h-5" />
-              Enviar Mensagem
-            </CardTitle>
+            <CardTitle className="text-lg">Enviar para o Grupo</CardTitle>
           </CardHeader>
           <CardContent>
-            <SendMessageForm
-              instanceToken={instance.token}
-              groupJid={group.id}
-            />
+            <Tabs defaultValue="text">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="text" className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Texto
+                </TabsTrigger>
+                <TabsTrigger value="media" className="flex items-center gap-2">
+                  <Image className="w-4 h-4" />
+                  Mídia
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="text">
+                <SendMessageForm
+                  instanceToken={instance.token}
+                  groupJid={group.id}
+                />
+              </TabsContent>
+              
+              <TabsContent value="media">
+                <SendMediaForm
+                  instanceToken={instance.token}
+                  groupJid={group.id}
+                />
+              </TabsContent>
+            </Tabs>
           </CardContent>
         </Card>
       )}
