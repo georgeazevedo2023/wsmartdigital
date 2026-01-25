@@ -57,7 +57,9 @@ const SendMessageForm = ({ instanceToken, groupJid, onMessageSent }: SendMessage
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || 'Erro ao enviar mensagem');
+        // UAZAPI returns { code, message, data } format
+        const errorMessage = errorData.error || errorData.message || 'Erro ao enviar mensagem';
+        throw new Error(errorMessage);
       }
 
       toast.success('Mensagem enviada com sucesso!');
