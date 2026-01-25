@@ -5,7 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
-import { Image, FileIcon, Upload, Send, X, Video } from 'lucide-react';
+import { Image, FileIcon, Upload, Send, X, Video, Mic } from 'lucide-react';
+import { Checkbox } from '@/components/ui/checkbox';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
 
 interface SendMediaFormProps {
@@ -17,9 +18,11 @@ interface SendMediaFormProps {
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const ALLOWED_VIDEO_TYPES = ['video/mp4'];
+const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3'];
 
 const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormProps) => {
-  const [mediaType, setMediaType] = useState<'image' | 'video' | 'file'>('image');
+  const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'file'>('image');
+  const [isPtt, setIsPtt] = useState(false);
   const [mediaUrl, setMediaUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [filename, setFilename] = useState('');
@@ -48,6 +51,12 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
 
     if (mediaType === 'video' && !ALLOWED_VIDEO_TYPES.includes(file.type)) {
       setErrorMessage('Tipo de vídeo não suportado. Use apenas MP4');
+      setSendStatus('error');
+      return;
+    }
+
+    if (mediaType === 'audio' && !ALLOWED_AUDIO_TYPES.includes(file.type)) {
+      setErrorMessage('Tipo de áudio não suportado. Use MP3 ou OGG');
       setSendStatus('error');
       return;
     }
@@ -108,7 +117,13 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
         token: instanceToken,
         groupjid: groupJid,
         mediaUrl: finalMediaUrl,
-        mediaType: mediaType === 'image' ? 'image' : mediaType === 'video' ? 'video' : 'document',
+        mediaType: mediaType === 'image' 
+          ? 'image' 
+          : mediaType === 'video' 
+            ? 'video' 
+            : mediaType === 'audio' 
+              ? (isPtt ? 'ptt' : 'audio') 
+              : 'document',
         caption: caption.trim(),
       };
 
@@ -173,20 +188,25 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
     setErrorMessage('');
   };
 
-  const canSend = (mediaUrl.trim() || selectedFile) && (mediaType === 'image' || mediaType === 'video' || filename.trim());
+  const canSend = (mediaUrl.trim() || selectedFile) && (mediaType === 'image' || mediaType === 'video' || mediaType === 'audio' || filename.trim());
 
   return (
     <>
       <SendStatusModal
         status={sendStatus}
         message={errorMessage}
-        mediaType={mediaType === 'image' ? 'image' : mediaType === 'video' ? 'video' : 'document'}
+        mediaType={
+          mediaType === 'image' ? 'image' : 
+          mediaType === 'video' ? 'video' : 
+          mediaType === 'audio' ? (isPtt ? 'ptt' : 'audio') : 
+          'document'
+        }
         onClose={handleCloseModal}
       />
 
       <div className="space-y-4">
-        <Tabs value={mediaType} onValueChange={(v) => { setMediaType(v as 'image' | 'video' | 'file'); clearFile(); setMediaUrl(''); }}>
-          <TabsList className="grid w-full grid-cols-3">
+        <Tabs value={mediaType} onValueChange={(v) => { setMediaType(v as 'image' | 'video' | 'audio' | 'file'); clearFile(); setMediaUrl(''); setIsPtt(false); }}>
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="image" className="flex items-center gap-2">
               <Image className="w-4 h-4" />
               Imagem
@@ -194,6 +214,10 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
             <TabsTrigger value="video" className="flex items-center gap-2">
               <Video className="w-4 h-4" />
               Vídeo
+            </TabsTrigger>
+            <TabsTrigger value="audio" className="flex items-center gap-2">
+              <Mic className="w-4 h-4" />
+              Áudio
             </TabsTrigger>
             <TabsTrigger value="file" className="flex items-center gap-2">
               <FileIcon className="w-4 h-4" />
@@ -313,6 +337,74 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
             )}
           </TabsContent>
 
+          <TabsContent value="audio" className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label>URL do Áudio</Label>
+              <Input
+                placeholder="https://exemplo.com/audio.mp3"
+                value={mediaUrl}
+                onChange={(e) => setMediaUrl(e.target.value)}
+                disabled={!!selectedFile}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">OU</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Selecionar do dispositivo</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="audio/mpeg,audio/ogg,audio/mp3"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!!mediaUrl}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Escolher Áudio
+              </Button>
+            </div>
+
+            {selectedFile && (
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                <Mic className="w-5 h-5 text-muted-foreground" />
+                <span className="flex-1 truncate text-sm">{selectedFile.name}</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="w-6 h-6"
+                  onClick={clearFile}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="ptt"
+                checked={isPtt}
+                onCheckedChange={(checked) => setIsPtt(checked === true)}
+              />
+              <Label htmlFor="ptt" className="text-sm font-normal cursor-pointer">
+                Enviar como mensagem de voz (PTT)
+              </Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              PTT aparece como "bolinha" de áudio no WhatsApp
+            </p>
+          </TabsContent>
+
           <TabsContent value="file" className="space-y-4 mt-4">
             <div className="space-y-2">
               <Label>URL do Arquivo</Label>
@@ -396,7 +488,12 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
             size="sm"
           >
             <Send className="w-4 h-4 mr-2" />
-            Enviar {mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : 'Arquivo'}
+            Enviar {
+              mediaType === 'image' ? 'Imagem' : 
+              mediaType === 'video' ? 'Vídeo' : 
+              mediaType === 'audio' ? (isPtt ? 'Mensagem de Voz' : 'Áudio') : 
+              'Arquivo'
+            }
           </Button>
         </div>
 
