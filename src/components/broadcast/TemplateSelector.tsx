@@ -191,7 +191,7 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
     const templateData = onSave();
     if (!templateData) return;
 
-    const finalCategory = showNewCategory ? newCategoryName.trim() : templateCategory;
+    const finalCategory = showNewCategory ? newCategoryName.trim() : (templateCategory === '__none__' ? '' : templateCategory);
 
     setIsSaving(true);
     const result = await createTemplate({
@@ -230,7 +230,7 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
   const handleUpdate = async () => {
     if (!editingTemplate || !editName.trim()) return;
 
-    const finalCategory = showEditNewCategory ? editNewCategory.trim() : editCategory;
+    const finalCategory = showEditNewCategory ? editNewCategory.trim() : (editCategory === '__none__' ? '' : editCategory);
 
     setIsUpdating(true);
     const success = await updateTemplate(editingTemplate.id, {
@@ -444,7 +444,7 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
                       <SelectValue placeholder="Selecione uma categoria" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Sem categoria</SelectItem>
+                      <SelectItem value="__none__">Sem categoria</SelectItem>
                       {categories.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
@@ -557,7 +557,7 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
                       <SelectValue placeholder="Selecione uma categoria" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Sem categoria</SelectItem>
+                      <SelectItem value="__none__">Sem categoria</SelectItem>
                       {categories.map(cat => (
                         <SelectItem key={cat} value={cat}>{cat}</SelectItem>
                       ))}
