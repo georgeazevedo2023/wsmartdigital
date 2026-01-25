@@ -8,24 +8,34 @@ import GroupSelector, { Group } from '@/components/broadcast/GroupSelector';
 import BroadcastMessageForm from '@/components/broadcast/BroadcastMessageForm';
 
 const Broadcaster = () => {
+  const [step, setStep] = useState<'instance' | 'groups' | 'message'>('instance');
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<Group[]>([]);
 
   const handleInstanceSelect = (instance: Instance) => {
     setSelectedInstance(instance);
-    setSelectedGroups([]); // Reset groups when changing instance
+    setSelectedGroups([]);
+    setStep('groups');
   };
 
   const handleComplete = () => {
     setSelectedGroups([]);
+    setStep('instance');
+    setSelectedInstance(null);
   };
 
   const handleBack = () => {
-    if (selectedGroups.length > 0) {
-      setSelectedGroups([]);
-    } else if (selectedInstance) {
+    if (step === 'message') {
+      setStep('groups');
+    } else if (step === 'groups') {
+      setStep('instance');
       setSelectedInstance(null);
+      setSelectedGroups([]);
     }
+  };
+
+  const handleContinueToMessage = () => {
+    setStep('message');
   };
 
   return (
@@ -39,7 +49,7 @@ const Broadcaster = () => {
           </p>
         </div>
         
-        {(selectedInstance || selectedGroups.length > 0) && (
+        {step !== 'instance' && (
           <Button variant="ghost" size="sm" onClick={handleBack}>
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
@@ -62,13 +72,13 @@ const Broadcaster = () => {
         
         <ChevronRight className="w-4 h-4 text-muted-foreground" />
         
-        <div className={`flex items-center gap-2 ${selectedGroups.length > 0 ? 'text-primary' : selectedInstance ? 'text-foreground' : 'text-muted-foreground'}`}>
-          {selectedGroups.length > 0 ? (
+        <div className={`flex items-center gap-2 ${step === 'message' ? 'text-primary' : step === 'groups' ? 'text-foreground' : 'text-muted-foreground'}`}>
+          {step === 'message' ? (
             <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
               <Check className="w-4 h-4 text-primary-foreground" />
             </div>
           ) : (
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${selectedInstance ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'groups' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
           )}
           <span className="font-medium">Grupos</span>
           {selectedGroups.length > 0 && (
@@ -78,14 +88,14 @@ const Broadcaster = () => {
         
         <ChevronRight className="w-4 h-4 text-muted-foreground" />
         
-        <div className={`flex items-center gap-2 ${selectedGroups.length > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${selectedGroups.length > 0 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
+        <div className={`flex items-center gap-2 ${step === 'message' ? 'text-foreground' : 'text-muted-foreground'}`}>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'message' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
           <span className="font-medium">Mensagem</span>
         </div>
       </div>
 
       {/* Step 1: Instance Selection */}
-      {!selectedInstance && (
+      {step === 'instance' && (
         <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -103,7 +113,7 @@ const Broadcaster = () => {
       )}
 
       {/* Selected Instance Badge */}
-      {selectedInstance && (
+      {step !== 'instance' && selectedInstance && (
         <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
           <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
             <Server className="w-5 h-5 text-primary" />
@@ -112,14 +122,14 @@ const Broadcaster = () => {
             <p className="font-medium">{selectedInstance.name}</p>
             <p className="text-xs text-muted-foreground">Instância selecionada</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => setSelectedInstance(null)}>
+          <Button variant="ghost" size="sm" onClick={() => { setSelectedInstance(null); setStep('instance'); setSelectedGroups([]); }}>
             Trocar
           </Button>
         </div>
       )}
 
       {/* Step 2: Group Selection */}
-      {selectedInstance && selectedGroups.length === 0 && (
+      {step === 'groups' && selectedInstance && (
         <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
@@ -127,18 +137,27 @@ const Broadcaster = () => {
               Selecionar Grupos
             </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
             <GroupSelector
               instance={selectedInstance}
               selectedGroups={selectedGroups}
               onSelectionChange={setSelectedGroups}
             />
+            
+            {selectedGroups.length > 0 && (
+              <div className="flex justify-end pt-2 border-t">
+                <Button onClick={handleContinueToMessage}>
+                  Continuar com {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
+                  <ChevronRight className="w-4 h-4 ml-2" />
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
 
       {/* Step 3: Message Composition */}
-      {selectedInstance && selectedGroups.length > 0 && (
+      {step === 'message' && selectedInstance && selectedGroups.length > 0 && (
         <div className="space-y-4">
           {/* Selected Groups Summary */}
           <Card className="border-border/50 bg-muted/30">
@@ -155,7 +174,7 @@ const Broadcaster = () => {
                     </p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setSelectedGroups([])}>
+                <Button variant="outline" size="sm" onClick={() => setStep('groups')}>
                   Alterar seleção
                 </Button>
               </div>
