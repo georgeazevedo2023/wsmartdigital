@@ -222,14 +222,18 @@ Deno.serve(async (req) => {
           )
         }
 
-        const imageUrl = `${uazapiUrl}/send/image`
-        const imageBody = {
-          number: groupjid,
-          image: body.mediaUrl,
-          caption: body.caption || '',
-        }
+        // Check if it's a base64 or URL
+        const isBase64 = body.mediaUrl.startsWith('data:')
+        const imageEndpoint = isBase64 ? '/send/imageBase64' : '/send/imageUrl'
+        const imageUrl = `${uazapiUrl}${imageEndpoint}`
+        
+        // UAZAPI uses 'imageUrl' field for URL, 'image' for base64
+        const imageBody = isBase64 
+          ? { number: groupjid, image: body.mediaUrl, caption: body.caption || '' }
+          : { number: groupjid, imageUrl: body.mediaUrl, caption: body.caption || '' }
         
         console.log('Sending image to:', imageUrl)
+        console.log('Is Base64:', isBase64)
         console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
         
         const imageResponse = await fetch(imageUrl, {
@@ -244,6 +248,8 @@ Deno.serve(async (req) => {
         console.log('Image response status:', imageResponse.status)
         
         const imageRawText = await imageResponse.text()
+        console.log('Image raw response:', imageRawText.substring(0, 200))
+        
         let imageData: unknown
         try {
           imageData = JSON.parse(imageRawText)
