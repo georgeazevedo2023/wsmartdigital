@@ -16,7 +16,7 @@ interface SendMediaFormProps {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4'];
 
 const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormProps) => {
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'file'>('image');
@@ -47,7 +47,7 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
     }
 
     if (mediaType === 'video' && !ALLOWED_VIDEO_TYPES.includes(file.type)) {
-      setErrorMessage('Tipo de vídeo não suportado. Use MP4, WebM ou MOV');
+      setErrorMessage('Tipo de vídeo não suportado. Use apenas MP4');
       setSendStatus('error');
       return;
     }
@@ -281,7 +281,7 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="video/mp4,video/webm,video/quicktime"
+                accept="video/mp4"
                 onChange={handleFileSelect}
                 className="hidden"
               />
