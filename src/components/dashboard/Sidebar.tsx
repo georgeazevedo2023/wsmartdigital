@@ -13,6 +13,7 @@ import {
   Shield,
   ChevronDown,
   Calendar,
+  Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -40,6 +41,7 @@ const Sidebar = () => {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+    { icon: Send, label: 'Disparador', path: '/dashboard/broadcast' },
     { icon: Calendar, label: 'Agendamentos', path: '/dashboard/scheduled' },
   ];
 
