@@ -174,18 +174,18 @@ Deno.serve(async (req) => {
           )
         }
 
-        // UAZAPI uses /chat/send endpoint for text messages
-        const sendUrl = `${uazapiUrl}/chat/send`
+        // UAZAPI uses /send/text endpoint for text messages (per documentation)
+        const sendUrl = `${uazapiUrl}/send/text`
         const sendBody = {
           number: groupjid,
-          message: message,
+          text: message,  // Field is 'text' not 'message' per UAZAPI docs
         }
         
         console.log('Sending message to:', sendUrl)
         console.log('Payload:', JSON.stringify(sendBody))
         console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
         
-        response = await fetch(sendUrl, {
+        const sendResponse = await fetch(sendUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -194,8 +194,24 @@ Deno.serve(async (req) => {
           body: JSON.stringify(sendBody),
         })
         
-        console.log('Send response status:', response.status)
-        break
+        console.log('Send response status:', sendResponse.status)
+        
+        // Parse response with resilience (handle non-JSON responses)
+        const rawText = await sendResponse.text()
+        let sendData: unknown
+        try {
+          sendData = JSON.parse(rawText)
+        } catch {
+          sendData = { raw: rawText }
+        }
+        
+        return new Response(
+          JSON.stringify(sendData),
+          { 
+            status: sendResponse.status, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
       }
 
       default:
@@ -205,7 +221,14 @@ Deno.serve(async (req) => {
         )
     }
 
-    const data = await response.json()
+    // Parse response with resilience (handle non-JSON responses)
+    const rawText = await response.text()
+    let data: unknown
+    try {
+      data = JSON.parse(rawText)
+    } catch {
+      data = { raw: rawText }
+    }
 
     return new Response(
       JSON.stringify(data),
