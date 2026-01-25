@@ -5,7 +5,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { supabase } from '@/integrations/supabase/client';
-import { Image, FileIcon, Upload, Send, X } from 'lucide-react';
+import { Image, FileIcon, Upload, Send, X, Video } from 'lucide-react';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
 
 interface SendMediaFormProps {
@@ -16,9 +16,10 @@ interface SendMediaFormProps {
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'];
 
 const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormProps) => {
-  const [mediaType, setMediaType] = useState<'image' | 'file'>('image');
+  const [mediaType, setMediaType] = useState<'image' | 'video' | 'file'>('image');
   const [mediaUrl, setMediaUrl] = useState('');
   const [caption, setCaption] = useState('');
   const [filename, setFilename] = useState('');
@@ -41,6 +42,12 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
 
     if (mediaType === 'image' && !ALLOWED_IMAGE_TYPES.includes(file.type)) {
       setErrorMessage('Tipo de imagem não suportado. Use JPG, PNG, GIF ou WebP');
+      setSendStatus('error');
+      return;
+    }
+
+    if (mediaType === 'video' && !ALLOWED_VIDEO_TYPES.includes(file.type)) {
+      setErrorMessage('Tipo de vídeo não suportado. Use MP4, WebM ou MOV');
       setSendStatus('error');
       return;
     }
@@ -101,7 +108,7 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
         token: instanceToken,
         groupjid: groupJid,
         mediaUrl: finalMediaUrl,
-        mediaType: mediaType === 'image' ? 'image' : 'document',
+        mediaType: mediaType === 'image' ? 'image' : mediaType === 'video' ? 'video' : 'document',
         caption: caption.trim(),
       };
 
@@ -166,23 +173,27 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
     setErrorMessage('');
   };
 
-  const canSend = (mediaUrl.trim() || selectedFile) && (mediaType === 'image' || filename.trim());
+  const canSend = (mediaUrl.trim() || selectedFile) && (mediaType === 'image' || mediaType === 'video' || filename.trim());
 
   return (
     <>
       <SendStatusModal
         status={sendStatus}
         message={errorMessage}
-        mediaType={mediaType === 'image' ? 'image' : 'document'}
+        mediaType={mediaType === 'image' ? 'image' : mediaType === 'video' ? 'video' : 'document'}
         onClose={handleCloseModal}
       />
 
       <div className="space-y-4">
-        <Tabs value={mediaType} onValueChange={(v) => setMediaType(v as 'image' | 'file')}>
-          <TabsList className="grid w-full grid-cols-2">
+        <Tabs value={mediaType} onValueChange={(v) => { setMediaType(v as 'image' | 'video' | 'file'); clearFile(); setMediaUrl(''); }}>
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="image" className="flex items-center gap-2">
               <Image className="w-4 h-4" />
               Imagem
+            </TabsTrigger>
+            <TabsTrigger value="video" className="flex items-center gap-2">
+              <Video className="w-4 h-4" />
+              Vídeo
             </TabsTrigger>
             <TabsTrigger value="file" className="flex items-center gap-2">
               <FileIcon className="w-4 h-4" />
@@ -240,6 +251,60 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
                   size="icon"
                   variant="destructive"
                   className="absolute -top-2 -right-2 w-6 h-6"
+                  onClick={clearFile}
+                >
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="video" className="space-y-4 mt-4">
+            <div className="space-y-2">
+              <Label>URL do Vídeo</Label>
+              <Input
+                placeholder="https://exemplo.com/video.mp4"
+                value={mediaUrl}
+                onChange={(e) => setMediaUrl(e.target.value)}
+                disabled={!!selectedFile}
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-px bg-border" />
+              <span className="text-xs text-muted-foreground">OU</span>
+              <div className="flex-1 h-px bg-border" />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Selecionar do dispositivo</Label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/mp4,video/webm,video/quicktime"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!!mediaUrl}
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Escolher Vídeo
+              </Button>
+            </div>
+
+            {selectedFile && (
+              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                <Video className="w-5 h-5 text-muted-foreground" />
+                <span className="flex-1 truncate text-sm">{selectedFile.name}</span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="w-6 h-6"
                   onClick={clearFile}
                 >
                   <X className="w-4 h-4" />
@@ -331,7 +396,7 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
             size="sm"
           >
             <Send className="w-4 h-4 mr-2" />
-            Enviar {mediaType === 'image' ? 'Imagem' : 'Arquivo'}
+            Enviar {mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : 'Arquivo'}
           </Button>
         </div>
 

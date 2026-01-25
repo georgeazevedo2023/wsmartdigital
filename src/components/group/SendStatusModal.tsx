@@ -11,7 +11,7 @@ export type SendStatus = 'idle' | 'sending' | 'success' | 'error';
 interface SendStatusModalProps {
   status: SendStatus;
   message?: string;
-  mediaType?: 'image' | 'document' | 'text';
+  mediaType?: 'image' | 'video' | 'document' | 'text';
   onClose: () => void;
 }
 
@@ -47,11 +47,13 @@ const SendStatusModal = ({ status, message, mediaType, onClose }: SendStatusModa
               <CheckCircle2 className="w-16 h-16 text-green-500" />
               <h3 className="text-xl font-semibold text-green-600">
                 {mediaType === 'image' && 'Imagem enviada com sucesso!'}
+                {mediaType === 'video' && 'Vídeo enviado com sucesso!'}
                 {mediaType === 'document' && 'Arquivo enviado com sucesso!'}
                 {(!mediaType || mediaType === 'text') && 'Mensagem enviada com sucesso!'}
               </h3>
               <p className="text-muted-foreground text-center">
                 {mediaType === 'image' && 'Imagem entregue ao grupo'}
+                {mediaType === 'video' && 'Vídeo entregue ao grupo'}
                 {mediaType === 'document' && 'Arquivo entregue ao grupo'}
                 {(!mediaType || mediaType === 'text') && 'Mensagem entregue ao grupo'}
               </p>
