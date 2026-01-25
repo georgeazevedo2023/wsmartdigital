@@ -182,7 +182,7 @@ Deno.serve(async (req) => {
             'token': instanceToken,
           },
           body: JSON.stringify({
-            groupjid: groupjid,
+            number: groupjid,
             message: message,
           }),
         })
