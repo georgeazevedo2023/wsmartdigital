@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -19,6 +19,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { 
   BookmarkPlus, 
   FileText, 
@@ -29,7 +36,9 @@ import {
   ChevronDown, 
   Trash2, 
   Loader2,
-  BookMarked 
+  BookMarked,
+  Search,
+  X
 } from 'lucide-react';
 import { MessageTemplate, useMessageTemplates } from '@/hooks/useMessageTemplates';
 
@@ -84,6 +93,35 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
   const [templateName, setTemplateName] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterType, setFilterType] = useState<string>('all');
+
+  const filteredTemplates = useMemo(() => {
+    let filtered = templates;
+
+    // Filter by type
+    if (filterType === 'text') {
+      filtered = filtered.filter(t => t.message_type === 'text');
+    } else if (filterType === 'media') {
+      filtered = filtered.filter(t => t.message_type !== 'text');
+    } else if (filterType !== 'all') {
+      filtered = filtered.filter(t => t.message_type === filterType);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(t => 
+        t.name.toLowerCase().includes(query) ||
+        (t.content && t.content.toLowerCase().includes(query))
+      );
+    }
+
+    return filtered;
+  }, [templates, searchQuery, filterType]);
+
+  const textTemplates = filteredTemplates.filter(t => t.message_type === 'text');
+  const mediaTemplates = filteredTemplates.filter(t => t.message_type !== 'text');
 
   const handleSave = async () => {
     if (!templateName.trim()) return;
@@ -111,9 +149,6 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
     setDeletingId(null);
   };
 
-  const textTemplates = templates.filter(t => t.message_type === 'text');
-  const mediaTemplates = templates.filter(t => t.message_type !== 'text');
-
   return (
     <>
       <div className="flex items-center gap-2">
@@ -122,10 +157,51 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
             <Button variant="outline" size="sm" disabled={disabled || isLoading}>
               <BookMarked className="w-4 h-4 mr-2" />
               Templates
+              {templates.length > 0 && (
+                <span className="ml-1 text-xs text-muted-foreground">({templates.length})</span>
+              )}
               <ChevronDown className="w-3 h-3 ml-1" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-64">
+          <DropdownMenuContent align="start" className="w-80">
+            {/* Search and Filter Header */}
+            <div className="p-2 space-y-2 border-b">
+              <div className="relative">
+                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar templates..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="pl-8 pr-8 h-8 text-sm"
+                />
+                {searchQuery && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 h-6 w-6"
+                    onClick={() => setSearchQuery('')}
+                  >
+                    <X className="w-3 h-3" />
+                  </Button>
+                )}
+              </div>
+              <Select value={filterType} onValueChange={setFilterType}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Filtrar por tipo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os tipos</SelectItem>
+                  <SelectItem value="text">Texto</SelectItem>
+                  <SelectItem value="media">Mídia (todos)</SelectItem>
+                  <SelectItem value="image">Imagem</SelectItem>
+                  <SelectItem value="video">Vídeo</SelectItem>
+                  <SelectItem value="audio">Áudio</SelectItem>
+                  <SelectItem value="ptt">Voz (PTT)</SelectItem>
+                  <SelectItem value="document">Documento</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
             {isLoading ? (
               <div className="p-4 flex items-center justify-center">
                 <Loader2 className="w-4 h-4 animate-spin" />
@@ -133,6 +209,10 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
             ) : templates.length === 0 ? (
               <div className="p-4 text-center text-sm text-muted-foreground">
                 Nenhum template salvo
+              </div>
+            ) : filteredTemplates.length === 0 ? (
+              <div className="p-4 text-center text-sm text-muted-foreground">
+                Nenhum template encontrado
               </div>
             ) : (
               <ScrollArea className="max-h-60">
