@@ -178,7 +178,7 @@ Deno.serve(async (req) => {
         const sendUrl = `${uazapiUrl}/send/text`
         const sendBody = {
           number: groupjid,
-          text: message,  // Field is 'text' not 'message' per UAZAPI docs
+          text: message,
         }
         
         console.log('Sending message to:', sendUrl)
@@ -196,7 +196,6 @@ Deno.serve(async (req) => {
         
         console.log('Send response status:', sendResponse.status)
         
-        // Parse response with resilience (handle non-JSON responses)
         const rawText = await sendResponse.text()
         let sendData: unknown
         try {
@@ -209,6 +208,101 @@ Deno.serve(async (req) => {
           JSON.stringify(sendData),
           { 
             status: sendResponse.status, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
+
+      case 'send-image': {
+        // Send image to group
+        if (!instanceToken || !groupjid || !body.mediaUrl) {
+          return new Response(
+            JSON.stringify({ error: 'Token, groupjid and mediaUrl required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const imageUrl = `${uazapiUrl}/send/image`
+        const imageBody = {
+          number: groupjid,
+          image: body.mediaUrl,
+          caption: body.caption || '',
+        }
+        
+        console.log('Sending image to:', imageUrl)
+        console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
+        
+        const imageResponse = await fetch(imageUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify(imageBody),
+        })
+        
+        console.log('Image response status:', imageResponse.status)
+        
+        const imageRawText = await imageResponse.text()
+        let imageData: unknown
+        try {
+          imageData = JSON.parse(imageRawText)
+        } catch {
+          imageData = { raw: imageRawText }
+        }
+        
+        return new Response(
+          JSON.stringify(imageData),
+          { 
+            status: imageResponse.status, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
+
+      case 'send-file': {
+        // Send file to group
+        if (!instanceToken || !groupjid || !body.mediaUrl || !body.filename) {
+          return new Response(
+            JSON.stringify({ error: 'Token, groupjid, mediaUrl and filename required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const fileUrl = `${uazapiUrl}/send/file`
+        const fileBody = {
+          number: groupjid,
+          file: body.mediaUrl,
+          filename: body.filename,
+          caption: body.caption || '',
+        }
+        
+        console.log('Sending file to:', fileUrl)
+        console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
+        
+        const fileResponse = await fetch(fileUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify(fileBody),
+        })
+        
+        console.log('File response status:', fileResponse.status)
+        
+        const fileRawText = await fileResponse.text()
+        let fileData: unknown
+        try {
+          fileData = JSON.parse(fileRawText)
+        } catch {
+          fileData = { raw: fileRawText }
+        }
+        
+        return new Response(
+          JSON.stringify(fileData),
+          { 
+            status: fileResponse.status, 
             headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
           }
         )
