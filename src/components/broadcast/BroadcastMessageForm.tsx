@@ -75,6 +75,28 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     return acc + g.participants.filter(p => !p.isAdmin && !p.isSuperAdmin).length;
   }, 0);
 
+  // Calculate unique regular members across all selected groups (for deduplication)
+  const getUniqueRegularMembers = () => {
+    const seenJids = new Set<string>();
+    const uniqueMembers: { jid: string; groupName: string }[] = [];
+    
+    for (const group of selectedGroups) {
+      const regularMembers = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
+      for (const member of regularMembers) {
+        if (!seenJids.has(member.jid)) {
+          seenJids.add(member.jid);
+          uniqueMembers.push({ jid: member.jid, groupName: group.name });
+        }
+      }
+    }
+    
+    return uniqueMembers;
+  };
+
+  const uniqueRegularMembersCount = excludeAdmins 
+    ? getUniqueRegularMembers().length 
+    : totalRegularMembers;
+
   // Cleanup preview URL on unmount or file change
   useEffect(() => {
     return () => {
@@ -247,16 +269,6 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       return;
     }
 
-    setProgress({
-      currentGroup: 0,
-      totalGroups: selectedGroups.length,
-      currentMember: 0,
-      totalMembers: 0,
-      groupName: '',
-      status: 'sending',
-      results: [],
-    });
-
     try {
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
@@ -268,35 +280,67 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       const accessToken = session.data.session.access_token;
       const results: SendProgress['results'] = [];
 
-      for (let i = 0; i < selectedGroups.length; i++) {
-        const group = selectedGroups[i];
+      if (excludeAdmins) {
+        // DEDUPLICATION: Get unique members across all groups
+        const uniqueMembers = getUniqueRegularMembers();
         
-        try {
-          if (excludeAdmins) {
-            const regularMembers = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
-            
-            setProgress(p => ({
-              ...p,
-              currentGroup: i + 1,
-              groupName: group.name,
-              currentMember: 0,
-              totalMembers: regularMembers.length,
-            }));
+        setProgress({
+          currentGroup: 1,
+          totalGroups: 1,
+          currentMember: 0,
+          totalMembers: uniqueMembers.length,
+          groupName: `${selectedGroups.length} grupo(s) - Envio individual`,
+          status: 'sending',
+          results: [],
+        });
 
-            for (let j = 0; j < regularMembers.length; j++) {
-              try {
-                await sendToNumber(regularMembers[j].jid, trimmedMessage, accessToken);
-              } catch (err) {
-                console.error(`Erro ao enviar para ${regularMembers[j].jid}:`, err);
-              }
-              
-              setProgress(p => ({ ...p, currentMember: j + 1 }));
-              
-              if (j < regularMembers.length - 1) {
-                await delay(SEND_DELAY_MS);
-              }
-            }
-          } else {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let j = 0; j < uniqueMembers.length; j++) {
+          try {
+            await sendToNumber(uniqueMembers[j].jid, trimmedMessage, accessToken);
+            successCount++;
+          } catch (err) {
+            console.error(`Erro ao enviar para ${uniqueMembers[j].jid}:`, err);
+            failCount++;
+          }
+          
+          setProgress(p => ({ ...p, currentMember: j + 1 }));
+          
+          if (j < uniqueMembers.length - 1) {
+            await delay(SEND_DELAY_MS);
+          }
+        }
+
+        results.push({ 
+          groupName: `Envio individual (${uniqueMembers.length} contatos únicos)`, 
+          success: failCount === 0 
+        });
+
+        setProgress(p => ({ ...p, status: 'success', results }));
+
+        if (failCount > 0) {
+          toast.warning(`Enviado para ${successCount} contato(s). ${failCount} falha(s).`);
+        } else {
+          toast.success(`Mensagem enviada para ${successCount} contato(s) únicos!`);
+        }
+      } else {
+        // Normal group send (message goes to each group)
+        setProgress({
+          currentGroup: 0,
+          totalGroups: selectedGroups.length,
+          currentMember: 0,
+          totalMembers: 0,
+          groupName: '',
+          status: 'sending',
+          results: [],
+        });
+
+        for (let i = 0; i < selectedGroups.length; i++) {
+          const group = selectedGroups[i];
+          
+          try {
             setProgress(p => ({
               ...p,
               currentGroup: i + 1,
@@ -307,33 +351,33 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
             await sendToNumber(group.id, trimmedMessage, accessToken);
             setProgress(p => ({ ...p, currentMember: 1 }));
+
+            results.push({ groupName: group.name, success: true });
+          } catch (error) {
+            console.error(`Erro ao enviar para grupo ${group.name}:`, error);
+            results.push({ 
+              groupName: group.name, 
+              success: false, 
+              error: error instanceof Error ? error.message : 'Erro desconhecido' 
+            });
           }
 
-          results.push({ groupName: group.name, success: true });
-        } catch (error) {
-          console.error(`Erro ao enviar para grupo ${group.name}:`, error);
-          results.push({ 
-            groupName: group.name, 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Erro desconhecido' 
-          });
+          // Delay between groups
+          if (i < selectedGroups.length - 1) {
+            await delay(GROUP_DELAY_MS);
+          }
         }
 
-        // Delay between groups
-        if (i < selectedGroups.length - 1) {
-          await delay(GROUP_DELAY_MS);
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+
+        setProgress(p => ({ ...p, status: 'success', results }));
+
+        if (failCount > 0) {
+          toast.warning(`Enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
+        } else {
+          toast.success(`Mensagem enviada para ${successCount} grupo(s)!`);
         }
-      }
-
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
-
-      setProgress(p => ({ ...p, status: 'success', results }));
-
-      if (failCount > 0) {
-        toast.warning(`Enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
-      } else {
-        toast.success(`Mensagem enviada para ${successCount} grupo(s)!`);
       }
 
       setMessage('');
@@ -363,16 +407,6 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       return;
     }
 
-    setProgress({
-      currentGroup: 0,
-      totalGroups: selectedGroups.length,
-      currentMember: 0,
-      totalMembers: 0,
-      groupName: '',
-      status: 'sending',
-      results: [],
-    });
-
     try {
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
@@ -387,35 +421,68 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       const sendType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType === 'file' ? 'document' : mediaType;
       const docName = mediaType === 'file' ? filename.trim() : '';
 
-      for (let i = 0; i < selectedGroups.length; i++) {
-        const group = selectedGroups[i];
+      if (excludeAdmins) {
+        // DEDUPLICATION: Get unique members across all groups
+        const uniqueMembers = getUniqueRegularMembers();
         
-        try {
-          if (excludeAdmins) {
-            const regularMembers = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
-            
-            setProgress(p => ({
-              ...p,
-              currentGroup: i + 1,
-              groupName: group.name,
-              currentMember: 0,
-              totalMembers: regularMembers.length,
-            }));
+        setProgress({
+          currentGroup: 1,
+          totalGroups: 1,
+          currentMember: 0,
+          totalMembers: uniqueMembers.length,
+          groupName: `${selectedGroups.length} grupo(s) - Envio individual`,
+          status: 'sending',
+          results: [],
+        });
 
-            for (let j = 0; j < regularMembers.length; j++) {
-              try {
-                await sendMediaToNumber(regularMembers[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
-              } catch (err) {
-                console.error(`Erro ao enviar mídia para ${regularMembers[j].jid}:`, err);
-              }
-              
-              setProgress(p => ({ ...p, currentMember: j + 1 }));
-              
-              if (j < regularMembers.length - 1) {
-                await delay(SEND_DELAY_MS);
-              }
-            }
-          } else {
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let j = 0; j < uniqueMembers.length; j++) {
+          try {
+            await sendMediaToNumber(uniqueMembers[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
+            successCount++;
+          } catch (err) {
+            console.error(`Erro ao enviar mídia para ${uniqueMembers[j].jid}:`, err);
+            failCount++;
+          }
+          
+          setProgress(p => ({ ...p, currentMember: j + 1 }));
+          
+          if (j < uniqueMembers.length - 1) {
+            await delay(SEND_DELAY_MS);
+          }
+        }
+
+        results.push({ 
+          groupName: `Envio individual (${uniqueMembers.length} contatos únicos)`, 
+          success: failCount === 0 
+        });
+
+        setProgress(p => ({ ...p, status: 'success', results }));
+
+        const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
+        if (failCount > 0) {
+          toast.warning(`${mediaLabel} enviado para ${successCount} contato(s). ${failCount} falha(s).`);
+        } else {
+          toast.success(`${mediaLabel} enviado para ${successCount} contato(s) únicos!`);
+        }
+      } else {
+        // Normal group send (message goes to each group)
+        setProgress({
+          currentGroup: 0,
+          totalGroups: selectedGroups.length,
+          currentMember: 0,
+          totalMembers: 0,
+          groupName: '',
+          status: 'sending',
+          results: [],
+        });
+
+        for (let i = 0; i < selectedGroups.length; i++) {
+          const group = selectedGroups[i];
+          
+          try {
             setProgress(p => ({
               ...p,
               currentGroup: i + 1,
@@ -426,33 +493,33 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
             await sendMediaToNumber(group.id, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
             setProgress(p => ({ ...p, currentMember: 1 }));
+
+            results.push({ groupName: group.name, success: true });
+          } catch (error) {
+            console.error(`Erro ao enviar mídia para grupo ${group.name}:`, error);
+            results.push({ 
+              groupName: group.name, 
+              success: false, 
+              error: error instanceof Error ? error.message : 'Erro desconhecido' 
+            });
           }
 
-          results.push({ groupName: group.name, success: true });
-        } catch (error) {
-          console.error(`Erro ao enviar mídia para grupo ${group.name}:`, error);
-          results.push({ 
-            groupName: group.name, 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Erro desconhecido' 
-          });
+          if (i < selectedGroups.length - 1) {
+            await delay(GROUP_DELAY_MS);
+          }
         }
 
-        if (i < selectedGroups.length - 1) {
-          await delay(GROUP_DELAY_MS);
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+
+        setProgress(p => ({ ...p, status: 'success', results }));
+
+        if (failCount > 0) {
+          toast.warning(`Enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
+        } else {
+          const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
+          toast.success(`${mediaLabel} enviado para ${successCount} grupo(s)!`);
         }
-      }
-
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
-
-      setProgress(p => ({ ...p, status: 'success', results }));
-
-      if (failCount > 0) {
-        toast.warning(`Enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
-      } else {
-        const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
-        toast.success(`${mediaLabel} enviado para ${successCount} grupo(s)!`);
       }
 
       clearFile();
@@ -630,11 +697,11 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const isOverLimit = characterCount > MAX_MESSAGE_LENGTH;
   const isSending = progress.status === 'sending';
 
-  const targetCount = excludeAdmins ? totalRegularMembers : selectedGroups.length;
+  const targetCount = excludeAdmins ? uniqueRegularMembersCount : selectedGroups.length;
 
   const isMediaValid = activeTab === 'media' && (selectedFile || mediaUrl.trim()) && (mediaType !== 'file' || filename.trim());
   const isTextValid = activeTab === 'text' && message.trim() && !isOverLimit;
-  const canSend = (isTextValid || isMediaValid) && selectedGroups.length > 0 && !(excludeAdmins && totalRegularMembers === 0);
+  const canSend = (isTextValid || isMediaValid) && selectedGroups.length > 0 && !(excludeAdmins && uniqueRegularMembersCount === 0);
   const canSchedule = activeTab === 'text' 
     ? (message.trim() && !isOverLimit && selectedGroups.length > 0)
     : (mediaUrl.trim() && selectedGroups.length > 0 && (mediaType !== 'file' || filename.trim()));
@@ -1014,7 +1081,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                     </Label>
                     <p className="text-xs text-muted-foreground">
                       {excludeAdmins 
-                        ? `Enviará para ${totalRegularMembers} membro${totalRegularMembers !== 1 ? 's' : ''} (não-admins)`
+                        ? `Enviará para ${uniqueRegularMembersCount} contato${uniqueRegularMembersCount !== 1 ? 's' : ''} único${uniqueRegularMembersCount !== 1 ? 's' : ''} (sem duplicatas)`
                         : `Enviará para ${selectedGroups.length} grupo${selectedGroups.length !== 1 ? 's' : ''}`
                       }
                     </p>
@@ -1028,6 +1095,13 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 />
               </div>
 
+              {/* Deduplication info when excludeAdmins is enabled */}
+              {excludeAdmins && totalRegularMembers > uniqueRegularMembersCount && (
+                <div className="p-3 bg-primary/5 rounded-lg border border-primary/20 text-sm text-muted-foreground">
+                  <span className="font-medium text-primary">Deduplicação ativa:</span> {totalRegularMembers - uniqueRegularMembersCount} contato(s) em múltiplos grupos receberão apenas 1 mensagem.
+                </div>
+              )}
+
               {/* Summary */}
               <div className="flex flex-wrap gap-2">
                 <Badge variant="outline" className="gap-1">
@@ -1036,7 +1110,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 </Badge>
                 <Badge variant="outline" className="gap-1">
                   <Users className="w-3 h-3" />
-                  {excludeAdmins ? totalRegularMembers : totalMembers} destinatário{(excludeAdmins ? totalRegularMembers : totalMembers) !== 1 ? 's' : ''}
+                  {excludeAdmins ? uniqueRegularMembersCount : totalMembers} destinatário{(excludeAdmins ? uniqueRegularMembersCount : totalMembers) !== 1 ? 's' : ''}
                 </Badge>
                 {activeTab === 'media' && (
                   <Badge variant="secondary" className="gap-1">
