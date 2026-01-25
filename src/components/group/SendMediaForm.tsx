@@ -64,19 +64,26 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
     setSelectedFile(file);
     setFilename(file.name);
 
-    // Create preview for images
+    // Create preview for images and audio
     if (mediaType === 'image' && ALLOWED_IMAGE_TYPES.includes(file.type)) {
       const reader = new FileReader();
       reader.onload = (e) => {
         setPreviewUrl(e.target?.result as string);
       };
       reader.readAsDataURL(file);
+    } else if (mediaType === 'audio' && ALLOWED_AUDIO_TYPES.includes(file.type)) {
+      const audioUrl = URL.createObjectURL(file);
+      setPreviewUrl(audioUrl);
     } else {
       setPreviewUrl(null);
     }
   };
 
   const clearFile = () => {
+    // Revoke object URL to prevent memory leaks
+    if (previewUrl && mediaType === 'audio') {
+      URL.revokeObjectURL(previewUrl);
+    }
     setSelectedFile(null);
     setPreviewUrl(null);
     setFilename('');
@@ -376,17 +383,30 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
             </div>
 
             {selectedFile && (
-              <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
-                <Mic className="w-5 h-5 text-muted-foreground" />
-                <span className="flex-1 truncate text-sm">{selectedFile.name}</span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="w-6 h-6"
-                  onClick={clearFile}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 p-3 bg-muted rounded-lg">
+                  <Mic className="w-5 h-5 text-muted-foreground" />
+                  <span className="flex-1 truncate text-sm">{selectedFile.name}</span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="w-6 h-6"
+                    onClick={clearFile}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+                
+                {previewUrl && (
+                  <div className="p-3 bg-muted/50 rounded-lg">
+                    <audio 
+                      src={previewUrl} 
+                      controls 
+                      className="w-full h-10"
+                      controlsList="nodownload"
+                    />
+                  </div>
+                )}
               </div>
             )}
 
