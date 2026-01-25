@@ -14,8 +14,18 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Plus, Search, Shield, User, Loader2, Users, Settings, Phone } from 'lucide-react';
+import { Plus, Search, Shield, User, Loader2, Users, Settings, Phone, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -66,6 +76,11 @@ const UsersManagement = () => {
   // Manage instances dialog state
   const [selectedUser, setSelectedUser] = useState<UserWithRole | null>(null);
   const [isManageInstancesOpen, setIsManageInstancesOpen] = useState(false);
+
+  // Delete user state
+  const [userToDelete, setUserToDelete] = useState<UserWithRole | null>(null);
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   // Redirect if not super admin
   if (!isSuperAdmin) {
@@ -222,6 +237,46 @@ const UsersManagement = () => {
   const handleOpenManageInstances = (user: UserWithRole) => {
     setSelectedUser(user);
     setIsManageInstancesOpen(true);
+  };
+
+  const handleOpenDeleteDialog = (user: UserWithRole) => {
+    setUserToDelete(user);
+    setIsDeleteDialogOpen(true);
+  };
+
+  const handleDeleteUser = async () => {
+    if (!userToDelete) return;
+
+    setIsDeleting(true);
+
+    try {
+      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-delete-user`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}`,
+        },
+        body: JSON.stringify({
+          user_id: userToDelete.id,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Erro ao excluir usuário');
+      }
+
+      toast.success('Usuário excluído com sucesso!');
+      setIsDeleteDialogOpen(false);
+      setUserToDelete(null);
+      fetchUsers();
+    } catch (error: any) {
+      console.error('Error deleting user:', error);
+      toast.error(error.message || 'Erro ao excluir usuário');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const filteredUsers = users.filter(
@@ -435,6 +490,14 @@ const UsersManagement = () => {
                 >
                   {user.is_super_admin ? 'Remover Admin' : 'Tornar Admin'}
                 </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => handleOpenDeleteDialog(user)}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
               </div>
             </div>
           ))}
@@ -448,6 +511,75 @@ const UsersManagement = () => {
         user={selectedUser}
         onSave={fetchUsers}
       />
+
+      {/* Delete User Confirmation Dialog */}
+      <AlertDialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-destructive" />
+              Excluir Usuário
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3">
+              <p>
+                Tem certeza que deseja excluir o usuário{' '}
+                <span className="font-semibold text-foreground">
+                  {userToDelete?.full_name || userToDelete?.email}
+                </span>
+                ?
+              </p>
+              
+              {userToDelete && userToDelete.instances.length > 0 && (
+                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20">
+                  <p className="text-sm font-medium text-destructive flex items-center gap-2 mb-2">
+                    <AlertTriangle className="w-4 h-4" />
+                    Atenção: Este usuário possui {userToDelete.instances.length} instância(s) atribuída(s)
+                  </p>
+                  <div className="flex flex-wrap gap-1">
+                    {userToDelete.instances.slice(0, 3).map((inst) => (
+                      <span
+                        key={inst.id}
+                        className="px-2 py-0.5 rounded bg-muted/50 text-xs"
+                      >
+                        {inst.name}
+                      </span>
+                    ))}
+                    {userToDelete.instances.length > 3 && (
+                      <span className="px-2 py-0.5 rounded bg-muted/50 text-xs text-muted-foreground">
+                        +{userToDelete.instances.length - 3} mais
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <p className="text-sm text-muted-foreground">
+                Esta ação é irreversível. O usuário será removido permanentemente do sistema, incluindo todos os seus dados e acessos.
+              </p>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteUser}
+              disabled={isDeleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {isDeleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Excluindo...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Excluir Usuário
+                </>
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };
