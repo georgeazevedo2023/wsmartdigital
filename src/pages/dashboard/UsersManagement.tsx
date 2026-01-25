@@ -79,7 +79,7 @@ const UsersManagement = () => {
 
       // Fetch instance counts
       const { data: instanceCounts, error: instancesError } = await supabase
-        .from('instances')
+        .from('user_instance_access')
         .select('user_id');
 
       if (instancesError) throw instancesError;
