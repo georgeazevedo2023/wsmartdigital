@@ -6,14 +6,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -23,7 +15,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Plus, Search, Shield, User, Loader2, Users, Settings } from 'lucide-react';
+import { Plus, Search, Shield, User, Loader2, Users, Settings, Phone } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
@@ -334,109 +326,118 @@ const UsersManagement = () => {
         </Dialog>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-        <Input
-          placeholder="Buscar usuários..."
-          className="pl-9"
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-        />
+      {/* Search Bar */}
+      <div className="flex items-center gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar usuários..."
+            className="pl-9 bg-card/50 backdrop-blur-sm border-border/50"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <span className="text-sm text-muted-foreground">
+          {filteredUsers.length} {filteredUsers.length === 1 ? 'usuário' : 'usuários'}
+        </span>
       </div>
 
-      {/* Users Table */}
+      {/* Users Grid */}
       {filteredUsers.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Users className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>Nenhum usuário encontrado</p>
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-16 h-16 rounded-full bg-muted/30 flex items-center justify-center mb-4">
+            <Users className="w-8 h-8 text-muted-foreground" />
+          </div>
+          <h3 className="font-semibold mb-1">Nenhum usuário encontrado</h3>
+          <p className="text-sm text-muted-foreground">Tente ajustar sua busca</p>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Usuário</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Instâncias</TableHead>
-                <TableHead>Permissão</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredUsers.map((user) => (
-                <TableRow key={user.id}>
-                  <TableCell>
-                    <div className="flex items-center gap-3">
-                      <Avatar className="w-8 h-8">
-                        <AvatarImage src={user.avatar_url || undefined} />
-                        <AvatarFallback className="bg-primary/10 text-primary text-sm">
-                          {user.full_name?.charAt(0)?.toUpperCase() || 'U'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <span className="font-medium">{user.full_name || 'Sem nome'}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">{user.email}</TableCell>
-                  <TableCell>
-                    {user.instances.length === 0 ? (
-                      <span className="text-muted-foreground text-sm">Nenhuma</span>
-                    ) : (
-                      <div className="flex flex-col gap-1 max-w-xs">
-                        {user.instances.slice(0, 3).map((inst) => (
-                          <div key={inst.id} className="text-sm">
-                            <span className="font-medium">{inst.name}</span>
-                            {inst.phone && (
-                              <span className="text-muted-foreground ml-2">
-                                ({formatPhone(inst.phone)})
-                              </span>
-                            )}
-                          </div>
-                        ))}
-                        {user.instances.length > 3 && (
-                          <span className="text-xs text-muted-foreground">
-                            +{user.instances.length - 3} mais
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {filteredUsers.map((user) => (
+            <div
+              key={user.id}
+              className="relative p-5 rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/30 transition-all"
+            >
+              {/* Header: Avatar + Name + Badge */}
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <Avatar className="w-12 h-12 border-2 border-primary/20">
+                    <AvatarImage src={user.avatar_url || undefined} />
+                    <AvatarFallback className="bg-primary/10 text-primary text-lg font-semibold">
+                      {user.full_name?.charAt(0)?.toUpperCase() || 'U'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold truncate">{user.full_name || 'Sem nome'}</h3>
+                    <p className="text-sm text-muted-foreground truncate">{user.email}</p>
+                  </div>
+                </div>
+                {user.is_super_admin ? (
+                  <Badge className="bg-primary/10 text-primary border-primary/20 gap-1 shrink-0">
+                    <Shield className="w-3 h-3" />
+                    Admin
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1 shrink-0">
+                    <User className="w-3 h-3" />
+                    Usuário
+                  </Badge>
+                )}
+              </div>
+
+              {/* Instances Section */}
+              <div className="mb-4">
+                <p className="text-xs text-muted-foreground mb-2 uppercase tracking-wide">
+                  Instâncias atribuídas
+                </p>
+                {user.instances.length === 0 ? (
+                  <p className="text-sm text-muted-foreground/70 italic">Nenhuma instância</p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {user.instances.slice(0, 4).map((inst) => (
+                      <div
+                        key={inst.id}
+                        className="px-3 py-1.5 rounded-lg bg-muted/50 border border-border/30 text-sm"
+                      >
+                        <span className="font-medium">{inst.name}</span>
+                        {inst.phone && (
+                          <span className="text-muted-foreground flex items-center gap-1 mt-0.5 text-xs">
+                            <Phone className="w-3 h-3" />
+                            {formatPhone(inst.phone)}
                           </span>
                         )}
                       </div>
+                    ))}
+                    {user.instances.length > 4 && (
+                      <div className="px-3 py-1.5 rounded-lg bg-muted/30 text-sm text-muted-foreground flex items-center">
+                        +{user.instances.length - 4} mais
+                      </div>
                     )}
-                  </TableCell>
-                  <TableCell>
-                    {user.is_super_admin ? (
-                      <Badge className="bg-primary/10 text-primary border-primary/20 gap-1">
-                        <Shield className="w-3 h-3" />
-                        Super Admin
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="gap-1">
-                        <User className="w-3 h-3" />
-                        Usuário
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleOpenManageInstances(user)}
-                      >
-                        <Settings className="w-4 h-4 mr-1" />
-                        Instâncias
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleToggleAdmin(user.id, user.is_super_admin)}
-                      >
-                        {user.is_super_admin ? 'Remover Admin' : 'Tornar Admin'}
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2 pt-3 border-t border-border/50">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => handleOpenManageInstances(user)}
+                >
+                  <Settings className="w-4 h-4 mr-1.5" />
+                  Gerenciar Instâncias
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => handleToggleAdmin(user.id, user.is_super_admin)}
+                >
+                  {user.is_super_admin ? 'Remover Admin' : 'Tornar Admin'}
+                </Button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
