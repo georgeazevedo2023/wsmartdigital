@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -8,7 +8,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { ArrowLeft, Users, Search } from 'lucide-react';
+import { ArrowLeft, Users, Search, MessageSquare } from 'lucide-react';
+import SendMessageForm from '@/components/group/SendMessageForm';
 
 interface Participant {
   id: string;
@@ -232,6 +233,24 @@ const GroupDetails = () => {
           </p>
         </div>
       </div>
+
+      {/* Seção de envio de mensagem */}
+      {instance && (
+        <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MessageSquare className="w-5 h-5" />
+              Enviar Mensagem
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <SendMessageForm
+              instanceToken={instance.token}
+              groupJid={group.id}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Busca */}
       <div className="relative max-w-md">

@@ -150,6 +150,45 @@ Deno.serve(async (req) => {
         break
       }
 
+      case 'send-message': {
+        // Send text message to group
+        if (!instanceToken || !groupjid || !body.message) {
+          return new Response(
+            JSON.stringify({ error: 'Token, groupjid and message required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Validate message length (max 4096 characters)
+        const message = String(body.message).trim()
+        if (message.length === 0) {
+          return new Response(
+            JSON.stringify({ error: 'Message cannot be empty' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        if (message.length > 4096) {
+          return new Response(
+            JSON.stringify({ error: 'Message too long (max 4096 characters)' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        console.log('Sending message to group:', groupjid)
+        response = await fetch(`${uazapiUrl}/message/send-text`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify({
+            groupjid: groupjid,
+            message: message,
+          }),
+        })
+        break
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: 'Invalid action' }),
