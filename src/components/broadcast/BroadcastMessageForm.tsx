@@ -725,6 +725,39 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
   const targetCount = excludeAdmins ? uniqueRegularMembersCount : selectedGroups.length;
 
+  // Calcular tempo estimado de envio
+  const getEstimatedTime = (): { min: number; max: number } | null => {
+    if (randomDelay === 'none' || targetCount <= 1) return null;
+    
+    const messagesCount = targetCount - 1; // Delays happen between messages, not after the last one
+    
+    if (randomDelay === '5-10') {
+      return {
+        min: messagesCount * 5,  // 5 seconds minimum
+        max: messagesCount * 10, // 10 seconds maximum
+      };
+    } else {
+      return {
+        min: messagesCount * 10, // 10 seconds minimum
+        max: messagesCount * 20, // 20 seconds maximum
+      };
+    }
+  };
+
+  const formatDuration = (seconds: number): string => {
+    if (seconds < 60) {
+      return `${seconds}s`;
+    }
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (remainingSeconds === 0) {
+      return `${minutes}min`;
+    }
+    return `${minutes}min ${remainingSeconds}s`;
+  };
+
+  const estimatedTime = getEstimatedTime();
+
   const isMediaValid = activeTab === 'media' && (selectedFile || mediaUrl.trim()) && (mediaType !== 'file' || filename.trim());
   const isTextValid = activeTab === 'text' && message.trim() && !isOverLimit;
   const canSend = (isTextValid || isMediaValid) && selectedGroups.length > 0 && !(excludeAdmins && uniqueRegularMembersCount === 0);
@@ -1164,6 +1197,16 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                     10-20 seg
                   </Button>
                 </div>
+
+                {/* Estimated time indicator */}
+                {estimatedTime && (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground bg-accent/50 rounded-md px-3 py-2">
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>
+                      Tempo estimado: <span className="font-medium text-foreground">{formatDuration(estimatedTime.min)} - {formatDuration(estimatedTime.max)}</span>
+                    </span>
+                  </div>
+                )}
               </div>
 
               {/* Deduplication info when excludeAdmins is enabled */}
