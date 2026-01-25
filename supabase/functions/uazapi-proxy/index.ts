@@ -213,102 +213,66 @@ Deno.serve(async (req) => {
         )
       }
 
-      case 'send-image': {
-        // Send image to group
-        if (!instanceToken || !groupjid || !body.mediaUrl) {
+      case 'send-media': {
+        // Send media (image or document) to group using unified /send/media endpoint
+        if (!instanceToken || !groupjid || !body.mediaUrl || !body.mediaType) {
           return new Response(
-            JSON.stringify({ error: 'Token, groupjid and mediaUrl required' }),
+            JSON.stringify({ error: 'Token, groupjid, mediaUrl and mediaType required' }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
 
-        // Check if it's a base64 or URL
+        const mediaEndpoint = `${uazapiUrl}/send/media`
+        
+        // Check if it's base64 and extract only the data part (remove prefix like "data:image/png;base64,")
         const isBase64 = body.mediaUrl.startsWith('data:')
-        const imageEndpoint = isBase64 ? '/send/imageBase64' : '/send/imageUrl'
-        const imageUrl = `${uazapiUrl}${imageEndpoint}`
+        const fileValue = isBase64 
+          ? body.mediaUrl.split(',')[1] || body.mediaUrl  // Get only base64 content
+          : body.mediaUrl  // URL as-is
         
-        // UAZAPI uses 'imageUrl' field for URL, 'image' for base64
-        const imageBody = isBase64 
-          ? { number: groupjid, image: body.mediaUrl, caption: body.caption || '' }
-          : { number: groupjid, imageUrl: body.mediaUrl, caption: body.caption || '' }
+        // Build payload according to UAZAPI documentation
+        const mediaBody: Record<string, unknown> = {
+          number: groupjid,
+          type: body.mediaType,  // 'image' or 'document'
+          file: fileValue,
+          text: body.caption || '',  // UAZAPI uses 'text' not 'caption'
+        }
         
-        console.log('Sending image to:', imageUrl)
+        // For documents, add the filename
+        if (body.mediaType === 'document' && body.filename) {
+          mediaBody.docName = body.filename
+        }
+        
+        console.log('Sending media to:', mediaEndpoint)
+        console.log('Media type:', body.mediaType)
         console.log('Is Base64:', isBase64)
         console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
         
-        const imageResponse = await fetch(imageUrl, {
+        const mediaResponse = await fetch(mediaEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'token': instanceToken,
           },
-          body: JSON.stringify(imageBody),
+          body: JSON.stringify(mediaBody),
         })
         
-        console.log('Image response status:', imageResponse.status)
+        console.log('Media response status:', mediaResponse.status)
         
-        const imageRawText = await imageResponse.text()
-        console.log('Image raw response:', imageRawText.substring(0, 200))
+        const mediaRawText = await mediaResponse.text()
+        console.log('Media raw response:', mediaRawText.substring(0, 300))
         
-        let imageData: unknown
+        let mediaData: unknown
         try {
-          imageData = JSON.parse(imageRawText)
+          mediaData = JSON.parse(mediaRawText)
         } catch {
-          imageData = { raw: imageRawText }
+          mediaData = { raw: mediaRawText }
         }
         
         return new Response(
-          JSON.stringify(imageData),
+          JSON.stringify(mediaData),
           { 
-            status: imageResponse.status, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
-          }
-        )
-      }
-
-      case 'send-file': {
-        // Send file to group
-        if (!instanceToken || !groupjid || !body.mediaUrl || !body.filename) {
-          return new Response(
-            JSON.stringify({ error: 'Token, groupjid, mediaUrl and filename required' }),
-            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          )
-        }
-
-        const fileUrl = `${uazapiUrl}/send/file`
-        const fileBody = {
-          number: groupjid,
-          file: body.mediaUrl,
-          filename: body.filename,
-          caption: body.caption || '',
-        }
-        
-        console.log('Sending file to:', fileUrl)
-        console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
-        
-        const fileResponse = await fetch(fileUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'token': instanceToken,
-          },
-          body: JSON.stringify(fileBody),
-        })
-        
-        console.log('File response status:', fileResponse.status)
-        
-        const fileRawText = await fileResponse.text()
-        let fileData: unknown
-        try {
-          fileData = JSON.parse(fileRawText)
-        } catch {
-          fileData = { raw: fileRawText }
-        }
-        
-        return new Response(
-          JSON.stringify(fileData),
-          { 
-            status: fileResponse.status, 
+            status: mediaResponse.status, 
             headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
           }
         )
