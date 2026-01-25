@@ -124,7 +124,15 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        const errorMsg = errorData.error || errorData.message || 'Erro ao enviar mídia';
+        let errorMsg = errorData.error || errorData.message || 'Erro ao enviar mídia';
+        
+        // Improve error messages for common issues
+        if (errorMsg.includes('certificate') || errorMsg.includes('tls')) {
+          errorMsg = 'URL com certificado SSL inválido. Tente fazer upload direto ou usar outra URL.';
+        } else if (errorMsg.includes('fetch') && errorMsg.includes('URL')) {
+          errorMsg = 'Não foi possível acessar a URL. Verifique se o link é válido ou faça upload direto.';
+        }
+        
         throw new Error(errorMsg);
       }
 
