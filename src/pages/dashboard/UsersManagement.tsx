@@ -23,11 +23,18 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Plus, Search, Shield, User, Loader2, Trash2, Users } from 'lucide-react';
+import { Plus, Search, Shield, User, Loader2, Users, Settings } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { Navigate } from 'react-router-dom';
+import ManageUserInstancesDialog from '@/components/dashboard/ManageUserInstancesDialog';
+
+interface InstanceInfo {
+  id: string;
+  name: string;
+  phone: string | null;
+}
 
 interface UserWithRole {
   id: string;
@@ -37,7 +44,20 @@ interface UserWithRole {
   created_at: string;
   is_super_admin: boolean;
   instance_count: number;
+  instances: InstanceInfo[];
 }
+
+const formatPhone = (jid: string | null): string => {
+  if (!jid) return '';
+  const clean = jid.replace(/@s\.whatsapp\.net$/, '');
+  if (clean.length === 12) {
+    return `${clean.slice(0, 2)} ${clean.slice(2, 4)} ${clean.slice(4, 8)}-${clean.slice(8)}`;
+  }
+  if (clean.length === 13) {
+    return `${clean.slice(0, 2)} ${clean.slice(2, 4)} ${clean.slice(4, 9)}-${clean.slice(9)}`;
+  }
+  return clean;
+};
 
 const UsersManagement = () => {
   const { isSuperAdmin } = useAuth();
@@ -50,6 +70,10 @@ const UsersManagement = () => {
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserName, setNewUserName] = useState('');
   const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
+  
+  // Manage instances dialog state
+  const [selectedUser, setSelectedUser] = useState<UserWithRole | null>(null);
+  const [isManageInstancesOpen, setIsManageInstancesOpen] = useState(false);
 
   // Redirect if not super admin
   if (!isSuperAdmin) {
@@ -77,22 +101,42 @@ const UsersManagement = () => {
 
       if (rolesError) throw rolesError;
 
-      // Fetch instance counts
-      const { data: instanceCounts, error: instancesError } = await supabase
+      // Fetch instance access with instance details
+      const { data: instanceAccess, error: instancesError } = await supabase
         .from('user_instance_access')
-        .select('user_id');
+        .select(`
+          user_id,
+          instances (
+            id,
+            name,
+            owner_jid
+          )
+        `);
 
       if (instancesError) throw instancesError;
 
       // Combine data
       const usersWithRoles: UserWithRole[] = (profiles || []).map((profile) => {
         const userRoles = roles?.filter((r) => r.user_id === profile.id) || [];
-        const userInstances = instanceCounts?.filter((i) => i.user_id === profile.id) || [];
+        const userInstanceAccess = instanceAccess?.filter((i) => i.user_id === profile.id) || [];
+        
+        const instances: InstanceInfo[] = userInstanceAccess
+          .map((access) => {
+            const inst = access.instances as unknown as { id: string; name: string; owner_jid: string | null } | null;
+            if (!inst) return null;
+            return {
+              id: inst.id,
+              name: inst.name,
+              phone: inst.owner_jid,
+            };
+          })
+          .filter((inst): inst is InstanceInfo => inst !== null);
 
         return {
           ...profile,
           is_super_admin: userRoles.some((r) => r.role === 'super_admin'),
-          instance_count: userInstances.length,
+          instance_count: instances.length,
+          instances,
         };
       });
 
@@ -176,6 +220,11 @@ const UsersManagement = () => {
       console.error('Error toggling admin:', error);
       toast.error('Erro ao alterar permissões');
     }
+  };
+
+  const handleOpenManageInstances = (user: UserWithRole) => {
+    setSelectedUser(user);
+    setIsManageInstancesOpen(true);
   };
 
   const filteredUsers = users.filter(
@@ -325,7 +374,27 @@ const UsersManagement = () => {
                   </TableCell>
                   <TableCell className="text-muted-foreground">{user.email}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{user.instance_count}</Badge>
+                    {user.instances.length === 0 ? (
+                      <span className="text-muted-foreground text-sm">Nenhuma</span>
+                    ) : (
+                      <div className="flex flex-col gap-1 max-w-xs">
+                        {user.instances.slice(0, 3).map((inst) => (
+                          <div key={inst.id} className="text-sm">
+                            <span className="font-medium">{inst.name}</span>
+                            {inst.phone && (
+                              <span className="text-muted-foreground ml-2">
+                                ({formatPhone(inst.phone)})
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                        {user.instances.length > 3 && (
+                          <span className="text-xs text-muted-foreground">
+                            +{user.instances.length - 3} mais
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     {user.is_super_admin ? (
@@ -341,13 +410,23 @@ const UsersManagement = () => {
                     )}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleToggleAdmin(user.id, user.is_super_admin)}
-                    >
-                      {user.is_super_admin ? 'Remover Admin' : 'Tornar Admin'}
-                    </Button>
+                    <div className="flex items-center justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleOpenManageInstances(user)}
+                      >
+                        <Settings className="w-4 h-4 mr-1" />
+                        Instâncias
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleToggleAdmin(user.id, user.is_super_admin)}
+                      >
+                        {user.is_super_admin ? 'Remover Admin' : 'Tornar Admin'}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -355,6 +434,14 @@ const UsersManagement = () => {
           </Table>
         </div>
       )}
+
+      {/* Manage User Instances Dialog */}
+      <ManageUserInstancesDialog
+        open={isManageInstancesOpen}
+        onOpenChange={setIsManageInstancesOpen}
+        user={selectedUser}
+        onSave={fetchUsers}
+      />
     </div>
   );
 };
