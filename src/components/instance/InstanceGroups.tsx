@@ -47,24 +47,26 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [syncAttempt, setSyncAttempt] = useState(0);
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
   const isConnected = instance.status === 'connected' || instance.status === 'online';
 
   useEffect(() => {
     if (isConnected) {
-      fetchGroups();
+      fetchGroups().then(() => setLastUpdate(new Date()));
     } else {
       setLoading(false);
     }
   }, [instance.id, isConnected]);
 
-  const fetchGroups = async () => {
+  const fetchGroups = async (): Promise<number> => {
     try {
       setLoading(true);
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
         toast.error('Sessão expirada');
-        return;
+        return 0;
       }
 
       const response = await fetch(
@@ -144,13 +146,16 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
         });
         console.log('Formatted groups:', formattedGroups.length, 'first:', formattedGroups[0]);
         setGroups(formattedGroups);
+        return formattedGroups.length;
       } else {
         console.log('No groups found in response');
         setGroups([]);
+        return 0;
       }
     } catch (error) {
       console.error('Error fetching groups:', error);
       toast.error('Erro ao carregar grupos');
+      return 0;
     } finally {
       setLoading(false);
     }
@@ -158,9 +163,38 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await fetchGroups();
+    const previousCount = groups.length;
+    let attempts = 0;
+    const maxAttempts = 3;
+    let currentCount = previousCount;
+    
+    while (attempts < maxAttempts) {
+      attempts++;
+      setSyncAttempt(attempts);
+      
+      currentCount = await fetchGroups();
+      
+      // Se encontrou mais grupos, para
+      if (currentCount > previousCount) {
+        break;
+      }
+      
+      // Aguardar antes da próxima tentativa
+      if (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    
+    setSyncAttempt(0);
     setRefreshing(false);
-    toast.success('Grupos atualizados');
+    setLastUpdate(new Date());
+    
+    if (currentCount > previousCount) {
+      const newGroups = currentCount - previousCount;
+      toast.success(`${newGroups} novo(s) grupo(s) encontrado(s)!`);
+    } else {
+      toast.info('Lista atualizada. Novos grupos podem levar alguns segundos para sincronizar com a API do WhatsApp.');
+    }
   };
 
   const filteredGroups = groups.filter((group) =>
@@ -234,16 +268,23 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
           disabled={refreshing}
         >
           <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          Atualizar
+          {refreshing && syncAttempt > 0 
+            ? `Sincronizando... (${syncAttempt}/3)` 
+            : 'Atualizar'}
         </Button>
       </div>
 
-      {/* Contador de grupos */}
-      <div className="flex items-center gap-2">
+      {/* Contador de grupos e última atualização */}
+      <div className="flex items-center gap-4">
         <Badge variant="secondary" className="gap-1">
           <MessageSquare className="w-3 h-3" />
           {filteredGroups.length} grupo{filteredGroups.length !== 1 ? 's' : ''}
         </Badge>
+        {lastUpdate && (
+          <span className="text-xs text-muted-foreground">
+            Última atualização: {lastUpdate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        )}
       </div>
 
       {/* Lista de grupos */}
