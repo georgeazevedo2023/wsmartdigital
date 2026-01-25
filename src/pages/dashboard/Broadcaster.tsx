@@ -1,0 +1,191 @@
+import { useState } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft } from 'lucide-react';
+import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
+import GroupSelector, { Group } from '@/components/broadcast/GroupSelector';
+import BroadcastMessageForm from '@/components/broadcast/BroadcastMessageForm';
+
+const Broadcaster = () => {
+  const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
+  const [selectedGroups, setSelectedGroups] = useState<Group[]>([]);
+
+  const handleInstanceSelect = (instance: Instance) => {
+    setSelectedInstance(instance);
+    setSelectedGroups([]); // Reset groups when changing instance
+  };
+
+  const handleComplete = () => {
+    setSelectedGroups([]);
+  };
+
+  const handleBack = () => {
+    if (selectedGroups.length > 0) {
+      setSelectedGroups([]);
+    } else if (selectedInstance) {
+      setSelectedInstance(null);
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Disparador</h1>
+          <p className="text-muted-foreground">
+            Envie mensagens para múltiplos grupos de uma vez
+          </p>
+        </div>
+        
+        {(selectedInstance || selectedGroups.length > 0) && (
+          <Button variant="ghost" size="sm" onClick={handleBack}>
+            <ArrowLeft className="w-4 h-4 mr-2" />
+            Voltar
+          </Button>
+        )}
+      </div>
+
+      {/* Progress Steps */}
+      <div className="flex items-center gap-2 text-sm">
+        <div className={`flex items-center gap-2 ${selectedInstance ? 'text-primary' : 'text-muted-foreground'}`}>
+          {selectedInstance ? (
+            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+              <Check className="w-4 h-4 text-primary-foreground" />
+            </div>
+          ) : (
+            <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">1</div>
+          )}
+          <span className="font-medium">Instância</span>
+        </div>
+        
+        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        
+        <div className={`flex items-center gap-2 ${selectedGroups.length > 0 ? 'text-primary' : selectedInstance ? 'text-foreground' : 'text-muted-foreground'}`}>
+          {selectedGroups.length > 0 ? (
+            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+              <Check className="w-4 h-4 text-primary-foreground" />
+            </div>
+          ) : (
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${selectedInstance ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
+          )}
+          <span className="font-medium">Grupos</span>
+          {selectedGroups.length > 0 && (
+            <Badge variant="secondary" className="text-xs">{selectedGroups.length}</Badge>
+          )}
+        </div>
+        
+        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        
+        <div className={`flex items-center gap-2 ${selectedGroups.length > 0 ? 'text-foreground' : 'text-muted-foreground'}`}>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${selectedGroups.length > 0 ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
+          <span className="font-medium">Mensagem</span>
+        </div>
+      </div>
+
+      {/* Step 1: Instance Selection */}
+      {!selectedInstance && (
+        <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Server className="w-5 h-5" />
+              Selecionar Instância
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <InstanceSelector
+              selectedInstance={selectedInstance}
+              onSelect={handleInstanceSelect}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Selected Instance Badge */}
+      {selectedInstance && (
+        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+            <Server className="w-5 h-5 text-primary" />
+          </div>
+          <div className="flex-1">
+            <p className="font-medium">{selectedInstance.name}</p>
+            <p className="text-xs text-muted-foreground">Instância selecionada</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={() => setSelectedInstance(null)}>
+            Trocar
+          </Button>
+        </div>
+      )}
+
+      {/* Step 2: Group Selection */}
+      {selectedInstance && selectedGroups.length === 0 && (
+        <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Selecionar Grupos
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <GroupSelector
+              instance={selectedInstance}
+              selectedGroups={selectedGroups}
+              onSelectionChange={setSelectedGroups}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 3: Message Composition */}
+      {selectedInstance && selectedGroups.length > 0 && (
+        <div className="space-y-4">
+          {/* Selected Groups Summary */}
+          <Card className="border-border/50 bg-muted/30">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <Users className="w-5 h-5 text-muted-foreground" />
+                  <div>
+                    <p className="font-medium">
+                      {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''} selecionado{selectedGroups.length !== 1 ? 's' : ''}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedGroups.reduce((acc, g) => acc + g.size, 0)} membros no total
+                    </p>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setSelectedGroups([])}>
+                  Alterar seleção
+                </Button>
+              </div>
+              
+              {/* Group names preview */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {selectedGroups.slice(0, 5).map((group) => (
+                  <Badge key={group.id} variant="secondary" className="text-xs">
+                    {group.name}
+                  </Badge>
+                ))}
+                {selectedGroups.length > 5 && (
+                  <Badge variant="outline" className="text-xs">
+                    +{selectedGroups.length - 5} mais
+                  </Badge>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Message Form */}
+          <BroadcastMessageForm
+            instance={selectedInstance}
+            selectedGroups={selectedGroups}
+            onComplete={handleComplete}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default Broadcaster;
