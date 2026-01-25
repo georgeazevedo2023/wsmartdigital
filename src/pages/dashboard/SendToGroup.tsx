@@ -11,11 +11,18 @@ import { ArrowLeft, Users, MessageSquare, Image } from 'lucide-react';
 import SendMessageForm from '@/components/group/SendMessageForm';
 import SendMediaForm from '@/components/group/SendMediaForm';
 
+export interface Participant {
+  jid: string;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+}
+
 interface Group {
   id: string;
   name: string;
   pictureUrl?: string;
   size: number;
+  participants: Participant[];
 }
 
 interface Instance {
@@ -31,6 +38,7 @@ const SendToGroup = () => {
   const [group, setGroup] = useState<Group | null>(null);
   const [instance, setInstance] = useState<Instance | null>(null);
   const [loading, setLoading] = useState(true);
+  const [participants, setParticipants] = useState<Participant[]>([]);
 
   useEffect(() => {
     fetchInstanceAndGroup();
@@ -108,14 +116,23 @@ const SendToGroup = () => {
         return;
       }
 
-      // Formatar grupo
+      // Formatar grupo e participantes
       const rawParticipants = targetGroup.Participants || targetGroup.participants || [];
+      
+      const formattedParticipants: Participant[] = rawParticipants.map((p: any) => ({
+        jid: p.JID || p.jid || p.id || '',
+        isAdmin: p.IsAdmin || p.isAdmin || false,
+        isSuperAdmin: p.IsSuperAdmin || p.isSuperAdmin || false,
+      }));
+
+      setParticipants(formattedParticipants);
 
       setGroup({
         id: targetGroup.JID || targetGroup.jid || targetGroup.id,
         name: targetGroup.Name || targetGroup.name || targetGroup.Subject || targetGroup.Topic || targetGroup.subject || 'Grupo sem nome',
         pictureUrl: targetGroup.profilePicUrl || targetGroup.pictureUrl || targetGroup.PictureUrl,
         size: rawParticipants.length || targetGroup.ParticipantCount || 0,
+        participants: formattedParticipants,
       });
     } catch (error) {
       console.error('Error fetching group:', error);
@@ -204,6 +221,7 @@ const SendToGroup = () => {
               <SendMessageForm
                 instanceToken={instance.token}
                 groupJid={group.id}
+                participants={participants}
               />
             </TabsContent>
             
@@ -211,6 +229,7 @@ const SendToGroup = () => {
               <SendMediaForm
                 instanceToken={instance.token}
                 groupJid={group.id}
+                participants={participants}
               />
             </TabsContent>
           </Tabs>
