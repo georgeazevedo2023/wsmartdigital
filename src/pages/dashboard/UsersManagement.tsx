@@ -101,19 +101,24 @@ const UsersManagement = () => {
 
       if (rolesError) throw rolesError;
 
-      // Fetch instance access with instance details
-      const { data: instanceAccess, error: instancesError } = await supabase
+      // Fetch instance access
+      const { data: instanceAccess, error: accessError } = await supabase
         .from('user_instance_access')
-        .select(`
-          user_id,
-          instances (
-            id,
-            name,
-            owner_jid
-          )
-        `);
+        .select('user_id, instance_id');
+
+      if (accessError) throw accessError;
+
+      // Fetch all instances
+      const { data: allInstances, error: instancesError } = await supabase
+        .from('instances')
+        .select('id, name, owner_jid');
 
       if (instancesError) throw instancesError;
+
+      // Create instance lookup map
+      const instanceMap = new Map(
+        (allInstances || []).map((inst) => [inst.id, inst])
+      );
 
       // Combine data
       const usersWithRoles: UserWithRole[] = (profiles || []).map((profile) => {
@@ -122,7 +127,7 @@ const UsersManagement = () => {
         
         const instances: InstanceInfo[] = userInstanceAccess
           .map((access) => {
-            const inst = access.instances as unknown as { id: string; name: string; owner_jid: string | null } | null;
+            const inst = instanceMap.get(access.instance_id);
             if (!inst) return null;
             return {
               id: inst.id,
