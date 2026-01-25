@@ -38,8 +38,15 @@ import {
   Loader2,
   BookMarked,
   Search,
-  X
+  X,
+  FolderOpen,
+  Plus
 } from 'lucide-react';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { MessageTemplate, useMessageTemplates } from '@/hooks/useMessageTemplates';
 
 interface TemplateSelectorProps {
@@ -88,16 +95,28 @@ const getMediaLabel = (type: string) => {
 };
 
 export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelectorProps) {
-  const { templates, isLoading, createTemplate, deleteTemplate } = useMessageTemplates();
+  const { templates, categories, isLoading, createTemplate, deleteTemplate, updateTemplate } = useMessageTemplates();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [templateName, setTemplateName] = useState('');
+  const [templateCategory, setTemplateCategory] = useState('');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [showNewCategory, setShowNewCategory] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
+  const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set(['uncategorized']));
 
   const filteredTemplates = useMemo(() => {
     let filtered = templates;
+
+    // Filter by category
+    if (filterCategory === 'uncategorized') {
+      filtered = filtered.filter(t => !t.category);
+    } else if (filterCategory !== 'all') {
+      filtered = filtered.filter(t => t.category === filterCategory);
+    }
 
     // Filter by type
     if (filterType === 'text') {
@@ -113,15 +132,47 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
       const query = searchQuery.toLowerCase();
       filtered = filtered.filter(t => 
         t.name.toLowerCase().includes(query) ||
-        (t.content && t.content.toLowerCase().includes(query))
+        (t.content && t.content.toLowerCase().includes(query)) ||
+        (t.category && t.category.toLowerCase().includes(query))
       );
     }
 
     return filtered;
-  }, [templates, searchQuery, filterType]);
+  }, [templates, searchQuery, filterType, filterCategory]);
 
-  const textTemplates = filteredTemplates.filter(t => t.message_type === 'text');
-  const mediaTemplates = filteredTemplates.filter(t => t.message_type !== 'text');
+  // Group templates by category
+  const groupedTemplates = useMemo(() => {
+    const groups: Record<string, typeof filteredTemplates> = {};
+    
+    filteredTemplates.forEach(template => {
+      const category = template.category || 'Sem categoria';
+      if (!groups[category]) {
+        groups[category] = [];
+      }
+      groups[category].push(template);
+    });
+
+    // Sort categories alphabetically, but keep "Sem categoria" at the end
+    const sortedKeys = Object.keys(groups).sort((a, b) => {
+      if (a === 'Sem categoria') return 1;
+      if (b === 'Sem categoria') return -1;
+      return a.localeCompare(b);
+    });
+
+    return { groups, sortedKeys };
+  }, [filteredTemplates]);
+
+  const toggleCategory = (category: string) => {
+    setExpandedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
 
   const handleSave = async () => {
     if (!templateName.trim()) return;
@@ -129,16 +180,22 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
     const templateData = onSave();
     if (!templateData) return;
 
+    const finalCategory = showNewCategory ? newCategoryName.trim() : templateCategory;
+
     setIsSaving(true);
     const result = await createTemplate({
       ...templateData,
       name: templateName.trim(),
+      category: finalCategory || undefined,
     });
     setIsSaving(false);
 
     if (result) {
       setShowSaveDialog(false);
       setTemplateName('');
+      setTemplateCategory('');
+      setNewCategoryName('');
+      setShowNewCategory(false);
     }
   };
 
@@ -148,6 +205,37 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
     await deleteTemplate(id);
     setDeletingId(null);
   };
+
+  const renderTemplateItem = (template: typeof templates[0]) => (
+    <DropdownMenuItem
+      key={template.id}
+      onClick={() => onSelect(template)}
+      className="flex items-center justify-between group pl-6"
+    >
+      <div className="flex items-center gap-2 flex-1 min-w-0">
+        {getMediaIcon(template.message_type)}
+        <span className="truncate">{template.name}</span>
+        {template.message_type !== 'text' && (
+          <span className="text-xs text-muted-foreground">
+            ({getMediaLabel(template.message_type)})
+          </span>
+        )}
+      </div>
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={(e) => handleDelete(e, template.id)}
+        disabled={deletingId === template.id}
+      >
+        {deletingId === template.id ? (
+          <Loader2 className="w-3 h-3 animate-spin" />
+        ) : (
+          <Trash2 className="w-3 h-3 text-destructive" />
+        )}
+      </Button>
+    </DropdownMenuItem>
+  );
 
   return (
     <>
@@ -164,7 +252,7 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="start" className="w-80">
-            {/* Search and Filter Header */}
+            {/* Category Filter */}
             <div className="p-2 space-y-2 border-b">
               <div className="relative">
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -185,21 +273,35 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
                   </Button>
                 )}
               </div>
-              <Select value={filterType} onValueChange={setFilterType}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue placeholder="Filtrar por tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos os tipos</SelectItem>
-                  <SelectItem value="text">Texto</SelectItem>
-                  <SelectItem value="media">Mídia (todos)</SelectItem>
-                  <SelectItem value="image">Imagem</SelectItem>
-                  <SelectItem value="video">Vídeo</SelectItem>
-                  <SelectItem value="audio">Áudio</SelectItem>
-                  <SelectItem value="ptt">Voz (PTT)</SelectItem>
-                  <SelectItem value="document">Documento</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="flex gap-2">
+                <Select value={filterCategory} onValueChange={setFilterCategory}>
+                  <SelectTrigger className="h-8 text-sm flex-1">
+                    <SelectValue placeholder="Categoria" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todas categorias</SelectItem>
+                    <SelectItem value="uncategorized">Sem categoria</SelectItem>
+                    {categories.map(cat => (
+                      <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filterType} onValueChange={setFilterType}>
+                  <SelectTrigger className="h-8 text-sm flex-1">
+                    <SelectValue placeholder="Tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos tipos</SelectItem>
+                    <SelectItem value="text">Texto</SelectItem>
+                    <SelectItem value="media">Mídia</SelectItem>
+                    <SelectItem value="image">Imagem</SelectItem>
+                    <SelectItem value="video">Vídeo</SelectItem>
+                    <SelectItem value="audio">Áudio</SelectItem>
+                    <SelectItem value="ptt">Voz (PTT)</SelectItem>
+                    <SelectItem value="document">Documento</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             {isLoading ? (
@@ -215,79 +317,34 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
                 Nenhum template encontrado
               </div>
             ) : (
-              <ScrollArea className="max-h-60">
-                {textTemplates.length > 0 && (
-                  <>
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      Texto
-                    </DropdownMenuLabel>
-                    {textTemplates.map((template) => (
-                      <DropdownMenuItem
-                        key={template.id}
-                        onClick={() => onSelect(template)}
-                        className="flex items-center justify-between group"
-                      >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <FileText className="w-4 h-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate">{template.name}</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => handleDelete(e, template.id)}
-                          disabled={deletingId === template.id}
-                        >
-                          {deletingId === template.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-3 h-3 text-destructive" />
-                          )}
-                        </Button>
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
-
-                {textTemplates.length > 0 && mediaTemplates.length > 0 && (
-                  <DropdownMenuSeparator />
-                )}
-
-                {mediaTemplates.length > 0 && (
-                  <>
-                    <DropdownMenuLabel className="text-xs text-muted-foreground">
-                      Mídia
-                    </DropdownMenuLabel>
-                    {mediaTemplates.map((template) => (
-                      <DropdownMenuItem
-                        key={template.id}
-                        onClick={() => onSelect(template)}
-                        className="flex items-center justify-between group"
-                      >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          {getMediaIcon(template.message_type)}
-                          <span className="truncate">{template.name}</span>
+              <ScrollArea className="max-h-72">
+                {groupedTemplates.sortedKeys.map((category) => (
+                  <Collapsible
+                    key={category}
+                    open={expandedCategories.has(category)}
+                    onOpenChange={() => toggleCategory(category)}
+                  >
+                    <CollapsibleTrigger asChild>
+                      <div className="flex items-center justify-between px-2 py-1.5 hover:bg-accent cursor-pointer">
+                        <div className="flex items-center gap-2 text-sm font-medium">
+                          <FolderOpen className="w-4 h-4 text-muted-foreground" />
+                          <span>{category}</span>
                           <span className="text-xs text-muted-foreground">
-                            ({getMediaLabel(template.message_type)})
+                            ({groupedTemplates.groups[category].length})
                           </span>
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={(e) => handleDelete(e, template.id)}
-                          disabled={deletingId === template.id}
-                        >
-                          {deletingId === template.id ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Trash2 className="w-3 h-3 text-destructive" />
-                          )}
-                        </Button>
-                      </DropdownMenuItem>
-                    ))}
-                  </>
-                )}
+                        <ChevronDown 
+                          className={`w-4 h-4 text-muted-foreground transition-transform ${
+                            expandedCategories.has(category) ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </div>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      {groupedTemplates.groups[category].map(renderTemplateItem)}
+                    </CollapsibleContent>
+                  </Collapsible>
+                ))}
               </ScrollArea>
             )}
           </DropdownMenuContent>
@@ -309,7 +366,7 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
           <DialogHeader>
             <DialogTitle>Salvar como Template</DialogTitle>
             <DialogDescription>
-              Dê um nome para este template para reutilizá-lo depois.
+              Dê um nome e categoria para este template.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
@@ -320,12 +377,54 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
                 placeholder="Ex: Boas-vindas, Promoção..."
                 value={templateName}
                 onChange={(e) => setTemplateName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && templateName.trim()) {
-                    handleSave();
-                  }
-                }}
               />
+            </div>
+            <div className="space-y-2">
+              <Label>Categoria (opcional)</Label>
+              {!showNewCategory ? (
+                <div className="flex gap-2">
+                  <Select value={templateCategory} onValueChange={setTemplateCategory}>
+                    <SelectTrigger className="flex-1">
+                      <SelectValue placeholder="Selecione uma categoria" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Sem categoria</SelectItem>
+                      {categories.map(cat => (
+                        <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowNewCategory(true)}
+                    title="Criar nova categoria"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Nome da nova categoria..."
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => {
+                      setShowNewCategory(false);
+                      setNewCategoryName('');
+                    }}
+                    title="Cancelar"
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

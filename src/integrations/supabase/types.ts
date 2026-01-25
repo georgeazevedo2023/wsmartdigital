@@ -52,6 +52,7 @@ export type Database = {
       }
       message_templates: {
         Row: {
+          category: string | null
           content: string | null
           created_at: string
           filename: string | null
@@ -63,6 +64,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          category?: string | null
           content?: string | null
           created_at?: string
           filename?: string | null
@@ -74,6 +76,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          category?: string | null
           content?: string | null
           created_at?: string
           filename?: string | null

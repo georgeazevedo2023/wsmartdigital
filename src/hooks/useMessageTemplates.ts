@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -10,12 +10,14 @@ export interface MessageTemplate {
   message_type: string;
   media_url: string | null;
   filename: string | null;
+  category: string | null;
   created_at: string;
   updated_at: string;
 }
 
 interface UseMessageTemplatesReturn {
   templates: MessageTemplate[];
+  categories: string[];
   isLoading: boolean;
   createTemplate: (template: {
     name: string;
@@ -23,7 +25,13 @@ interface UseMessageTemplatesReturn {
     message_type: string;
     media_url?: string;
     filename?: string;
+    category?: string;
   }) => Promise<MessageTemplate | null>;
+  updateTemplate: (id: string, updates: {
+    name?: string;
+    content?: string;
+    category?: string;
+  }) => Promise<boolean>;
   deleteTemplate: (id: string) => Promise<boolean>;
   refetch: () => Promise<void>;
 }
@@ -31,6 +39,13 @@ interface UseMessageTemplatesReturn {
 export function useMessageTemplates(): UseMessageTemplatesReturn {
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+
+  const categories = useMemo(() => {
+    const cats = templates
+      .map(t => t.category)
+      .filter((c): c is string => c !== null && c !== '');
+    return [...new Set(cats)].sort();
+  }, [templates]);
 
   const fetchTemplates = async () => {
     try {
@@ -43,6 +58,7 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
       const { data, error } = await supabase
         .from('message_templates')
         .select('*')
+        .order('category', { ascending: true, nullsFirst: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -65,6 +81,7 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
     message_type: string;
     media_url?: string;
     filename?: string;
+    category?: string;
   }): Promise<MessageTemplate | null> => {
     try {
       const { data: session } = await supabase.auth.getSession();
@@ -82,6 +99,7 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
           message_type: template.message_type,
           media_url: template.media_url || null,
           filename: template.filename || null,
+          category: template.category || null,
         })
         .select()
         .single();
@@ -96,6 +114,31 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
       console.error('Error creating template:', error);
       toast.error('Erro ao salvar template');
       return null;
+    }
+  };
+
+  const updateTemplate = async (id: string, updates: {
+    name?: string;
+    content?: string;
+    category?: string;
+  }): Promise<boolean> => {
+    try {
+      const { error } = await supabase
+        .from('message_templates')
+        .update(updates)
+        .eq('id', id);
+
+      if (error) throw error;
+
+      setTemplates(prev => prev.map(t => 
+        t.id === id ? { ...t, ...updates } : t
+      ));
+      toast.success('Template atualizado');
+      return true;
+    } catch (error) {
+      console.error('Error updating template:', error);
+      toast.error('Erro ao atualizar template');
+      return false;
     }
   };
 
@@ -120,8 +163,10 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
 
   return {
     templates,
+    categories,
     isLoading,
     createTemplate,
+    updateTemplate,
     deleteTemplate,
     refetch: fetchTemplates,
   };
