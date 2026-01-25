@@ -12,6 +12,7 @@ import DashboardHome from "./pages/dashboard/DashboardHome";
 import Instances from "./pages/dashboard/Instances";
 import InstanceDetails from "./pages/dashboard/InstanceDetails";
 import GroupDetails from "./pages/dashboard/GroupDetails";
+import SendToGroup from "./pages/dashboard/SendToGroup";
 import UsersManagement from "./pages/dashboard/UsersManagement";
 import Settings from "./pages/dashboard/Settings";
 
@@ -79,6 +80,7 @@ const AppRoutes = () => {
         <Route path="instances" element={<Instances />} />
         <Route path="instances/:id" element={<InstanceDetails />} />
         <Route path="instances/:instanceId/groups/:groupId" element={<GroupDetails />} />
+        <Route path="instances/:instanceId/groups/:groupId/send" element={<SendToGroup />} />
         <Route path="users" element={<UsersManagement />} />
         <Route path="settings" element={<Settings />} />
       </Route>
