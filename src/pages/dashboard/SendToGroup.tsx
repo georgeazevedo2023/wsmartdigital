@@ -221,6 +221,7 @@ const SendToGroup = () => {
               <SendMessageForm
                 instanceToken={instance.token}
                 groupJid={group.id}
+                groupName={group.name}
                 participants={participants}
               />
             </TabsContent>
@@ -229,6 +230,7 @@ const SendToGroup = () => {
               <SendMediaForm
                 instanceToken={instance.token}
                 groupJid={group.id}
+                groupName={group.name}
                 participants={participants}
               />
             </TabsContent>

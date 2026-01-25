@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -6,14 +7,17 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
-import { Image, FileIcon, Upload, Send, X, Video, Mic, Users } from 'lucide-react';
+import { Image, FileIcon, Upload, Send, X, Video, Mic, Users, Clock } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
+import { toast } from '@/hooks/use-toast';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
+import { ScheduleMessageDialog, ScheduleConfig } from './ScheduleMessageDialog';
 import type { Participant } from '@/pages/dashboard/SendToGroup';
 
 interface SendMediaFormProps {
   instanceToken: string;
   groupJid: string;
+  groupName?: string;
   participants?: Participant[];
   onMediaSent?: () => void;
 }
@@ -25,7 +29,8 @@ const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3'];
 
 const SEND_DELAY_MS = 350; // Delay entre envios para rate limiting
 
-const SendMediaForm = ({ instanceToken, groupJid, participants, onMediaSent }: SendMediaFormProps) => {
+const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMediaSent }: SendMediaFormProps) => {
+  const { instanceId } = useParams<{ instanceId: string }>();
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'file'>('image');
   const [isPtt, setIsPtt] = useState(false);
   const [mediaUrl, setMediaUrl] = useState('');
@@ -37,6 +42,8 @@ const SendMediaForm = ({ instanceToken, groupJid, participants, onMediaSent }: S
   const [errorMessage, setErrorMessage] = useState('');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
   const [sendingProgress, setSendingProgress] = useState({ current: 0, total: 0 });
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -242,6 +249,90 @@ const SendMediaForm = ({ instanceToken, groupJid, participants, onMediaSent }: S
     setSendStatus('idle');
     setErrorMessage('');
     setSendingProgress({ current: 0, total: 0 });
+  };
+
+  const handleSchedule = async (config: ScheduleConfig) => {
+    // Para agendamento de mídia, precisamos de uma URL (não arquivo local)
+    if (selectedFile) {
+      toast({
+        title: 'Erro',
+        description: 'Para agendar, use uma URL de mídia ao invés de arquivo local',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const finalMediaUrl = mediaUrl.trim();
+    if (!finalMediaUrl) {
+      toast({ title: 'Erro', description: 'Informe a URL da mídia', variant: 'destructive' });
+      return;
+    }
+
+    if (!instanceId) {
+      toast({ title: 'Erro', description: 'Instância não encontrada', variant: 'destructive' });
+      return;
+    }
+
+    setIsScheduling(true);
+
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        toast({ title: 'Erro', description: 'Sessão expirada', variant: 'destructive' });
+        return;
+      }
+
+      const recipients = excludeAdmins && regularMembers.length > 0
+        ? regularMembers.map(m => ({ jid: m.jid }))
+        : null;
+
+      const messageTypeToSave = mediaType === 'audio' && isPtt ? 'ptt' : 
+                                 mediaType === 'file' ? 'document' : mediaType;
+
+      const { error } = await supabase.from('scheduled_messages').insert({
+        user_id: session.data.session.user.id,
+        instance_id: instanceId,
+        group_jid: groupJid,
+        group_name: groupName || null,
+        exclude_admins: excludeAdmins,
+        recipients,
+        message_type: messageTypeToSave,
+        content: caption.trim() || null,
+        media_url: finalMediaUrl,
+        filename: mediaType === 'file' ? filename.trim() : null,
+        scheduled_at: config.scheduledAt.toISOString(),
+        next_run_at: config.scheduledAt.toISOString(),
+        is_recurring: config.isRecurring,
+        recurrence_type: config.isRecurring ? config.recurrenceType : null,
+        recurrence_interval: config.recurrenceInterval,
+        recurrence_days: config.recurrenceDays.length > 0 ? config.recurrenceDays : null,
+        recurrence_end_at: config.recurrenceEndAt?.toISOString() || null,
+        recurrence_count: config.recurrenceCount || null,
+        status: 'pending',
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Agendado com sucesso!',
+        description: `Mídia será enviada em ${config.scheduledAt.toLocaleDateString('pt-BR')} às ${config.scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+      });
+
+      setMediaUrl('');
+      setCaption('');
+      setFilename('');
+      setShowScheduleDialog(false);
+      onMediaSent?.();
+    } catch (error) {
+      console.error('Error scheduling media:', error);
+      toast({
+        title: 'Erro ao agendar',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsScheduling(false);
+    }
   };
 
   const isSending = sendStatus === 'sending';
@@ -579,8 +670,17 @@ const SendMediaForm = ({ instanceToken, groupJid, participants, onMediaSent }: S
           </div>
         )}
 
-        {/* Send button */}
-        <div className="flex justify-end">
+        {/* Send buttons */}
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowScheduleDialog(true)}
+            disabled={!mediaUrl.trim() || isSending || (mediaType === 'file' && !filename.trim())}
+            size="sm"
+          >
+            <Clock className="w-4 h-4 mr-2" />
+            Agendar
+          </Button>
           <Button
             onClick={handleSend}
             disabled={!canSend || isSending}
@@ -588,11 +688,11 @@ const SendMediaForm = ({ instanceToken, groupJid, participants, onMediaSent }: S
           >
             <Send className="w-4 h-4 mr-2" />
             {excludeAdmins 
-              ? `Enviar para ${regularMemberCount} Membro${regularMemberCount !== 1 ? 's' : ''}`
+              ? `Enviar para ${regularMemberCount}`
               : `Enviar ${
                   mediaType === 'image' ? 'Imagem' : 
                   mediaType === 'video' ? 'Vídeo' : 
-                  mediaType === 'audio' ? (isPtt ? 'Mensagem de Voz' : 'Áudio') : 
+                  mediaType === 'audio' ? (isPtt ? 'Voz' : 'Áudio') : 
                   'Arquivo'
                 }`
             }
@@ -600,9 +700,16 @@ const SendMediaForm = ({ instanceToken, groupJid, participants, onMediaSent }: S
         </div>
 
         <p className="text-xs text-muted-foreground">
-          Tamanho máximo: 10MB
+          Tamanho máximo: 10MB. Para agendar, use URL ao invés de arquivo local.
         </p>
       </div>
+
+      <ScheduleMessageDialog
+        open={showScheduleDialog}
+        onOpenChange={setShowScheduleDialog}
+        onConfirm={handleSchedule}
+        isLoading={isScheduling}
+      />
     </>
   );
 };

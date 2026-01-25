@@ -1,16 +1,20 @@
 import { useState } from 'react';
+import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
-import { Send, Users } from 'lucide-react';
+import { Send, Users, Clock } from 'lucide-react';
+import { toast } from '@/hooks/use-toast';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
+import { ScheduleMessageDialog, ScheduleConfig } from './ScheduleMessageDialog';
 import type { Participant } from '@/pages/dashboard/SendToGroup';
 
 interface SendMessageFormProps {
   instanceToken: string;
   groupJid: string;
+  groupName?: string;
   participants?: Participant[];
   onMessageSent?: () => void;
 }
@@ -18,12 +22,15 @@ interface SendMessageFormProps {
 const MAX_MESSAGE_LENGTH = 4096;
 const SEND_DELAY_MS = 350; // Delay entre envios para rate limiting
 
-const SendMessageForm = ({ instanceToken, groupJid, participants, onMessageSent }: SendMessageFormProps) => {
+const SendMessageForm = ({ instanceToken, groupJid, groupName, participants, onMessageSent }: SendMessageFormProps) => {
+  const { instanceId } = useParams<{ instanceId: string }>();
   const [message, setMessage] = useState('');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
   const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [sendingProgress, setSendingProgress] = useState({ current: 0, total: 0 });
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [isScheduling, setIsScheduling] = useState(false);
 
   // Contagem de membros comuns (não admins/donos)
   const regularMembers = participants?.filter(p => !p.isAdmin && !p.isSuperAdmin) || [];
@@ -140,6 +147,74 @@ const SendMessageForm = ({ instanceToken, groupJid, participants, onMessageSent 
     setSendingProgress({ current: 0, total: 0 });
   };
 
+  const handleSchedule = async (config: ScheduleConfig) => {
+    const trimmedMessage = message.trim();
+    
+    if (!trimmedMessage) {
+      toast({ title: 'Erro', description: 'Digite uma mensagem', variant: 'destructive' });
+      return;
+    }
+
+    if (!instanceId) {
+      toast({ title: 'Erro', description: 'Instância não encontrada', variant: 'destructive' });
+      return;
+    }
+
+    setIsScheduling(true);
+
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        toast({ title: 'Erro', description: 'Sessão expirada', variant: 'destructive' });
+        return;
+      }
+
+      const recipients = excludeAdmins && regularMembers.length > 0
+        ? regularMembers.map(m => ({ jid: m.jid }))
+        : null;
+
+      const { error } = await supabase.from('scheduled_messages').insert({
+        user_id: session.data.session.user.id,
+        instance_id: instanceId,
+        group_jid: groupJid,
+        group_name: groupName || null,
+        exclude_admins: excludeAdmins,
+        recipients,
+        message_type: 'text',
+        content: trimmedMessage,
+        scheduled_at: config.scheduledAt.toISOString(),
+        next_run_at: config.scheduledAt.toISOString(),
+        is_recurring: config.isRecurring,
+        recurrence_type: config.isRecurring ? config.recurrenceType : null,
+        recurrence_interval: config.recurrenceInterval,
+        recurrence_days: config.recurrenceDays.length > 0 ? config.recurrenceDays : null,
+        recurrence_end_at: config.recurrenceEndAt?.toISOString() || null,
+        recurrence_count: config.recurrenceCount || null,
+        status: 'pending',
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: 'Agendado com sucesso!',
+        description: `Mensagem será enviada em ${config.scheduledAt.toLocaleDateString('pt-BR')} às ${config.scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
+      });
+
+      setMessage('');
+      setShowScheduleDialog(false);
+      onMessageSent?.();
+    } catch (error) {
+      console.error('Error scheduling message:', error);
+      toast({
+        title: 'Erro ao agendar',
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
   const characterCount = message.length;
   const isOverLimit = characterCount > MAX_MESSAGE_LENGTH;
   const isSending = sendStatus === 'sending';
@@ -196,14 +271,23 @@ const SendMessageForm = ({ instanceToken, groupJid, participants, onMessageSent 
           </div>
         )}
 
-        <div className="flex justify-end">
+        <div className="flex justify-end gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowScheduleDialog(true)}
+            disabled={isSending || !message.trim() || isOverLimit}
+            size="sm"
+          >
+            <Clock className="w-4 h-4 mr-2" />
+            Agendar
+          </Button>
           <Button
             onClick={handleSend}
             disabled={isSending || !message.trim() || isOverLimit || (excludeAdmins && regularMemberCount === 0)}
             size="sm"
           >
             <Send className="w-4 h-4 mr-2" />
-            {excludeAdmins ? `Enviar para ${regularMemberCount} Membro${regularMemberCount !== 1 ? 's' : ''}` : 'Enviar Mensagem'}
+            {excludeAdmins ? `Enviar para ${regularMemberCount}` : 'Enviar'}
           </Button>
         </div>
         
@@ -211,6 +295,13 @@ const SendMessageForm = ({ instanceToken, groupJid, participants, onMessageSent 
           Pressione Ctrl+Enter para enviar rapidamente
         </p>
       </div>
+
+      <ScheduleMessageDialog
+        open={showScheduleDialog}
+        onOpenChange={setShowScheduleDialog}
+        onConfirm={handleSchedule}
+        isLoading={isScheduling}
+      />
     </>
   );
 };

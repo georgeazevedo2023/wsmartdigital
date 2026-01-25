@@ -15,6 +15,7 @@ import GroupDetails from "./pages/dashboard/GroupDetails";
 import SendToGroup from "./pages/dashboard/SendToGroup";
 import UsersManagement from "./pages/dashboard/UsersManagement";
 import Settings from "./pages/dashboard/Settings";
+import ScheduledMessages from "./pages/dashboard/ScheduledMessages";
 
 const queryClient = new QueryClient();
 
@@ -83,6 +84,7 @@ const AppRoutes = () => {
         <Route path="instances/:instanceId/groups/:groupId/send" element={<SendToGroup />} />
         <Route path="users" element={<UsersManagement />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="scheduled" element={<ScheduledMessages />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>

@@ -50,6 +50,142 @@ export type Database = {
         }
         Relationships: []
       }
+      scheduled_message_logs: {
+        Row: {
+          error_message: string | null
+          executed_at: string
+          id: string
+          recipients_failed: number | null
+          recipients_success: number | null
+          recipients_total: number | null
+          response_data: Json | null
+          scheduled_message_id: string
+          status: string
+        }
+        Insert: {
+          error_message?: string | null
+          executed_at?: string
+          id?: string
+          recipients_failed?: number | null
+          recipients_success?: number | null
+          recipients_total?: number | null
+          response_data?: Json | null
+          scheduled_message_id: string
+          status: string
+        }
+        Update: {
+          error_message?: string | null
+          executed_at?: string
+          id?: string
+          recipients_failed?: number | null
+          recipients_success?: number | null
+          recipients_total?: number | null
+          response_data?: Json | null
+          scheduled_message_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_message_logs_scheduled_message_id_fkey"
+            columns: ["scheduled_message_id"]
+            isOneToOne: false
+            referencedRelation: "scheduled_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      scheduled_messages: {
+        Row: {
+          content: string | null
+          created_at: string
+          exclude_admins: boolean | null
+          executions_count: number | null
+          filename: string | null
+          group_jid: string
+          group_name: string | null
+          id: string
+          instance_id: string
+          is_recurring: boolean | null
+          last_error: string | null
+          last_executed_at: string | null
+          media_url: string | null
+          message_type: string
+          next_run_at: string
+          recipients: Json | null
+          recurrence_count: number | null
+          recurrence_days: number[] | null
+          recurrence_end_at: string | null
+          recurrence_interval: number | null
+          recurrence_type: string | null
+          scheduled_at: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          exclude_admins?: boolean | null
+          executions_count?: number | null
+          filename?: string | null
+          group_jid: string
+          group_name?: string | null
+          id?: string
+          instance_id: string
+          is_recurring?: boolean | null
+          last_error?: string | null
+          last_executed_at?: string | null
+          media_url?: string | null
+          message_type: string
+          next_run_at: string
+          recipients?: Json | null
+          recurrence_count?: number | null
+          recurrence_days?: number[] | null
+          recurrence_end_at?: string | null
+          recurrence_interval?: number | null
+          recurrence_type?: string | null
+          scheduled_at: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          exclude_admins?: boolean | null
+          executions_count?: number | null
+          filename?: string | null
+          group_jid?: string
+          group_name?: string | null
+          id?: string
+          instance_id?: string
+          is_recurring?: boolean | null
+          last_error?: string | null
+          last_executed_at?: string | null
+          media_url?: string | null
+          message_type?: string
+          next_run_at?: string
+          recipients?: Json | null
+          recurrence_count?: number | null
+          recurrence_days?: number[] | null
+          recurrence_end_at?: string | null
+          recurrence_interval?: number | null
+          recurrence_type?: string | null
+          scheduled_at?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "scheduled_messages_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_instance_access: {
         Row: {
           created_at: string
