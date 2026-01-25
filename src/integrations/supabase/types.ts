@@ -50,6 +50,42 @@ export type Database = {
         }
         Relationships: []
       }
+      message_templates: {
+        Row: {
+          content: string | null
+          created_at: string
+          filename: string | null
+          id: string
+          media_url: string | null
+          message_type: string
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          filename?: string | null
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          filename?: string | null
+          id?: string
+          media_url?: string | null
+          message_type?: string
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       scheduled_message_logs: {
         Row: {
           error_message: string | null

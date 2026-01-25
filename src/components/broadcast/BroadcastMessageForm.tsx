@@ -12,6 +12,8 @@ import { supabase } from '@/integrations/supabase/client';
 import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
+import { TemplateSelector } from './TemplateSelector';
+import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Group } from './GroupSelector';
 
@@ -637,6 +639,65 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     ? (message.trim() && !isOverLimit && selectedGroups.length > 0)
     : (mediaUrl.trim() && selectedGroups.length > 0 && (mediaType !== 'file' || filename.trim()));
 
+  const handleSelectTemplate = (template: MessageTemplate) => {
+    if (template.message_type === 'text') {
+      setActiveTab('text');
+      setMessage(template.content || '');
+    } else {
+      setActiveTab('media');
+      // Map message types
+      const typeMap: Record<string, MediaType> = {
+        'image': 'image',
+        'video': 'video',
+        'audio': 'audio',
+        'ptt': 'audio',
+        'document': 'file',
+      };
+      const newMediaType = typeMap[template.message_type] || 'image';
+      setMediaType(newMediaType);
+      setIsPtt(template.message_type === 'ptt');
+      setMediaUrl(template.media_url || '');
+      setCaption(template.content || '');
+      setFilename(template.filename || '');
+      clearFile();
+    }
+    toast.success(`Template "${template.name}" aplicado`);
+  };
+
+  const handleSaveTemplate = () => {
+    if (activeTab === 'text') {
+      const trimmedMessage = message.trim();
+      if (!trimmedMessage) {
+        toast.error('Digite uma mensagem para salvar');
+        return null;
+      }
+      return {
+        name: '',
+        content: trimmedMessage,
+        message_type: 'text',
+      };
+    } else {
+      const trimmedUrl = mediaUrl.trim();
+      if (!trimmedUrl && !selectedFile) {
+        toast.error('Selecione uma mídia para salvar');
+        return null;
+      }
+      // For templates, we only save URL (not uploaded files)
+      if (!trimmedUrl) {
+        toast.error('Para salvar template de mídia, use uma URL');
+        return null;
+      }
+      const sendType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType === 'file' ? 'document' : mediaType;
+      return {
+        name: '',
+        content: caption.trim() || undefined,
+        message_type: sendType,
+        media_url: trimmedUrl,
+        filename: mediaType === 'file' ? filename.trim() : undefined,
+      };
+    }
+  };
+
   return (
     <>
       {/* Progress Modal */}
@@ -718,10 +779,17 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
       <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
-            Compor Mensagem
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MessageSquare className="w-5 h-5" />
+              Compor Mensagem
+            </CardTitle>
+            <TemplateSelector
+              onSelect={handleSelectTemplate}
+              onSave={handleSaveTemplate}
+              disabled={isSending}
+            />
+          </div>
         </CardHeader>
         <CardContent>
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'text' | 'media')}>
