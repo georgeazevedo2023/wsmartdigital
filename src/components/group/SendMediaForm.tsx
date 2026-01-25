@@ -173,6 +173,7 @@ const SendMediaForm = ({ instanceToken, groupJid, onMediaSent }: SendMediaFormPr
       <SendStatusModal
         status={sendStatus}
         message={errorMessage}
+        mediaType={mediaType === 'image' ? 'image' : 'document'}
         onClose={handleCloseModal}
       />
 
