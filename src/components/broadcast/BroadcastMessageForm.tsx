@@ -748,12 +748,18 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     if (seconds < 60) {
       return `${seconds}s`;
     }
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    if (remainingSeconds === 0) {
-      return `${minutes}min`;
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    
+    if (hours > 0) {
+      if (minutes === 0) {
+        return `${hours}h`;
+      }
+      return `${hours}h${minutes}min`;
     }
-    return `${minutes}min ${remainingSeconds}s`;
+    
+    return `${minutes} min`;
   };
 
   const estimatedTime = getEstimatedTime();
