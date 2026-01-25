@@ -48,6 +48,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const [activeTab, setActiveTab] = useState<'text' | 'media'>('text');
   const [message, setMessage] = useState('');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
+  const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20'>('none');
   const [progress, setProgress] = useState<SendProgress>({
     currentGroup: 0,
     totalGroups: 0,
@@ -107,6 +108,31 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   }, [previewUrl]);
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Função para calcular delay aleatório baseado na configuração
+  const getRandomDelay = (): number => {
+    if (randomDelay === 'none') {
+      return SEND_DELAY_MS; // 350ms padrão
+    }
+    
+    const [min, max] = randomDelay === '5-10' 
+      ? [5000, 10000]   // 5 a 10 segundos
+      : [10000, 20000]; // 10 a 20 segundos
+    
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  };
+
+  const getGroupDelay = (): number => {
+    if (randomDelay === 'none') {
+      return GROUP_DELAY_MS; // 500ms padrão
+    }
+    
+    const [min, max] = randomDelay === '5-10' 
+      ? [5000, 10000]   // 5 a 10 segundos
+      : [10000, 20000]; // 10 a 20 segundos
+    
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  };
 
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -309,7 +335,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           setProgress(p => ({ ...p, currentMember: j + 1 }));
           
           if (j < uniqueMembers.length - 1) {
-            await delay(SEND_DELAY_MS);
+            await delay(getRandomDelay());
           }
         }
 
@@ -364,7 +390,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
           // Delay between groups
           if (i < selectedGroups.length - 1) {
-            await delay(GROUP_DELAY_MS);
+            await delay(getGroupDelay());
           }
         }
 
@@ -450,7 +476,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           setProgress(p => ({ ...p, currentMember: j + 1 }));
           
           if (j < uniqueMembers.length - 1) {
-            await delay(SEND_DELAY_MS);
+            await delay(getRandomDelay());
           }
         }
 
@@ -505,7 +531,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           }
 
           if (i < selectedGroups.length - 1) {
-            await delay(GROUP_DELAY_MS);
+            await delay(getGroupDelay());
           }
         }
 
@@ -1093,6 +1119,51 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                   onCheckedChange={setExcludeAdmins}
                   disabled={isSending}
                 />
+              </div>
+
+              {/* Randomizador de delay anti-bloqueio */}
+              <div className="p-3 bg-muted/50 rounded-lg border border-border/50 space-y-3">
+                <div className="flex items-center gap-3">
+                  <Clock className="w-5 h-5 text-muted-foreground" />
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">
+                      Intervalo entre envios (anti-bloqueio)
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Adiciona delay aleatório para evitar detecção de spam
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant={randomDelay === 'none' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setRandomDelay('none')}
+                    disabled={isSending}
+                  >
+                    Desativado
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={randomDelay === '5-10' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setRandomDelay('5-10')}
+                    disabled={isSending}
+                  >
+                    5-10 seg
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={randomDelay === '10-20' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setRandomDelay('10-20')}
+                    disabled={isSending}
+                  >
+                    10-20 seg
+                  </Button>
+                </div>
               </div>
 
               {/* Deduplication info when excludeAdmins is enabled */}
