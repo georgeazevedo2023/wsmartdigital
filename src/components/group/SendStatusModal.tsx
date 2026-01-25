@@ -11,16 +11,17 @@ export type SendStatus = 'idle' | 'sending' | 'success' | 'error';
 interface SendStatusModalProps {
   status: SendStatus;
   message?: string;
+  mediaType?: 'image' | 'document' | 'text';
   onClose: () => void;
 }
 
-const SendStatusModal = ({ status, message, onClose }: SendStatusModalProps) => {
-  // Auto-close on success after 2 seconds
+const SendStatusModal = ({ status, message, mediaType, onClose }: SendStatusModalProps) => {
+  // Auto-close on success after 3 seconds
   useEffect(() => {
     if (status === 'success') {
       const timer = setTimeout(() => {
         onClose();
-      }, 2000);
+      }, 3000);
       return () => clearTimeout(timer);
     }
   }, [status, onClose]);
@@ -42,13 +43,19 @@ const SendStatusModal = ({ status, message, onClose }: SendStatusModalProps) => 
           )}
 
           {status === 'success' && (
-            <>
+            <div className="animate-in fade-in zoom-in duration-300 flex flex-col items-center space-y-4">
               <CheckCircle2 className="w-16 h-16 text-green-500" />
-              <h3 className="text-lg font-semibold text-green-600">Enviado com sucesso!</h3>
+              <h3 className="text-xl font-semibold text-green-600">
+                {mediaType === 'image' && 'Imagem enviada com sucesso!'}
+                {mediaType === 'document' && 'Arquivo enviado com sucesso!'}
+                {(!mediaType || mediaType === 'text') && 'Mensagem enviada com sucesso!'}
+              </h3>
               <p className="text-muted-foreground text-center">
-                Mensagem entregue ao grupo
+                {mediaType === 'image' && 'Imagem entregue ao grupo'}
+                {mediaType === 'document' && 'Arquivo entregue ao grupo'}
+                {(!mediaType || mediaType === 'text') && 'Mensagem entregue ao grupo'}
               </p>
-            </>
+            </div>
           )}
 
           {status === 'error' && (
