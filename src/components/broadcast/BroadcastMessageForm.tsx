@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Progress } from '@/components/ui/progress';
@@ -8,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import type { Instance } from './InstanceSelector';
@@ -30,11 +31,19 @@ interface SendProgress {
   results: { groupName: string; success: boolean; error?: string }[];
 }
 
+type MediaType = 'image' | 'video' | 'audio' | 'file';
+
 const MAX_MESSAGE_LENGTH = 4096;
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const SEND_DELAY_MS = 350;
 const GROUP_DELAY_MS = 500;
 
+const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+const ALLOWED_VIDEO_TYPES = ['video/mp4'];
+const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/wav'];
+
 const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: BroadcastMessageFormProps) => {
+  const [activeTab, setActiveTab] = useState<'text' | 'media'>('text');
   const [message, setMessage] = useState('');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
   const [progress, setProgress] = useState<SendProgress>({
@@ -49,12 +58,104 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
 
+  // Media states
+  const [mediaType, setMediaType] = useState<MediaType>('image');
+  const [mediaUrl, setMediaUrl] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [caption, setCaption] = useState('');
+  const [isPtt, setIsPtt] = useState(false);
+  const [filename, setFilename] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const totalMembers = selectedGroups.reduce((acc, g) => acc + g.size, 0);
   const totalRegularMembers = selectedGroups.reduce((acc, g) => {
     return acc + g.participants.filter(p => !p.isAdmin && !p.isSuperAdmin).length;
   }, 0);
 
+  // Cleanup preview URL on unmount or file change
+  useEffect(() => {
+    return () => {
+      if (previewUrl) {
+        URL.revokeObjectURL(previewUrl);
+      }
+    };
+  }, [previewUrl]);
+
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = reject;
+    });
+  };
+
+  const clearFile = () => {
+    if (previewUrl) {
+      URL.revokeObjectURL(previewUrl);
+    }
+    setSelectedFile(null);
+    setPreviewUrl(null);
+    setFilename('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const getAcceptedTypes = () => {
+    switch (mediaType) {
+      case 'image':
+        return ALLOWED_IMAGE_TYPES.join(',');
+      case 'video':
+        return ALLOWED_VIDEO_TYPES.join(',');
+      case 'audio':
+        return ALLOWED_AUDIO_TYPES.join(',');
+      case 'file':
+        return '*/*';
+      default:
+        return '*/*';
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size
+    if (file.size > MAX_FILE_SIZE) {
+      toast.error('Arquivo muito grande. Máximo: 10MB');
+      return;
+    }
+
+    // Validate file type for specific media types
+    if (mediaType === 'video' && !ALLOWED_VIDEO_TYPES.includes(file.type)) {
+      toast.error('Apenas vídeos MP4 são suportados');
+      return;
+    }
+
+    if (mediaType === 'image' && !ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      toast.error('Formato de imagem não suportado');
+      return;
+    }
+
+    if (mediaType === 'audio' && !ALLOWED_AUDIO_TYPES.includes(file.type)) {
+      toast.error('Formato de áudio não suportado (use MP3 ou OGG)');
+      return;
+    }
+
+    clearFile();
+    setSelectedFile(file);
+    setFilename(file.name);
+
+    // Create preview for images and videos
+    if (mediaType === 'image' || mediaType === 'video' || mediaType === 'audio') {
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+    }
+  };
 
   const sendToNumber = async (number: string, text: string, accessToken: string) => {
     const response = await fetch(
@@ -82,7 +183,51 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     return response.json();
   };
 
+  const sendMediaToNumber = async (
+    number: string, 
+    mediaData: string, 
+    type: string, 
+    captionText: string,
+    docName: string,
+    accessToken: string
+  ) => {
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          action: 'send-media',
+          token: instance.token,
+          groupjid: number,
+          media: mediaData,
+          type,
+          text: captionText,
+          docName,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || 'Erro ao enviar mídia');
+    }
+
+    return response.json();
+  };
+
   const handleSend = async () => {
+    if (activeTab === 'text') {
+      await handleSendText();
+    } else {
+      await handleSendMedia();
+    }
+  };
+
+  const handleSendText = async () => {
     const trimmedMessage = message.trim();
     
     if (!trimmedMessage) {
@@ -198,7 +343,136 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     }
   };
 
+  const handleSendMedia = async () => {
+    const finalMediaUrl = selectedFile ? await fileToBase64(selectedFile) : mediaUrl.trim();
+    
+    if (!finalMediaUrl) {
+      toast.error('Selecione um arquivo ou informe uma URL');
+      return;
+    }
+
+    if (selectedGroups.length === 0) {
+      toast.error('Selecione pelo menos um grupo');
+      return;
+    }
+
+    if (mediaType === 'file' && !filename.trim()) {
+      toast.error('Informe o nome do arquivo');
+      return;
+    }
+
+    setProgress({
+      currentGroup: 0,
+      totalGroups: selectedGroups.length,
+      currentMember: 0,
+      totalMembers: 0,
+      groupName: '',
+      status: 'sending',
+      results: [],
+    });
+
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        toast.error('Sessão expirada');
+        setProgress(p => ({ ...p, status: 'error' }));
+        return;
+      }
+
+      const accessToken = session.data.session.access_token;
+      const results: SendProgress['results'] = [];
+      
+      const sendType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType === 'file' ? 'document' : mediaType;
+      const docName = mediaType === 'file' ? filename.trim() : '';
+
+      for (let i = 0; i < selectedGroups.length; i++) {
+        const group = selectedGroups[i];
+        
+        try {
+          if (excludeAdmins) {
+            const regularMembers = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
+            
+            setProgress(p => ({
+              ...p,
+              currentGroup: i + 1,
+              groupName: group.name,
+              currentMember: 0,
+              totalMembers: regularMembers.length,
+            }));
+
+            for (let j = 0; j < regularMembers.length; j++) {
+              try {
+                await sendMediaToNumber(regularMembers[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
+              } catch (err) {
+                console.error(`Erro ao enviar mídia para ${regularMembers[j].jid}:`, err);
+              }
+              
+              setProgress(p => ({ ...p, currentMember: j + 1 }));
+              
+              if (j < regularMembers.length - 1) {
+                await delay(SEND_DELAY_MS);
+              }
+            }
+          } else {
+            setProgress(p => ({
+              ...p,
+              currentGroup: i + 1,
+              groupName: group.name,
+              currentMember: 0,
+              totalMembers: 1,
+            }));
+
+            await sendMediaToNumber(group.id, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
+            setProgress(p => ({ ...p, currentMember: 1 }));
+          }
+
+          results.push({ groupName: group.name, success: true });
+        } catch (error) {
+          console.error(`Erro ao enviar mídia para grupo ${group.name}:`, error);
+          results.push({ 
+            groupName: group.name, 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Erro desconhecido' 
+          });
+        }
+
+        if (i < selectedGroups.length - 1) {
+          await delay(GROUP_DELAY_MS);
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      setProgress(p => ({ ...p, status: 'success', results }));
+
+      if (failCount > 0) {
+        toast.warning(`Enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
+      } else {
+        const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
+        toast.success(`${mediaLabel} enviado para ${successCount} grupo(s)!`);
+      }
+
+      clearFile();
+      setMediaUrl('');
+      setCaption('');
+      onComplete?.();
+    } catch (error) {
+      console.error('Error sending media broadcast:', error);
+      toast.error('Erro ao enviar mídia');
+      setProgress(p => ({ ...p, status: 'error' }));
+    }
+  };
+
   const handleSchedule = async (config: ScheduleConfig) => {
+    if (activeTab === 'text') {
+      await handleScheduleText(config);
+    } else {
+      await handleScheduleMedia(config);
+    }
+  };
+
+  const handleScheduleText = async (config: ScheduleConfig) => {
     const trimmedMessage = message.trim();
     
     if (!trimmedMessage) {
@@ -267,6 +541,85 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     }
   };
 
+  const handleScheduleMedia = async (config: ScheduleConfig) => {
+    const trimmedUrl = mediaUrl.trim();
+    
+    if (!trimmedUrl) {
+      toast.error('Para agendar mídia, informe uma URL (não arquivo local)');
+      return;
+    }
+
+    if (selectedGroups.length === 0) {
+      toast.error('Selecione pelo menos um grupo');
+      return;
+    }
+
+    if (mediaType === 'file' && !filename.trim()) {
+      toast.error('Informe o nome do arquivo');
+      return;
+    }
+
+    setIsScheduling(true);
+
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        toast.error('Sessão expirada');
+        return;
+      }
+
+      const sendType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType === 'file' ? 'document' : mediaType;
+
+      const insertPromises = selectedGroups.map(group => {
+        const regularMembers = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
+        const recipients = excludeAdmins && regularMembers.length > 0
+          ? regularMembers.map(m => ({ jid: m.jid }))
+          : null;
+
+        return supabase.from('scheduled_messages').insert({
+          user_id: session.data.session!.user.id,
+          instance_id: instance.id,
+          group_jid: group.id,
+          group_name: group.name,
+          exclude_admins: excludeAdmins,
+          recipients,
+          message_type: sendType,
+          content: caption.trim() || null,
+          media_url: trimmedUrl,
+          filename: mediaType === 'file' ? filename.trim() : null,
+          scheduled_at: config.scheduledAt.toISOString(),
+          next_run_at: config.scheduledAt.toISOString(),
+          is_recurring: config.isRecurring,
+          recurrence_type: config.isRecurring ? config.recurrenceType : null,
+          recurrence_interval: config.recurrenceInterval,
+          recurrence_days: config.recurrenceDays.length > 0 ? config.recurrenceDays : null,
+          recurrence_end_at: config.recurrenceEndAt?.toISOString() || null,
+          recurrence_count: config.recurrenceCount || null,
+          status: 'pending',
+        });
+      });
+
+      const results = await Promise.all(insertPromises);
+      const errors = results.filter(r => r.error);
+
+      if (errors.length > 0) {
+        throw new Error(`Falha ao agendar ${errors.length} grupo(s)`);
+      }
+
+      toast.success(`${selectedGroups.length} agendamento(s) de mídia criado(s)!`);
+      setMediaUrl('');
+      setCaption('');
+      setFilename('');
+      setShowScheduleDialog(false);
+      onComplete?.();
+    } catch (error) {
+      console.error('Error scheduling media broadcast:', error);
+      toast.error(error instanceof Error ? error.message : 'Erro ao agendar mídia');
+    } finally {
+      setIsScheduling(false);
+    }
+  };
+
   const handleCloseProgress = () => {
     setProgress(p => ({ ...p, status: 'idle', results: [] }));
   };
@@ -276,6 +629,13 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const isSending = progress.status === 'sending';
 
   const targetCount = excludeAdmins ? totalRegularMembers : selectedGroups.length;
+
+  const isMediaValid = activeTab === 'media' && (selectedFile || mediaUrl.trim()) && (mediaType !== 'file' || filename.trim());
+  const isTextValid = activeTab === 'text' && message.trim() && !isOverLimit;
+  const canSend = (isTextValid || isMediaValid) && selectedGroups.length > 0 && !(excludeAdmins && totalRegularMembers === 0);
+  const canSchedule = activeTab === 'text' 
+    ? (message.trim() && !isOverLimit && selectedGroups.length > 0)
+    : (mediaUrl.trim() && selectedGroups.length > 0 && (mediaType !== 'file' || filename.trim()));
 
   return (
     <>
@@ -288,7 +648,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 {progress.status === 'sending' && (
                   <>
                     <Loader2 className="w-5 h-5 animate-spin" />
-                    Enviando mensagens...
+                    {activeTab === 'media' ? 'Enviando mídia...' : 'Enviando mensagens...'}
                   </>
                 )}
                 {progress.status === 'success' && (
@@ -364,15 +724,15 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="text">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'text' | 'media')}>
             <TabsList className="grid w-full grid-cols-2 mb-4">
               <TabsTrigger value="text" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
                 Texto
               </TabsTrigger>
-              <TabsTrigger value="media" className="flex items-center gap-2" disabled>
+              <TabsTrigger value="media" className="flex items-center gap-2">
                 <Image className="w-4 h-4" />
-                Mídia (em breve)
+                Mídia
               </TabsTrigger>
             </TabsList>
             
@@ -391,7 +751,191 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                   {characterCount.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()} caracteres
                 </span>
               </div>
+            </TabsContent>
 
+            <TabsContent value="media" className="space-y-4">
+              {/* Media Type Selector */}
+              <div className="grid grid-cols-4 gap-2">
+                <Button
+                  type="button"
+                  variant={mediaType === 'image' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { setMediaType('image'); clearFile(); }}
+                  disabled={isSending}
+                  className="flex flex-col items-center gap-1 h-auto py-2"
+                >
+                  <Image className="w-4 h-4" />
+                  <span className="text-xs">Imagem</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={mediaType === 'video' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { setMediaType('video'); clearFile(); }}
+                  disabled={isSending}
+                  className="flex flex-col items-center gap-1 h-auto py-2"
+                >
+                  <Video className="w-4 h-4" />
+                  <span className="text-xs">Vídeo</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={mediaType === 'audio' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { setMediaType('audio'); clearFile(); }}
+                  disabled={isSending}
+                  className="flex flex-col items-center gap-1 h-auto py-2"
+                >
+                  <Mic className="w-4 h-4" />
+                  <span className="text-xs">Áudio</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant={mediaType === 'file' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => { setMediaType('file'); clearFile(); }}
+                  disabled={isSending}
+                  className="flex flex-col items-center gap-1 h-auto py-2"
+                >
+                  <FileIcon className="w-4 h-4" />
+                  <span className="text-xs">Arquivo</span>
+                </Button>
+              </div>
+
+              {/* URL Input */}
+              <div className="space-y-2">
+                <Label>URL da mídia</Label>
+                <Input
+                  placeholder="https://exemplo.com/arquivo.jpg"
+                  value={mediaUrl}
+                  onChange={(e) => setMediaUrl(e.target.value)}
+                  disabled={isSending || !!selectedFile}
+                />
+              </div>
+
+              {/* Separator */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-border" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-card px-2 text-muted-foreground">ou</span>
+                </div>
+              </div>
+
+              {/* File Input */}
+              <div className="space-y-2">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept={getAcceptedTypes()}
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  disabled={isSending}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isSending || !!mediaUrl.trim()}
+                  className="w-full"
+                >
+                  <Upload className="w-4 h-4 mr-2" />
+                  Escolher do dispositivo
+                </Button>
+              </div>
+
+              {/* Preview */}
+              {selectedFile && (
+                <div className="relative border border-border rounded-lg p-3 bg-muted/30">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={clearFile}
+                    className="absolute top-1 right-1 h-6 w-6"
+                    disabled={isSending}
+                  >
+                    <X className="w-4 h-4" />
+                  </Button>
+                  
+                  {mediaType === 'image' && previewUrl && (
+                    <img src={previewUrl} alt="Preview" className="max-h-40 rounded mx-auto" />
+                  )}
+                  
+                  {mediaType === 'video' && previewUrl && (
+                    <video src={previewUrl} controls className="max-h-40 rounded mx-auto" />
+                  )}
+                  
+                  {mediaType === 'audio' && previewUrl && (
+                    <audio src={previewUrl} controls className="w-full" />
+                  )}
+                  
+                  {mediaType === 'file' && (
+                    <div className="flex items-center gap-2">
+                      <FileIcon className="w-8 h-8 text-muted-foreground" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{selectedFile.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Filename for documents */}
+              {mediaType === 'file' && (
+                <div className="space-y-2">
+                  <Label>Nome do arquivo</Label>
+                  <Input
+                    placeholder="documento.pdf"
+                    value={filename}
+                    onChange={(e) => setFilename(e.target.value)}
+                    disabled={isSending}
+                  />
+                </div>
+              )}
+
+              {/* PTT Toggle for audio */}
+              {mediaType === 'audio' && (
+                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
+                  <div className="flex items-center gap-3">
+                    <Mic className="w-5 h-5 text-muted-foreground" />
+                    <div className="space-y-0.5">
+                      <Label htmlFor="ptt-toggle" className="text-sm font-medium cursor-pointer">
+                        Enviar como mensagem de voz
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Aparecerá como áudio gravado no WhatsApp
+                      </p>
+                    </div>
+                  </div>
+                  <Switch
+                    id="ptt-toggle"
+                    checked={isPtt}
+                    onCheckedChange={setIsPtt}
+                    disabled={isSending}
+                  />
+                </div>
+              )}
+
+              {/* Caption */}
+              <div className="space-y-2">
+                <Label>Legenda (opcional)</Label>
+                <Textarea
+                  placeholder="Adicione uma legenda..."
+                  value={caption}
+                  onChange={(e) => setCaption(e.target.value)}
+                  disabled={isSending}
+                  className="min-h-[80px] resize-none"
+                />
+              </div>
+            </TabsContent>
+
+            {/* Common sections for both tabs */}
+            <div className="space-y-4 mt-4">
               {/* Toggle para excluir admins */}
               <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
                 <div className="flex items-center gap-3">
@@ -426,6 +970,15 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                   <Users className="w-3 h-3" />
                   {excludeAdmins ? totalRegularMembers : totalMembers} destinatário{(excludeAdmins ? totalRegularMembers : totalMembers) !== 1 ? 's' : ''}
                 </Badge>
+                {activeTab === 'media' && (
+                  <Badge variant="secondary" className="gap-1">
+                    {mediaType === 'image' && <Image className="w-3 h-3" />}
+                    {mediaType === 'video' && <Video className="w-3 h-3" />}
+                    {mediaType === 'audio' && <Mic className="w-3 h-3" />}
+                    {mediaType === 'file' && <FileIcon className="w-3 h-3" />}
+                    {mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? (isPtt ? 'Voz' : 'Áudio') : 'Arquivo'}
+                  </Badge>
+                )}
               </div>
 
               {/* Actions */}
@@ -433,7 +986,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 <Button
                   variant="outline"
                   onClick={() => setShowScheduleDialog(true)}
-                  disabled={isSending || !message.trim() || isOverLimit || selectedGroups.length === 0}
+                  disabled={isSending || !canSchedule}
                   size="sm"
                 >
                   <Clock className="w-4 h-4 mr-2" />
@@ -441,14 +994,14 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 </Button>
                 <Button
                   onClick={handleSend}
-                  disabled={isSending || !message.trim() || isOverLimit || selectedGroups.length === 0 || (excludeAdmins && totalRegularMembers === 0)}
+                  disabled={isSending || !canSend}
                   size="sm"
                 >
                   <Send className="w-4 h-4 mr-2" />
                   Enviar para {targetCount}
                 </Button>
               </div>
-            </TabsContent>
+            </div>
           </Tabs>
         </CardContent>
       </Card>
