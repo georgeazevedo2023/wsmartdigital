@@ -1,126 +1,159 @@
 
-## Diagnóstico (por que ainda dá erro)
-- O backend (função `uazapi-proxy`) já está chamando corretamente `POST /instance/connect` com o header `token` e body `{}`.
-- Porém a resposta real da UAZAPI (confirmado por teste direto) não vem como `{"qrcode": "..."}` no nível raiz. Ela vem assim:
-  - `data.instance.qrcode` (e também `data.instance.status: "connecting"`)
-- Hoje o frontend só procura `data.qrcode` (e às vezes `data.base64`), então ele conclui “não foi possível gerar QR Code” mesmo quando o QR existe.
+# Plano: Limpar instâncias órfãs durante sincronização
 
-## Objetivo
-1) Corrigir o parse do QR Code (ler também `instance.qrcode`) em:
-- Tela de detalhes da instância (modal “Conectar …” que está mostrando o erro).
-- Lista de instâncias (botão “Conectar” do card).
+## Problema Identificado
+Quando uma instância é excluída diretamente na API da UAZAPI, ela continua aparecendo no sistema local porque o fluxo de sincronização atual apenas **importa** novas instâncias, mas **não remove** as que não existem mais na API.
 
-2) Implementar o fluxo completo recomendado:
-- Renderização segura do base64 (prefixo `data:image/png;base64,` quando necessário).
-- Polling a cada 5s em `/instance/status` enquanto o modal estiver aberto, parando quando conectar.
+No seu caso, a instância "teste" foi removida na UAZAPI, não aparece mais na lista de sincronização, mas ainda existe no banco de dados local.
 
 ---
 
-## Mudanças no backend (função “gateway”)
-### A) Adicionar ação `status` no `uazapi-proxy`
-**Arquivo:** `supabase/functions/uazapi-proxy/index.ts`
+## Solução Proposta
 
-- Criar um novo `case 'status'` que:
-  - Valida `instanceToken`
-  - Faz `GET ${uazapiUrl}/instance/status` com header `token: instanceToken`
-  - Retorna o JSON para o frontend
+Adicionar uma funcionalidade de **limpeza automática** no `SyncInstancesDialog` que:
 
-Motivo: o frontend não deve chamar a API externa direto; centralizamos tudo pelo gateway.
-
-### B) (Opcional, para debug rápido) Logar parte do corpo no connect quando não vier QR
-- Se `response.status` não for 200 ou se não vier `instance.qrcode`, logar os primeiros ~300 chars do `rawText` para facilitar diagnóstico futuro.
+1. Identifica instâncias locais que **não existem mais** na UAZAPI
+2. Exibe essas instâncias em uma seção separada "Instâncias Órfãs"
+3. Permite ao Super Admin selecionar e **remover** essas instâncias do sistema local
 
 ---
 
-## Mudanças no frontend (correção do QR + polling)
-### 1) Normalização do QR Code (Base64 -> src de imagem)
-Criar uma função utilitária (local no componente ou helper) `normalizeQrSrc(qr: string)`:
-- Se começar com `data:image`, retorna como está
-- Senão retorna `data:image/png;base64,${qr}`
+## Mudanças no Código
 
-Aplicar essa normalização antes de setar no estado e antes de renderizar no `<img src=...>`.
+### Arquivo: `src/components/dashboard/SyncInstancesDialog.tsx`
 
-### 2) Corrigir parse da resposta do connect (onde está quebrando)
-#### A) Detalhes da instância
-**Arquivo:** `src/components/instance/InstanceOverview.tsx`
+**1. Identificar instâncias órfãs**
 
-Atualizar o `handleConnect` para extrair QR nesta ordem:
-- `data.instance?.qrcode`
-- `data.qrcode`
-- `data.base64`
+Modificar o `fetchData` para também buscar todas as instâncias locais e compará-las com as da UAZAPI:
 
-E também detectar “já conectou”:
-- `data.instance?.status === 'connected'` ou `data.status?.connected === true` ou `data.loggedIn === true`
+```typescript
+// Buscar TODAS as instâncias locais (não só os IDs)
+const { data: localInstances } = await supabase
+  .from('instances')
+  .select('id, name, status, user_id');
 
-#### B) Lista de instâncias
-**Arquivo:** `src/pages/dashboard/Instances.tsx`
+// IDs das instâncias na UAZAPI
+const uazapiIds = new Set(instances.map(i => i.id));
 
-Atualizar o `handleConnect` para usar a mesma lógica de extração:
-- `result.instance?.qrcode` etc.
+// Instâncias locais que NÃO existem na UAZAPI = órfãs
+const orphaned = localInstances?.filter(inst => !uazapiIds.has(inst.id)) || [];
+```
 
-> Observação importante: hoje `currentQrCode` é único e é passado para todos os cards. Vou ajustar para guardar também `qrInstanceId` (ou guardar `selectedInstance`) para garantir que o QR apareça apenas no card/modal correto.
+**2. Adicionar novo estado para instâncias órfãs**
 
-### 3) Implementar Polling a cada 5 segundos enquanto o modal estiver aberto
-#### A) Detalhes da instância (`InstanceOverview`)
-- Ao exibir o QR com sucesso, iniciar um `setInterval` a cada 5000ms:
-  - Chamar o gateway com `{ action: 'status', token: instance.token }`
-  - Se vier `connected` / `loggedIn`, então:
-    - Parar o interval
-    - Mostrar toast “Conectado com sucesso”
-    - Fechar modal
-    - Chamar `onUpdate()` para recarregar dados
+```typescript
+const [orphanedInstances, setOrphanedInstances] = useState<LocalInstance[]>([]);
+const [selectedOrphans, setSelectedOrphans] = useState<Set<string>>(new Set());
+const [deletingOrphans, setDeletingOrphans] = useState(false);
+```
 
-- Garantir cleanup:
-  - Quando o modal fechar, limpar o interval
-  - No unmount do componente, limpar também
+**3. Exibir seção "Instâncias Órfãs" no modal**
 
-#### B) Lista de instâncias (`Instances`)
-Existem 2 abordagens; vou seguir a mais robusta:
+Adicionar uma nova seção visual (com ícone de alerta) mostrando instâncias que existem localmente mas não na UAZAPI:
 
-**Abordagem recomendada:** centralizar o modal de QR na página `Instances.tsx` (em vez de cada `InstanceCard` ter seu próprio `Dialog`)
-- Guardar em estado:
-  - `qrDialogOpen`
-  - `selectedInstance`
-  - `qrCode`
-  - `isLoadingQr`
-- O `InstanceCard` apenas chama `onConnect(instance)` e o modal abre no pai.
-- O polling fica todo no `Instances.tsx` e atualiza/fecha o modal do pai ao conectar.
+```
+text
+┌─────────────────────────────────────────────────┐
+│  ⚠️ Instâncias Órfãs (1)                        │
+│  Existem no sistema local mas não na UAZAPI     │
+├─────────────────────────────────────────────────┤
+│  ☐ teste • Desconectado                         │
+│    Não encontrada na UAZAPI - pode ser removida │
+└─────────────────────────────────────────────────┘
+```
 
-Motivo: evita inconsistência de `currentQrCode` único sendo repassado para vários cards.
+**4. Adicionar botão "Remover Órfãs"**
+
+No `DialogFooter`, adicionar um botão para excluir as instâncias selecionadas:
+
+```typescript
+<Button
+  variant="destructive"
+  onClick={handleDeleteOrphans}
+  disabled={deletingOrphans || selectedOrphans.size === 0}
+>
+  Remover Órfãs ({selectedOrphans.size})
+</Button>
+```
+
+**5. Implementar lógica de remoção**
+
+```typescript
+const handleDeleteOrphans = async () => {
+  setDeletingOrphans(true);
+  try {
+    // Remover registros de acesso relacionados primeiro
+    for (const id of selectedOrphans) {
+      await supabase.from('user_instance_access').delete().eq('instance_id', id);
+    }
+    
+    // Remover instâncias
+    const { error } = await supabase
+      .from('instances')
+      .delete()
+      .in('id', Array.from(selectedOrphans));
+    
+    if (error) throw error;
+    
+    toast.success(`${selectedOrphans.size} instância(s) removida(s)`);
+    onSync(); // Atualiza lista principal
+    fetchData(); // Recarrega dados do modal
+    setSelectedOrphans(new Set());
+  } catch (err) {
+    toast.error('Erro ao remover instâncias');
+  } finally {
+    setDeletingOrphans(false);
+  }
+};
+```
 
 ---
 
-## Ajustes visuais (rápidos, mas úteis)
-- No modal de QR:
-  - Exibir um texto pequeno “Aguardando leitura do QR… (verificando status a cada 5s)”
-  - Botão “Gerar novo QR” (reexecuta connect)
-  - Botão “Fechar” (para o polling)
+## Detalhes Técnicos
+
+### Relacionamentos a considerar na exclusão
+
+Quando uma instância é removida, precisamos limpar:
+
+1. `user_instance_access` - Registros de acesso do usuário (não tem CASCADE)
+2. `scheduled_messages` - Tem `ON DELETE CASCADE`, será limpo automaticamente
+3. `broadcast_logs` - Verificar se tem referência à instância
+
+### Fluxo visual do modal atualizado
+
+```
+text
+┌────────────────────────────────────────────────────────┐
+│  🔄 Sincronizar Instâncias da UAZAPI                   │
+├────────────────────────────────────────────────────────┤
+│  Novas Instâncias (0)                                  │
+│  (nenhuma nova instância disponível)                   │
+├────────────────────────────────────────────────────────┤
+│  Já Sincronizadas (5)                                  │
+│  ✓ Casa Do Agricultor Vitória • Conectado              │
+│  ✓ CDA | Consultório Vet • Conectado                   │
+│  ...                                                   │
+├────────────────────────────────────────────────────────┤
+│  ⚠️ Instâncias Órfãs (1)                               │
+│  ☐ teste • Não encontrada na UAZAPI                    │
+├────────────────────────────────────────────────────────┤
+│        [Cancelar]   [Remover Órfãs (0)]   [Importar]   │
+└────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## Validação (como vamos confirmar que ficou correto)
-1) Teste de backend:
-- Chamar o gateway `connect` e confirmar que retorna `instance.qrcode`.
-- Chamar o gateway `status` e confirmar que retorna `status` coerente.
+## Arquivos a modificar
 
-2) Teste de UI:
-- Abrir a instância “Teste de QR Code”
-- Clicar em “Conectar via QR Code”
-- QR deve aparecer (sem mensagem de erro)
-- Após escanear, modal fecha automaticamente e status muda para conectado (sem esperar 30s)
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/dashboard/SyncInstancesDialog.tsx` | Adicionar lógica de detecção e remoção de órfãs |
 
 ---
 
-## Arquivos envolvidos
-- `supabase/functions/uazapi-proxy/index.ts` (adicionar action `status` + logs opcionais)
-- `src/components/instance/InstanceOverview.tsx` (parse correto + normalize + polling 5s + cleanup)
-- `src/pages/dashboard/Instances.tsx` (parse correto + modal central + polling 5s + cleanup)
-- `src/components/dashboard/InstanceCard.tsx` (se centralizarmos o modal no pai, simplificar/remover o Dialog interno do card)
+## Benefícios
 
----
-
-## Riscos e mitigação
-- “connection attempt canceled by API” pode acontecer se um connect anterior ficou pendente.
-  - Mitigação: ao clicar “Gerar novo QR”, refaz o connect e reinicia polling; também exibir lastDisconnectReason para diagnóstico.
-- Interval duplicado (vazamento):
-  - Mitigação: sempre guardar `intervalId` em `useRef` e limpar no fechamento/unmount.
+- Mantém o banco de dados local sincronizado com a UAZAPI
+- Evita acúmulo de instâncias "fantasma" que causam confusão
+- Dá controle ao Super Admin sobre o que remover (não é automático)
+- Mostra claramente quais instâncias estão desatualizadas
