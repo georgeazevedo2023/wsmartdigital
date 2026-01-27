@@ -14,24 +14,44 @@ interface MessagePreviewProps {
 }
 
 const formatWhatsAppText = (text: string): React.ReactNode[] => {
-  // Regex para encontrar *texto* (negrito do WhatsApp)
-  const boldRegex = /\*([^*]+)\*/g;
+  // Regex patterns para formatação do WhatsApp
+  // *texto* = negrito, _texto_ = itálico, ~texto~ = tachado
+  const formatRegex = /(\*([^*]+)\*)|(_([^_]+)_)|(~([^~]+)~)/g;
   const parts: React.ReactNode[] = [];
   let lastIndex = 0;
   let match;
   let keyIndex = 0;
   
-  while ((match = boldRegex.exec(text)) !== null) {
+  while ((match = formatRegex.exec(text)) !== null) {
     // Adicionar texto antes do match
     if (match.index > lastIndex) {
       parts.push(<span key={`text-${keyIndex++}`}>{text.slice(lastIndex, match.index)}</span>);
     }
-    // Adicionar texto em negrito
-    parts.push(
-      <strong key={`bold-${keyIndex++}`} className="font-bold">
-        {match[1]}
-      </strong>
-    );
+    
+    // Verificar qual formato foi encontrado
+    if (match[1]) {
+      // *negrito*
+      parts.push(
+        <strong key={`bold-${keyIndex++}`} className="font-bold">
+          {match[2]}
+        </strong>
+      );
+    } else if (match[3]) {
+      // _itálico_
+      parts.push(
+        <em key={`italic-${keyIndex++}`} className="italic">
+          {match[4]}
+        </em>
+      );
+    } else if (match[5]) {
+      // ~tachado~
+      parts.push(
+        <span key={`strike-${keyIndex++}`} className="line-through">
+          {match[6]}
+        </span>
+      );
+    }
+    
     lastIndex = match.index + match[0].length;
   }
   
@@ -239,7 +259,10 @@ const MessagePreview = ({
         <p className="text-xs text-muted-foreground flex items-center gap-2">
           <span>💡</span>
           <span>
-            Use <code className="bg-muted px-1 rounded text-[10px]">*texto*</code> para <strong>negrito</strong> • Enter para quebra de linha
+            <code className="bg-muted px-1 rounded text-[10px]">*negrito*</code>{' '}
+            <code className="bg-muted px-1 rounded text-[10px]">_itálico_</code>{' '}
+            <code className="bg-muted px-1 rounded text-[10px]">~tachado~</code>{' '}
+            • Enter para quebra de linha
           </span>
         </p>
       )}
