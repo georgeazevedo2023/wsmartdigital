@@ -182,6 +182,50 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     return Math.floor(Math.random() * (max - min + 1)) + min;
   };
 
+  // Save broadcast log to database
+  const saveBroadcastLog = async (params: {
+    messageType: string;
+    content: string | null;
+    mediaUrl: string | null;
+    groupsTargeted: number;
+    recipientsTargeted: number;
+    recipientsSuccess: number;
+    recipientsFailed: number;
+    status: 'completed' | 'cancelled' | 'error';
+    startedAt: number;
+    errorMessage?: string;
+  }) => {
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) return;
+
+      const completedAt = Date.now();
+      const durationSeconds = Math.floor((completedAt - params.startedAt) / 1000);
+
+      await supabase.from('broadcast_logs').insert({
+        user_id: session.data.session.user.id,
+        instance_id: instance.id,
+        instance_name: instance.name,
+        message_type: params.messageType,
+        content: params.content,
+        media_url: params.mediaUrl,
+        groups_targeted: params.groupsTargeted,
+        recipients_targeted: params.recipientsTargeted,
+        recipients_success: params.recipientsSuccess,
+        recipients_failed: params.recipientsFailed,
+        exclude_admins: excludeAdmins,
+        random_delay: randomDelay,
+        status: params.status,
+        started_at: new Date(params.startedAt).toISOString(),
+        completed_at: new Date(completedAt).toISOString(),
+        duration_seconds: durationSeconds,
+        error_message: params.errorMessage || null,
+      });
+    } catch (err) {
+      console.error('Error saving broadcast log:', err);
+    }
+  };
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -384,6 +428,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
             });
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${successCount} mensagem(ns) enviada(s).`);
+            
+            // Save log for cancelled broadcast
+            await saveBroadcastLog({
+              messageType: 'text',
+              content: trimmedMessage,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: uniqueMembers.length,
+              recipientsSuccess: successCount,
+              recipientsFailed: failCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -398,6 +455,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
             });
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${successCount} mensagem(ns) enviada(s).`);
+            
+            // Save log for cancelled broadcast
+            await saveBroadcastLog({
+              messageType: 'text',
+              content: trimmedMessage,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: uniqueMembers.length,
+              recipientsSuccess: successCount,
+              recipientsFailed: failCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -423,6 +493,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
         setProgress(p => ({ ...p, status: 'success', results }));
 
+        // Save log for successful broadcast
+        await saveBroadcastLog({
+          messageType: 'text',
+          content: trimmedMessage,
+          mediaUrl: null,
+          groupsTargeted: selectedGroups.length,
+          recipientsTargeted: uniqueMembers.length,
+          recipientsSuccess: successCount,
+          recipientsFailed: failCount,
+          status: 'completed',
+          startedAt: progress.startedAt || Date.now(),
+        });
+
         if (failCount > 0) {
           toast.warning(`Enviado para ${successCount} contato(s). ${failCount} falha(s).`);
         } else {
@@ -445,8 +528,22 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           // Check for cancellation
           if (isCancelledRef.current) {
             const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            
+            // Save log for cancelled broadcast
+            await saveBroadcastLog({
+              messageType: 'text',
+              content: trimmedMessage,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: selectedGroups.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -456,8 +553,22 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           // Check again after unpause
           if (isCancelledRef.current) {
             const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            
+            // Save log for cancelled broadcast
+            await saveBroadcastLog({
+              messageType: 'text',
+              content: trimmedMessage,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: selectedGroups.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -495,6 +606,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         const failCount = results.filter(r => !r.success).length;
 
         setProgress(p => ({ ...p, status: 'success', results }));
+
+        // Save log for successful broadcast
+        await saveBroadcastLog({
+          messageType: 'text',
+          content: trimmedMessage,
+          mediaUrl: null,
+          groupsTargeted: selectedGroups.length,
+          recipientsTargeted: selectedGroups.length,
+          recipientsSuccess: successCount,
+          recipientsFailed: failCount,
+          status: 'completed',
+          startedAt: progress.startedAt || Date.now(),
+        });
 
         if (failCount > 0) {
           toast.warning(`Enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
@@ -575,6 +699,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
             });
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${successCount} ${mediaLabel.toLowerCase()}(s) enviado(s).`);
+            
+            // Save log for cancelled media broadcast
+            await saveBroadcastLog({
+              messageType: sendType,
+              content: caption.trim() || null,
+              mediaUrl: mediaUrl.trim() || null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: uniqueMembers.length,
+              recipientsSuccess: successCount,
+              recipientsFailed: failCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -590,6 +727,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
             });
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${successCount} ${mediaLabel.toLowerCase()}(s) enviado(s).`);
+            
+            // Save log for cancelled media broadcast
+            await saveBroadcastLog({
+              messageType: sendType,
+              content: caption.trim() || null,
+              mediaUrl: mediaUrl.trim() || null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: uniqueMembers.length,
+              recipientsSuccess: successCount,
+              recipientsFailed: failCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -615,6 +765,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
         setProgress(p => ({ ...p, status: 'success', results }));
 
+        // Save log for successful media broadcast
+        await saveBroadcastLog({
+          messageType: sendType,
+          content: caption.trim() || null,
+          mediaUrl: mediaUrl.trim() || null,
+          groupsTargeted: selectedGroups.length,
+          recipientsTargeted: uniqueMembers.length,
+          recipientsSuccess: successCount,
+          recipientsFailed: failCount,
+          status: 'completed',
+          startedAt: progress.startedAt || Date.now(),
+        });
+
         const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
         if (failCount > 0) {
           toast.warning(`${mediaLabel} enviado para ${successCount} contato(s). ${failCount} falha(s).`);
@@ -638,8 +801,22 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           // Check for cancellation
           if (isCancelledRef.current) {
             const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            
+            // Save log for cancelled media broadcast
+            await saveBroadcastLog({
+              messageType: sendType,
+              content: caption.trim() || null,
+              mediaUrl: mediaUrl.trim() || null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: selectedGroups.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -649,8 +826,22 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           // Check again after unpause
           if (isCancelledRef.current) {
             const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
             setProgress(p => ({ ...p, status: 'cancelled', results }));
             toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            
+            // Save log for cancelled media broadcast
+            await saveBroadcastLog({
+              messageType: sendType,
+              content: caption.trim() || null,
+              mediaUrl: mediaUrl.trim() || null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: selectedGroups.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
             return;
           }
           
@@ -687,6 +878,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         const failCount = results.filter(r => !r.success).length;
 
         setProgress(p => ({ ...p, status: 'success', results }));
+
+        // Save log for successful media broadcast
+        await saveBroadcastLog({
+          messageType: sendType,
+          content: caption.trim() || null,
+          mediaUrl: mediaUrl.trim() || null,
+          groupsTargeted: selectedGroups.length,
+          recipientsTargeted: selectedGroups.length,
+          recipientsSuccess: successCount,
+          recipientsFailed: failCount,
+          status: 'completed',
+          startedAt: progress.startedAt || Date.now(),
+        });
 
         if (failCount > 0) {
           toast.warning(`Enviado para ${successCount} grupo(s). ${failCount} falha(s).`);

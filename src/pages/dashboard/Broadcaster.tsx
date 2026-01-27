@@ -6,6 +6,7 @@ import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft } from 'lu
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import GroupSelector, { Group } from '@/components/broadcast/GroupSelector';
 import BroadcastMessageForm from '@/components/broadcast/BroadcastMessageForm';
+import BroadcastHistory from '@/components/broadcast/BroadcastHistory';
 
 const Broadcaster = () => {
   const [step, setStep] = useState<'instance' | 'groups' | 'message'>('instance');
@@ -203,6 +204,9 @@ const Broadcaster = () => {
           />
         </div>
       )}
+
+      {/* Broadcast History - Always visible */}
+      <BroadcastHistory />
     </div>
   );
 };
