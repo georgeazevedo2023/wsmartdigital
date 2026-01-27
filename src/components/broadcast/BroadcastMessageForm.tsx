@@ -362,10 +362,10 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           action: 'send-media',
           token: instance.token,
           groupjid: number,
-          media: mediaData,
-          type,
-          text: captionText,
-          docName,
+          mediaUrl: mediaData,
+          mediaType: type,
+          caption: captionText,
+          filename: docName,
         }),
       }
     );
