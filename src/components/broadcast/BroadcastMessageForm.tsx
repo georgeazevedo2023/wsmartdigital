@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer } from 'lucide-react';
+import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer, StopCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import { TemplateSelector } from './TemplateSelector';
@@ -29,7 +29,7 @@ interface SendProgress {
   currentMember: number;
   totalMembers: number;
   groupName: string;
-  status: 'idle' | 'sending' | 'paused' | 'success' | 'error';
+  status: 'idle' | 'sending' | 'paused' | 'success' | 'error' | 'cancelled';
   results: { groupName: string; success: boolean; error?: string }[];
   startedAt: number | null;
 }
@@ -64,8 +64,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   
-  // Pause control using ref to allow immediate effect in async loops
+  // Pause and cancel control using refs to allow immediate effect in async loops
   const isPausedRef = useRef(false);
+  const isCancelledRef = useRef(false);
 
   // Media states
   const [mediaType, setMediaType] = useState<MediaType>('image');
@@ -149,6 +150,11 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const handleResume = () => {
     isPausedRef.current = false;
     setProgress(p => ({ ...p, status: 'sending' }));
+  };
+
+  const handleCancel = () => {
+    isCancelledRef.current = true;
+    isPausedRef.current = false; // Unpause to allow the loop to exit
   };
 
   // Função para calcular delay aleatório baseado na configuração
@@ -347,6 +353,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
       const accessToken = session.data.session.access_token;
       const results: SendProgress['results'] = [];
+      
+      // Reset cancel flag at start
+      isCancelledRef.current = false;
 
       if (excludeAdmins) {
         // DEDUPLICATION: Get unique members across all groups
@@ -367,8 +376,30 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         let failCount = 0;
 
         for (let j = 0; j < uniqueMembers.length; j++) {
+          // Check for cancellation
+          if (isCancelledRef.current) {
+            results.push({ 
+              groupName: `Cancelado após ${successCount} envio(s)`, 
+              success: true 
+            });
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${successCount} mensagem(ns) enviada(s).`);
+            return;
+          }
+          
           // Wait if paused
           await waitWhilePaused();
+          
+          // Check again after unpause (might have been cancelled while paused)
+          if (isCancelledRef.current) {
+            results.push({ 
+              groupName: `Cancelado após ${successCount} envio(s)`, 
+              success: true 
+            });
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${successCount} mensagem(ns) enviada(s).`);
+            return;
+          }
           
           try {
             await sendToNumber(uniqueMembers[j].jid, trimmedMessage, accessToken);
@@ -411,8 +442,24 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         });
 
         for (let i = 0; i < selectedGroups.length; i++) {
+          // Check for cancellation
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            return;
+          }
+          
           // Wait if paused
           await waitWhilePaused();
+          
+          // Check again after unpause
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            return;
+          }
           
           const group = selectedGroups[i];
           
@@ -496,6 +543,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       
       const sendType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType === 'file' ? 'document' : mediaType;
       const docName = mediaType === 'file' ? filename.trim() : '';
+      
+      // Reset cancel flag at start
+      isCancelledRef.current = false;
 
       if (excludeAdmins) {
         // DEDUPLICATION: Get unique members across all groups
@@ -516,8 +566,32 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         let failCount = 0;
 
         for (let j = 0; j < uniqueMembers.length; j++) {
+          // Check for cancellation
+          if (isCancelledRef.current) {
+            const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
+            results.push({ 
+              groupName: `Cancelado após ${successCount} envio(s)`, 
+              success: true 
+            });
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${successCount} ${mediaLabel.toLowerCase()}(s) enviado(s).`);
+            return;
+          }
+          
           // Wait if paused
           await waitWhilePaused();
+          
+          // Check again after unpause
+          if (isCancelledRef.current) {
+            const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
+            results.push({ 
+              groupName: `Cancelado após ${successCount} envio(s)`, 
+              success: true 
+            });
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${successCount} ${mediaLabel.toLowerCase()}(s) enviado(s).`);
+            return;
+          }
           
           try {
             await sendMediaToNumber(uniqueMembers[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
@@ -561,8 +635,24 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         });
 
         for (let i = 0; i < selectedGroups.length; i++) {
+          // Check for cancellation
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            return;
+          }
+          
           // Wait if paused
           await waitWhilePaused();
+          
+          // Check again after unpause
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            return;
+          }
           
           const group = selectedGroups[i];
           
@@ -940,6 +1030,12 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                     Erro no envio
                   </>
                 )}
+                {progress.status === 'cancelled' && (
+                  <>
+                    <StopCircle className="w-5 h-5 text-muted-foreground" />
+                    Envio cancelado
+                  </>
+                )}
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -980,7 +1076,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                     )}
                   </div>
 
-                  {/* Pause/Resume Buttons */}
+                  {/* Pause/Resume and Cancel Buttons */}
                   <div className="flex gap-2 pt-2">
                     {progress.status === 'sending' ? (
                       <Button 
@@ -1000,6 +1096,14 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                         Retomar
                       </Button>
                     )}
+                    <Button 
+                      onClick={handleCancel} 
+                      variant="destructive" 
+                      className="flex-1"
+                    >
+                      <StopCircle className="w-4 h-4 mr-2" />
+                      Cancelar
+                    </Button>
                   </div>
                 </>
               )}
