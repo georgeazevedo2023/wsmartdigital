@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X } from 'lucide-react';
+import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import { TemplateSelector } from './TemplateSelector';
@@ -29,7 +29,7 @@ interface SendProgress {
   currentMember: number;
   totalMembers: number;
   groupName: string;
-  status: 'idle' | 'sending' | 'success' | 'error';
+  status: 'idle' | 'sending' | 'paused' | 'success' | 'error';
   results: { groupName: string; success: boolean; error?: string }[];
 }
 
@@ -60,6 +60,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   });
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
+  
+  // Pause control using ref to allow immediate effect in async loops
+  const isPausedRef = useRef(false);
 
   // Media states
   const [mediaType, setMediaType] = useState<MediaType>('image');
@@ -108,6 +111,23 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   }, [previewUrl]);
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+  // Wait while paused, checking every 100ms
+  const waitWhilePaused = async (): Promise<void> => {
+    while (isPausedRef.current) {
+      await delay(100);
+    }
+  };
+
+  const handlePause = () => {
+    isPausedRef.current = true;
+    setProgress(p => ({ ...p, status: 'paused' }));
+  };
+
+  const handleResume = () => {
+    isPausedRef.current = false;
+    setProgress(p => ({ ...p, status: 'sending' }));
+  };
 
   // Função para calcular delay aleatório baseado na configuração
   const getRandomDelay = (): number => {
@@ -324,6 +344,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         let failCount = 0;
 
         for (let j = 0; j < uniqueMembers.length; j++) {
+          // Wait if paused
+          await waitWhilePaused();
+          
           try {
             await sendToNumber(uniqueMembers[j].jid, trimmedMessage, accessToken);
             successCount++;
@@ -364,6 +387,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         });
 
         for (let i = 0; i < selectedGroups.length; i++) {
+          // Wait if paused
+          await waitWhilePaused();
+          
           const group = selectedGroups[i];
           
           try {
@@ -465,6 +491,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         let failCount = 0;
 
         for (let j = 0; j < uniqueMembers.length; j++) {
+          // Wait if paused
+          await waitWhilePaused();
+          
           try {
             await sendMediaToNumber(uniqueMembers[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
             successCount++;
@@ -506,6 +535,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         });
 
         for (let i = 0; i < selectedGroups.length; i++) {
+          // Wait if paused
+          await waitWhilePaused();
+          
           const group = selectedGroups[i];
           
           try {
@@ -723,7 +755,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
   const characterCount = message.length;
   const isOverLimit = characterCount > MAX_MESSAGE_LENGTH;
-  const isSending = progress.status === 'sending';
+  const isSending = progress.status === 'sending' || progress.status === 'paused';
 
   const targetCount = excludeAdmins ? uniqueRegularMembersCount : selectedGroups.length;
 
@@ -846,6 +878,12 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                     {activeTab === 'media' ? 'Enviando mídia...' : 'Enviando mensagens...'}
                   </>
                 )}
+                {progress.status === 'paused' && (
+                  <>
+                    <Pause className="w-5 h-5 text-warning" />
+                    Envio pausado
+                  </>
+                )}
                 {progress.status === 'success' && (
                   <>
                     <CheckCircle2 className="w-5 h-5 text-success" />
@@ -861,7 +899,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {progress.status === 'sending' && (
+              {(progress.status === 'sending' || progress.status === 'paused') && (
                 <>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
@@ -883,10 +921,32 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                       />
                     </div>
                   )}
+
+                  {/* Pause/Resume Buttons */}
+                  <div className="flex gap-2 pt-2">
+                    {progress.status === 'sending' ? (
+                      <Button 
+                        onClick={handlePause} 
+                        variant="outline" 
+                        className="flex-1"
+                      >
+                        <Pause className="w-4 h-4 mr-2" />
+                        Pausar
+                      </Button>
+                    ) : (
+                      <Button 
+                        onClick={handleResume} 
+                        className="flex-1"
+                      >
+                        <Play className="w-4 h-4 mr-2" />
+                        Retomar
+                      </Button>
+                    )}
+                  </div>
                 </>
               )}
 
-              {progress.status !== 'sending' && progress.results.length > 0 && (
+              {!['sending', 'paused'].includes(progress.status) && progress.results.length > 0 && (
                 <div className="space-y-2 max-h-60 overflow-y-auto">
                   {progress.results.map((result, idx) => (
                     <div key={idx} className="flex items-center gap-2 text-sm">
@@ -901,7 +961,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 </div>
               )}
 
-              {progress.status !== 'sending' && (
+              {!['sending', 'paused'].includes(progress.status) && (
                 <Button onClick={handleCloseProgress} className="w-full">
                   Fechar
                 </Button>
