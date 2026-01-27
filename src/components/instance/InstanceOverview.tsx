@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,6 +17,8 @@ import {
   Phone,
   Wifi,
   WifiOff,
+  RefreshCw,
+  Loader2,
 } from 'lucide-react';
 import {
   Dialog,
@@ -24,6 +26,7 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogFooter,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
@@ -50,18 +53,119 @@ interface InstanceOverviewProps {
   onUpdate: () => void;
 }
 
+// Normaliza string base64 para src de imagem
+const normalizeQrSrc = (qr: string): string => {
+  if (qr.startsWith('data:image')) {
+    return qr;
+  }
+  return `data:image/png;base64,${qr}`;
+};
+
+// Extrai QR code da resposta da API (pode vir em diferentes formatos)
+const extractQrCode = (data: any): string | null => {
+  // Formato: { instance: { qrcode: "..." } }
+  if (data?.instance?.qrcode) {
+    return data.instance.qrcode;
+  }
+  // Formato: { qrcode: "..." }
+  if (data?.qrcode) {
+    return data.qrcode;
+  }
+  // Formato: { base64: "..." }
+  if (data?.base64) {
+    return data.base64;
+  }
+  return null;
+};
+
+// Verifica se a instância está conectada na resposta
+const checkIfConnected = (data: any): boolean => {
+  return (
+    data?.instance?.status === 'connected' ||
+    data?.status === 'connected' ||
+    data?.status?.connected === true ||
+    data?.loggedIn === true
+  );
+};
+
 const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
   const [showToken, setShowToken] = useState(false);
   const [showQrDialog, setShowQrDialog] = useState(false);
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [isLoadingQr, setIsLoadingQr] = useState(false);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   const isConnected = instance.status === 'connected' || instance.status === 'online';
   const phoneNumber = instance.owner_jid?.split('@')[0];
 
+  // Cleanup polling ao desmontar ou fechar modal
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, []);
+
+  // Cleanup polling quando modal fecha
+  useEffect(() => {
+    if (!showQrDialog && pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, [showQrDialog]);
+
   const copyToken = () => {
     navigator.clipboard.writeText(instance.token);
     toast.success('Token copiado para a área de transferência');
+  };
+
+  const startPolling = async () => {
+    // Limpar polling anterior
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const session = await supabase.auth.getSession();
+        if (!session.data.session) return;
+
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.data.session.access_token}`,
+            },
+            body: JSON.stringify({
+              action: 'status',
+              token: instance.token,
+            }),
+          }
+        );
+
+        const data = await response.json();
+        console.log('Polling status response:', data);
+
+        if (checkIfConnected(data)) {
+          // Parar polling
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          
+          toast.success('Conectado com sucesso!');
+          setShowQrDialog(false);
+          setQrCode(null);
+          onUpdate();
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 5000);
   };
 
   const handleConnect = async () => {
@@ -93,16 +197,24 @@ const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
       );
 
       const data = await response.json();
+      console.log('Connect response:', data);
 
-      if (data.qrcode) {
-        setQrCode(data.qrcode);
-      } else if (data.base64) {
-        setQrCode(data.base64);
-      } else if (data.status === 'connected') {
+      // Verificar se já está conectado
+      if (checkIfConnected(data)) {
         toast.success('Instância já está conectada!');
         setShowQrDialog(false);
         onUpdate();
+        return;
+      }
+
+      // Extrair QR code
+      const qr = extractQrCode(data);
+      if (qr) {
+        setQrCode(normalizeQrSrc(qr));
+        // Iniciar polling para verificar conexão
+        startPolling();
       } else {
+        console.error('QR code not found in response:', data);
         toast.error('Não foi possível gerar o QR Code');
       }
     } catch (error) {
@@ -111,6 +223,19 @@ const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
     } finally {
       setIsLoadingQr(false);
     }
+  };
+
+  const handleGenerateNewQr = () => {
+    handleConnect();
+  };
+
+  const handleCloseDialog = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setShowQrDialog(false);
+    setQrCode(null);
   };
 
   return (
@@ -265,7 +390,7 @@ const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
       </Card>
 
       {/* QR Code Dialog */}
-      <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
+      <Dialog open={showQrDialog} onOpenChange={handleCloseDialog}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Conectar {instance.name}</DialogTitle>
@@ -273,17 +398,25 @@ const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
               Escaneie o QR Code com seu WhatsApp para conectar
             </DialogDescription>
           </DialogHeader>
-          <div className="flex items-center justify-center p-6">
+          <div className="flex flex-col items-center justify-center p-6 gap-4">
             {isLoadingQr ? (
               <div className="w-64 h-64 bg-muted animate-pulse rounded-lg flex items-center justify-center">
-                <span className="text-muted-foreground">Carregando QR Code...</span>
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                  <span className="text-muted-foreground">Gerando QR Code...</span>
+                </div>
               </div>
             ) : qrCode ? (
-              <img
-                src={qrCode}
-                alt="QR Code"
-                className="w-64 h-64 rounded-lg"
-              />
+              <>
+                <img
+                  src={qrCode}
+                  alt="QR Code"
+                  className="w-64 h-64 rounded-lg border"
+                />
+                <p className="text-sm text-muted-foreground text-center">
+                  Aguardando leitura do QR… (verificando status a cada 5s)
+                </p>
+              </>
             ) : (
               <div className="w-64 h-64 bg-muted rounded-lg flex items-center justify-center">
                 <span className="text-muted-foreground text-center px-4">
@@ -292,6 +425,15 @@ const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
               </div>
             )}
           </div>
+          <DialogFooter className="flex-row gap-2 sm:justify-center">
+            <Button variant="outline" onClick={handleCloseDialog}>
+              Fechar
+            </Button>
+            <Button onClick={handleGenerateNewQr} disabled={isLoadingQr}>
+              <RefreshCw className={cn("w-4 h-4 mr-2", isLoadingQr && "animate-spin")} />
+              Gerar novo QR
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
