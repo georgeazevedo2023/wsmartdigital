@@ -1,244 +1,290 @@
 
 
-# Plano: Adicionar Preview da Mensagem no Disparador
+# Plano: Edição Inline no Preview com Formatação (Negrito e Quebra de Linha)
 
 ## Objetivo
-Criar uma seção de **pré-visualização** que mostra exatamente como a mensagem ficará antes de enviar, simulando a aparência de uma mensagem do WhatsApp. Isso permitirá ao usuário revisar o conteúdo (texto ou mídia com legenda) antes de confirmar o envio.
+Permitir que o usuário clique diretamente no texto do preview para editar a mensagem, e adicionar suporte visual para:
+- **Quebras de linha** (Enter/\n)
+- **Negrito** usando a sintaxe do WhatsApp (`*texto*`)
 
 ---
 
-## Localização do Preview
+## Comportamento Esperado
 
-O preview ficará **abaixo da área de composição** e **acima dos toggles** (Excluir Admins, Delay, etc.), aparecendo apenas quando houver conteúdo válido para enviar.
+### Edição Inline
+1. Usuário clica no texto do preview
+2. O texto se transforma em um campo editável (textarea inline)
+3. Usuário edita diretamente no balão
+4. Ao clicar fora (blur) ou pressionar Escape, volta ao modo de visualização
+5. As alterações são sincronizadas com o campo de texto/legenda principal
+
+### Formatação Visual
+O preview renderizará a formatação do WhatsApp:
+- `*texto*` aparece como **texto** em negrito
+- Quebras de linha (`\n`) são exibidas corretamente
+
+---
+
+## Arquitetura da Solução
+
+### Componente MessagePreview Atualizado
 
 ```
-┌──────────────────────────────────────────────────┐
-│ 📝 Compor Mensagem                               │
-├──────────────────────────────────────────────────┤
-│ [Texto] [Mídia]                                  │
-│                                                  │
-│ ┌──────────────────────────────────────────┐     │
-│ │ Textarea / Seleção de Mídia              │     │
-│ └──────────────────────────────────────────┘     │
-│                                                  │
-│ ┌──────────────────────────────────────────┐     │
-│ │ 👁️ PREVIEW                              │     │
-│ │ ┌──────────────────────────────────────┐ │     │
-│ │ │ (Balão estilo WhatsApp)              │ │     │
-│ │ │                                      │ │     │
-│ │ │ [Imagem preview aqui]                │ │     │
-│ │ │                                      │ │     │
-│ │ │ Texto da legenda ou mensagem aqui... │ │     │
-│ │ └──────────────────────────────────────┘ │     │
-│ └──────────────────────────────────────────┘     │
-│                                                  │
-│ [Toggle Excluir Admins]                          │
-│ [Toggle Delay]                                   │
-│ [Botões de ação]                                 │
-└──────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│ 👁️ Preview da mensagem (clique para editar)                │
+│                                                             │
+│       ┌────────────────────────────────────────────┐        │
+│       │ [Mídia se houver]                          │        │
+│       │                                            │        │
+│       │ ┌────────────────────────────────────────┐ │        │
+│       │ │ Olá *pessoal*!                         │ │        │
+│       │ │                                        │ │        │
+│       │ │ Esta é uma mensagem com               │ │        │
+│       │ │ **quebra de linha** e *negrito*.       │ │        │
+│       │ └────────────────────────────────────────┘ │        │
+│       │                              ✓✓ 12:00     │        │
+│       └────────────────────────────────────────────┘        │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+Quando clicado:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ 👁️ Preview da mensagem (editando...)                       │
+│                                                             │
+│       ┌────────────────────────────────────────────┐        │
+│       │ [Mídia se houver]                          │        │
+│       │                                            │        │
+│       │ ┌────────────────────────────────────────┐ │        │
+│       │ │ [Textarea editável]                    │ │        │
+│       │ │ Olá *pessoal*!                         │ │        │
+│       │ │                                        │ │        │
+│       │ │ Esta é uma mensagem com                │ │        │
+│       │ │ quebra de linha e *negrito*.           │ │        │
+│       │ └────────────────────────────────────────┘ │        │
+│       │                              ✓✓ 12:00     │        │
+│       └────────────────────────────────────────────┘        │
+│                                                             │
+│  💡 Use *texto* para negrito • Enter para quebra de linha   │
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Componente: MessagePreview
+## Mudanças no Código
 
-Criar um novo componente `src/components/broadcast/MessagePreview.tsx` que simula a aparência de uma mensagem do WhatsApp.
+### 1. Atualizar Interface do MessagePreview
 
-### Interface do Componente
+Adicionar props para callback de edição e estado de disabled:
 
 ```typescript
-interface MessagePreviewProps {
-  type: 'text' | 'image' | 'video' | 'audio' | 'file';
-  text?: string;
-  mediaUrl?: string;        // URL ou base64 para preview
-  previewUrl?: string;      // Object URL do arquivo selecionado
-  filename?: string;        // Para arquivos
-  isPtt?: boolean;          // Para áudio como mensagem de voz
-}
-```
-
-### Estrutura Visual
-
-O preview usará um estilo similar ao WhatsApp:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ 👁️ Preview da mensagem                                 │
-│                                                         │
-│       ┌────────────────────────────────────────┐        │
-│       │ ┌──────────────────────────────────┐   │        │
-│       │ │                                  │   │        │
-│       │ │     [Imagem/Vídeo preview]       │   │        │
-│       │ │                                  │   │        │
-│       │ └──────────────────────────────────┘   │        │
-│       │                                        │        │
-│       │ Sua mensagem de texto aparece aqui     │        │
-│       │ com formatação e quebras de linha...   │        │
-│       │                                        │        │
-│       │                              ✓✓ 12:00  │        │
-│       └────────────────────────────────────────┘        │
-│                                                         │
-└─────────────────────────────────────────────────────────┘
-```
-
----
-
-## Implementação
-
-### 1. Criar `MessagePreview.tsx`
-
-```typescript
-import { Card } from '@/components/ui/card';
-import { Eye, FileIcon, Mic, PlayCircle } from 'lucide-react';
-
 interface MessagePreviewProps {
   type: 'text' | 'image' | 'video' | 'audio' | 'file';
   text?: string;
   mediaUrl?: string;
-  previewUrl?: string;
+  previewUrl?: string | null;
   filename?: string;
   isPtt?: boolean;
+  onTextChange?: (newText: string) => void;  // NOVO
+  disabled?: boolean;                          // NOVO
 }
-
-const MessagePreview = ({ type, text, mediaUrl, previewUrl, filename, isPtt }: MessagePreviewProps) => {
-  const hasContent = text?.trim() || mediaUrl?.trim() || previewUrl;
-  
-  if (!hasContent) return null;
-  
-  const imageSource = previewUrl || mediaUrl;
-  const currentTime = new Date().toLocaleTimeString('pt-BR', { 
-    hour: '2-digit', 
-    minute: '2-digit' 
-  });
-
-  return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Eye className="w-4 h-4" />
-        <span>Preview da mensagem</span>
-      </div>
-      
-      <div className="bg-muted/30 rounded-lg p-4 flex justify-end">
-        {/* Balão de mensagem estilo WhatsApp (remetente) */}
-        <div className="max-w-[85%] bg-primary/10 rounded-lg rounded-tr-none p-3 shadow-sm border border-border/30">
-          {/* Media preview */}
-          {type === 'image' && imageSource && (
-            <img 
-              src={imageSource} 
-              alt="Preview" 
-              className="rounded-md max-h-48 w-auto mb-2"
-            />
-          )}
-          
-          {type === 'video' && (previewUrl || mediaUrl) && (
-            <div className="relative mb-2">
-              {previewUrl ? (
-                <video 
-                  src={previewUrl} 
-                  className="rounded-md max-h-48 w-auto"
-                />
-              ) : (
-                <div className="bg-black/10 rounded-md h-32 w-48 flex items-center justify-center">
-                  <PlayCircle className="w-12 h-12 text-muted-foreground/50" />
-                </div>
-              )}
-            </div>
-          )}
-          
-          {type === 'audio' && (
-            <div className="flex items-center gap-3 bg-muted/50 rounded-full px-4 py-2 mb-2">
-              <Mic className="w-5 h-5 text-primary" />
-              <div className="flex-1 h-1 bg-muted-foreground/30 rounded-full">
-                <div className="h-full w-1/3 bg-primary rounded-full" />
-              </div>
-              <span className="text-xs text-muted-foreground">
-                {isPtt ? '0:00' : filename || 'audio'}
-              </span>
-            </div>
-          )}
-          
-          {type === 'file' && (
-            <div className="flex items-center gap-3 bg-muted/50 rounded-md px-4 py-3 mb-2">
-              <FileIcon className="w-8 h-8 text-primary" />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">
-                  {filename || 'documento'}
-                </p>
-              </div>
-            </div>
-          )}
-          
-          {/* Texto ou legenda */}
-          {text && (
-            <p className="text-sm whitespace-pre-wrap break-words">
-              {text}
-            </p>
-          )}
-          
-          {/* Timestamp */}
-          <div className="flex justify-end items-center gap-1 mt-1">
-            <span className="text-[10px] text-muted-foreground">
-              {currentTime}
-            </span>
-            <span className="text-[10px] text-primary">✓✓</span>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default MessagePreview;
 ```
 
-### 2. Integrar no `BroadcastMessageForm.tsx`
-
-Adicionar o import e renderizar o componente:
+### 2. Adicionar Estado de Edição
 
 ```typescript
-import MessagePreview from './MessagePreview';
+const [isEditing, setIsEditing] = useState(false);
+const [editText, setEditText] = useState(text || '');
+const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-// Dentro do JSX, após o TabsContent mas antes dos toggles:
-{/* Message Preview */}
+// Sincronizar quando text muda externamente
+useEffect(() => {
+  if (!isEditing) {
+    setEditText(text || '');
+  }
+}, [text, isEditing]);
+```
+
+### 3. Criar Função de Formatação para WhatsApp
+
+```typescript
+const formatWhatsAppText = (text: string): React.ReactNode[] => {
+  // Regex para encontrar *texto* (negrito do WhatsApp)
+  const boldRegex = /\*([^*]+)\*/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+  
+  while ((match = boldRegex.exec(text)) !== null) {
+    // Adicionar texto antes do match
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    // Adicionar texto em negrito
+    parts.push(
+      <strong key={match.index} className="font-bold">
+        {match[1]}
+      </strong>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Adicionar texto restante
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : [text];
+};
+```
+
+### 4. Atualizar Renderização do Texto
+
+Substituir o texto estático por versão clicável/editável:
+
+```tsx
+{/* Texto ou legenda - agora editável */}
+{text !== undefined && (
+  <div 
+    onClick={() => !disabled && setIsEditing(true)}
+    className={cn(
+      "text-sm whitespace-pre-wrap break-words cursor-pointer transition-colors",
+      !disabled && "hover:bg-primary/5 rounded px-1 -mx-1"
+    )}
+  >
+    {isEditing ? (
+      <textarea
+        ref={textareaRef}
+        value={editText}
+        onChange={(e) => setEditText(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        className="w-full bg-transparent border-none outline-none resize-none text-sm min-h-[60px]"
+        autoFocus
+      />
+    ) : (
+      text ? formatWhatsAppText(text) : (
+        <span className="text-muted-foreground italic">
+          Clique para adicionar texto...
+        </span>
+      )
+    )}
+  </div>
+)}
+```
+
+### 5. Handlers de Edição
+
+```typescript
+const handleBlur = () => {
+  setIsEditing(false);
+  if (editText !== text && onTextChange) {
+    onTextChange(editText);
+  }
+};
+
+const handleKeyDown = (e: React.KeyboardEvent) => {
+  // Escape cancela a edição
+  if (e.key === 'Escape') {
+    setEditText(text || '');
+    setIsEditing(false);
+  }
+  // Enter mantém quebra de linha (comportamento padrão)
+};
+```
+
+### 6. Adicionar Dica de Formatação
+
+Quando em modo de edição, mostrar dica abaixo do preview:
+
+```tsx
+{isEditing && (
+  <p className="text-xs text-muted-foreground mt-2 flex items-center gap-2">
+    <span>💡</span>
+    <span>
+      Use <code className="bg-muted px-1 rounded">*texto*</code> para negrito • Enter para quebra de linha
+    </span>
+  </p>
+)}
+```
+
+### 7. Integrar no BroadcastMessageForm
+
+Passar o callback de alteração de texto:
+
+```tsx
 <MessagePreview 
   type={activeTab === 'text' ? 'text' : mediaType}
   text={activeTab === 'text' ? message : caption}
-  mediaUrl={mediaUrl}
-  previewUrl={previewUrl}
+  mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
+  previewUrl={activeTab === 'media' ? previewUrl : undefined}
   filename={filename}
   isPtt={isPtt}
+  onTextChange={(newText) => {
+    if (activeTab === 'text') {
+      setMessage(newText);
+    } else {
+      setCaption(newText);
+    }
+  }}
+  disabled={isSending}
 />
 ```
 
 ---
 
-## Comportamento
+## Resultado Visual
 
-| Situação | O que o Preview mostra |
-|----------|------------------------|
-| Aba Texto, vazia | Não aparece |
-| Aba Texto, com texto | Balão com texto |
-| Aba Mídia, imagem selecionada | Imagem + legenda (se houver) |
-| Aba Mídia, vídeo selecionado | Thumbnail do vídeo + legenda |
-| Aba Mídia, áudio | Visualização de áudio com barra + legenda |
-| Aba Mídia, documento | Ícone de arquivo + nome + legenda |
-| Aba Mídia, apenas URL | Preview da mídia via URL |
+### Modo Visualização (com formatação)
+```
+┌──────────────────────────────────────────────────┐
+│ Olá *todos*!                                     │
+│                                                  │
+│ Esta é uma mensagem de teste.                    │
+│                                      ✓✓ 14:30   │
+└──────────────────────────────────────────────────┘
+```
+
+Renderizado como:
+```
+┌──────────────────────────────────────────────────┐
+│ Olá **todos**!                                   │
+│                                                  │
+│ Esta é uma mensagem de teste.                    │
+│                                      ✓✓ 14:30   │
+└──────────────────────────────────────────────────┘
+```
+
+### Modo Edição
+```
+┌──────────────────────────────────────────────────┐
+│ [Textarea editável]                              │
+│ Olá *todos*!                                     │
+│                                                  │
+│ Esta é uma mensagem de teste.                    │
+│                                                  │
+└──────────────────────────────────────────────────┘
+💡 Use *texto* para negrito • Enter para quebra de linha
+```
 
 ---
 
-## Arquivos a Criar/Modificar
+## Arquivos a Modificar
 
-| Arquivo | Ação |
-|---------|------|
-| `src/components/broadcast/MessagePreview.tsx` | **Criar** - Novo componente |
-| `src/components/broadcast/BroadcastMessageForm.tsx` | **Modificar** - Importar e usar o componente |
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/broadcast/MessagePreview.tsx` | Adicionar estado de edição, formatação WhatsApp, textarea inline |
+| `src/components/broadcast/BroadcastMessageForm.tsx` | Passar `onTextChange` e `disabled` para o MessagePreview |
 
 ---
 
 ## Benefícios
 
-- **Revisão visual**: Usuário vê exatamente como a mensagem ficará
-- **Prevenção de erros**: Reduz chances de enviar mensagem incorreta
-- **Experiência familiar**: Estilo similar ao WhatsApp facilita a compreensão
-- **Feedback em tempo real**: Preview atualiza conforme o usuário digita
+- **Edição direta**: Usuário pode editar onde vê o resultado, mais intuitivo
+- **Feedback visual de formatação**: Vê o negrito renderizado em tempo real
+- **Suporte nativo a quebras**: Enter cria nova linha naturalmente
+- **Sintaxe familiar**: Usa `*texto*` igual ao WhatsApp
+- **Dica de ajuda**: Ensina a formatação para novos usuários
 
