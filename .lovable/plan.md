@@ -1,273 +1,190 @@
 
 
-# Plano: Edição Inline no Preview com Formatação (Negrito e Quebra de Linha)
+# Plano: Formatação Combinada e Botões de Formatação Rápida
 
 ## Objetivo
-Permitir que o usuário clique diretamente no texto do preview para editar a mensagem, e adicionar suporte visual para:
-- **Quebras de linha** (Enter/\n)
-- **Negrito** usando a sintaxe do WhatsApp (`*texto*`)
+1. Suportar formatação combinada como `*_negrito itálico_*` ou `_*itálico negrito*_`
+2. Adicionar botões de formatação rápida (B, I, S) que inserem automaticamente os caracteres de formatação ao redor do texto selecionado
 
 ---
 
-## Comportamento Esperado
+## 1. Formatação Combinada
 
-### Edição Inline
-1. Usuário clica no texto do preview
-2. O texto se transforma em um campo editável (textarea inline)
-3. Usuário edita diretamente no balão
-4. Ao clicar fora (blur) ou pressionar Escape, volta ao modo de visualização
-5. As alterações são sincronizadas com o campo de texto/legenda principal
+### Problema Atual
+A regex atual não suporta formatação aninhada. Por exemplo:
+- `*_texto_*` deveria renderizar como **_texto em negrito itálico_**
+- `~*texto*~` deveria renderizar como ~~**texto tachado em negrito**~~
 
-### Formatação Visual
-O preview renderizará a formatação do WhatsApp:
-- `*texto*` aparece como **texto** em negrito
-- Quebras de linha (`\n`) são exibidas corretamente
-
----
-
-## Arquitetura da Solução
-
-### Componente MessagePreview Atualizado
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 👁️ Preview da mensagem (clique para editar)                │
-│                                                             │
-│       ┌────────────────────────────────────────────┐        │
-│       │ [Mídia se houver]                          │        │
-│       │                                            │        │
-│       │ ┌────────────────────────────────────────┐ │        │
-│       │ │ Olá *pessoal*!                         │ │        │
-│       │ │                                        │ │        │
-│       │ │ Esta é uma mensagem com               │ │        │
-│       │ │ **quebra de linha** e *negrito*.       │ │        │
-│       │ └────────────────────────────────────────┘ │        │
-│       │                              ✓✓ 12:00     │        │
-│       └────────────────────────────────────────────┘        │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
-Quando clicado:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│ 👁️ Preview da mensagem (editando...)                       │
-│                                                             │
-│       ┌────────────────────────────────────────────┐        │
-│       │ [Mídia se houver]                          │        │
-│       │                                            │        │
-│       │ ┌────────────────────────────────────────┐ │        │
-│       │ │ [Textarea editável]                    │ │        │
-│       │ │ Olá *pessoal*!                         │ │        │
-│       │ │                                        │ │        │
-│       │ │ Esta é uma mensagem com                │ │        │
-│       │ │ quebra de linha e *negrito*.           │ │        │
-│       │ └────────────────────────────────────────┘ │        │
-│       │                              ✓✓ 12:00     │        │
-│       └────────────────────────────────────────────┘        │
-│                                                             │
-│  💡 Use *texto* para negrito • Enter para quebra de linha   │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Mudanças no Código
-
-### 1. Atualizar Interface do MessagePreview
-
-Adicionar props para callback de edição e estado de disabled:
+### Solução: Parser Recursivo
+Substituir a regex simples por um parser que processa formatação em camadas:
 
 ```typescript
-interface MessagePreviewProps {
-  type: 'text' | 'image' | 'video' | 'audio' | 'file';
-  text?: string;
-  mediaUrl?: string;
-  previewUrl?: string | null;
-  filename?: string;
-  isPtt?: boolean;
-  onTextChange?: (newText: string) => void;  // NOVO
-  disabled?: boolean;                          // NOVO
-}
-```
-
-### 2. Adicionar Estado de Edição
-
-```typescript
-const [isEditing, setIsEditing] = useState(false);
-const [editText, setEditText] = useState(text || '');
-const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-// Sincronizar quando text muda externamente
-useEffect(() => {
-  if (!isEditing) {
-    setEditText(text || '');
-  }
-}, [text, isEditing]);
-```
-
-### 3. Criar Função de Formatação para WhatsApp
-
-```typescript
-const formatWhatsAppText = (text: string): React.ReactNode[] => {
-  // Regex para encontrar *texto* (negrito do WhatsApp)
-  const boldRegex = /\*([^*]+)\*/g;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match;
-  
-  while ((match = boldRegex.exec(text)) !== null) {
-    // Adicionar texto antes do match
-    if (match.index > lastIndex) {
-      parts.push(text.slice(lastIndex, match.index));
+const formatWhatsAppText = (text: string): React.ReactNode => {
+  // Função recursiva que aplica formatação em camadas
+  const applyFormatting = (
+    content: string, 
+    keyPrefix: string = ''
+  ): React.ReactNode[] => {
+    const patterns = [
+      { regex: /\*([^*]+)\*/, wrapper: 'bold' },
+      { regex: /_([^_]+)_/, wrapper: 'italic' },
+      { regex: /~([^~]+)~/, wrapper: 'strike' }
+    ];
+    
+    // Encontrar o primeiro match
+    let firstMatch = null;
+    let matchedPattern = null;
+    
+    for (const pattern of patterns) {
+      const match = pattern.regex.exec(content);
+      if (match && (!firstMatch || match.index < firstMatch.index)) {
+        firstMatch = match;
+        matchedPattern = pattern;
+      }
     }
-    // Adicionar texto em negrito
-    parts.push(
-      <strong key={match.index} className="font-bold">
-        {match[1]}
-      </strong>
+    
+    if (!firstMatch || !matchedPattern) {
+      return [<span key={keyPrefix}>{content}</span>];
+    }
+    
+    const parts: React.ReactNode[] = [];
+    
+    // Texto antes do match
+    if (firstMatch.index > 0) {
+      parts.push(...applyFormatting(
+        content.slice(0, firstMatch.index), 
+        `${keyPrefix}-pre`
+      ));
+    }
+    
+    // Conteúdo formatado (recursivo para suportar aninhamento)
+    const innerContent = applyFormatting(firstMatch[1], `${keyPrefix}-inner`);
+    const wrappedContent = wrapWithStyle(
+      innerContent, 
+      matchedPattern.wrapper, 
+      `${keyPrefix}-wrap`
     );
-    lastIndex = match.index + match[0].length;
-  }
+    parts.push(wrappedContent);
+    
+    // Texto depois do match
+    const afterIndex = firstMatch.index + firstMatch[0].length;
+    if (afterIndex < content.length) {
+      parts.push(...applyFormatting(
+        content.slice(afterIndex), 
+        `${keyPrefix}-post`
+      ));
+    }
+    
+    return parts;
+  };
   
-  // Adicionar texto restante
-  if (lastIndex < text.length) {
-    parts.push(text.slice(lastIndex));
-  }
-  
-  return parts.length > 0 ? parts : [text];
+  return <>{applyFormatting(text, 'fmt')}</>;
 };
 ```
 
-### 4. Atualizar Renderização do Texto
+---
 
-Substituir o texto estático por versão clicável/editável:
+## 2. Botões de Formatação Rápida
 
-```tsx
-{/* Texto ou legenda - agora editável */}
-{text !== undefined && (
-  <div 
-    onClick={() => !disabled && setIsEditing(true)}
+### Layout Visual
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ 👁️ Preview da mensagem                                      │
+│                                                              │
+│       ┌────────────────────────────────────────────┐         │
+│       │ [Mídia se houver]                          │         │
+│       │                                            │         │
+│       │ ┌────────────────────────────────────────┐ │         │
+│       │ │ [Textarea quando editando]             │ │         │
+│       │ └────────────────────────────────────────┘ │         │
+│       │                              ✓✓ 12:00     │         │
+│       └────────────────────────────────────────────┘         │
+│                                                              │
+│ ┌────────────────────────────────────────────────────────┐   │
+│ │ [B] [I] [S]          💡 Selecione texto e clique       │   │
+│ └────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Componente de Botões
+
+```typescript
+interface FormatButtonProps {
+  label: string;
+  title: string;
+  formatChar: string;
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+const FormatButton = ({ label, title, onClick, disabled }: FormatButtonProps) => (
+  <button
+    type="button"
+    onClick={onClick}
+    disabled={disabled}
+    title={title}
     className={cn(
-      "text-sm whitespace-pre-wrap break-words cursor-pointer transition-colors",
-      !disabled && "hover:bg-primary/5 rounded px-1 -mx-1"
+      "w-7 h-7 rounded text-xs font-bold border transition-colors",
+      "hover:bg-primary/10 hover:border-primary/30",
+      "disabled:opacity-50 disabled:cursor-not-allowed"
     )}
   >
-    {isEditing ? (
-      <textarea
-        ref={textareaRef}
-        value={editText}
-        onChange={(e) => setEditText(e.target.value)}
-        onBlur={handleBlur}
-        onKeyDown={handleKeyDown}
-        className="w-full bg-transparent border-none outline-none resize-none text-sm min-h-[60px]"
-        autoFocus
-      />
-    ) : (
-      text ? formatWhatsAppText(text) : (
-        <span className="text-muted-foreground italic">
-          Clique para adicionar texto...
-        </span>
-      )
-    )}
-  </div>
-)}
+    {label}
+  </button>
+);
 ```
 
-### 5. Handlers de Edição
+### Lógica de Inserção
 
 ```typescript
-const handleBlur = () => {
-  setIsEditing(false);
-  if (editText !== text && onTextChange) {
-    onTextChange(editText);
+const applyFormat = (formatChar: string) => {
+  if (!textareaRef.current) return;
+  
+  const textarea = textareaRef.current;
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const selectedText = editText.substring(start, end);
+  
+  let newText: string;
+  let newCursorPos: number;
+  
+  if (selectedText) {
+    // Texto selecionado: envolver com formatação
+    newText = 
+      editText.substring(0, start) + 
+      formatChar + selectedText + formatChar + 
+      editText.substring(end);
+    newCursorPos = end + 2; // Após o fechamento
+  } else {
+    // Sem seleção: inserir par de caracteres e posicionar cursor no meio
+    newText = 
+      editText.substring(0, start) + 
+      formatChar + formatChar + 
+      editText.substring(end);
+    newCursorPos = start + 1; // Entre os caracteres
   }
+  
+  setEditText(newText);
+  
+  // Restaurar foco e posição do cursor
+  requestAnimationFrame(() => {
+    textarea.focus();
+    textarea.setSelectionRange(newCursorPos, newCursorPos);
+  });
 };
-
-const handleKeyDown = (e: React.KeyboardEvent) => {
-  // Escape cancela a edição
-  if (e.key === 'Escape') {
-    setEditText(text || '');
-    setIsEditing(false);
-  }
-  // Enter mantém quebra de linha (comportamento padrão)
-};
-```
-
-### 6. Adicionar Dica de Formatação
-
-Quando em modo de edição, mostrar dica abaixo do preview:
-
-```tsx
-{isEditing && (
-  <p className="text-xs text-muted-foreground mt-2 flex items-center gap-2">
-    <span>💡</span>
-    <span>
-      Use <code className="bg-muted px-1 rounded">*texto*</code> para negrito • Enter para quebra de linha
-    </span>
-  </p>
-)}
-```
-
-### 7. Integrar no BroadcastMessageForm
-
-Passar o callback de alteração de texto:
-
-```tsx
-<MessagePreview 
-  type={activeTab === 'text' ? 'text' : mediaType}
-  text={activeTab === 'text' ? message : caption}
-  mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
-  previewUrl={activeTab === 'media' ? previewUrl : undefined}
-  filename={filename}
-  isPtt={isPtt}
-  onTextChange={(newText) => {
-    if (activeTab === 'text') {
-      setMessage(newText);
-    } else {
-      setCaption(newText);
-    }
-  }}
-  disabled={isSending}
-/>
 ```
 
 ---
 
-## Resultado Visual
+## Comportamento dos Botões
 
-### Modo Visualização (com formatação)
-```
-┌──────────────────────────────────────────────────┐
-│ Olá *todos*!                                     │
-│                                                  │
-│ Esta é uma mensagem de teste.                    │
-│                                      ✓✓ 14:30   │
-└──────────────────────────────────────────────────┘
-```
-
-Renderizado como:
-```
-┌──────────────────────────────────────────────────┐
-│ Olá **todos**!                                   │
-│                                                  │
-│ Esta é uma mensagem de teste.                    │
-│                                      ✓✓ 14:30   │
-└──────────────────────────────────────────────────┘
-```
-
-### Modo Edição
-```
-┌──────────────────────────────────────────────────┐
-│ [Textarea editável]                              │
-│ Olá *todos*!                                     │
-│                                                  │
-│ Esta é uma mensagem de teste.                    │
-│                                                  │
-└──────────────────────────────────────────────────┘
-💡 Use *texto* para negrito • Enter para quebra de linha
-```
+| Situação | Ação do Botão |
+|----------|---------------|
+| Texto selecionado: "olá" | Clique em B → `*olá*` |
+| Texto selecionado: "mundo" | Clique em I → `_mundo_` |
+| Sem seleção, cursor no meio | Clique em S → Insere `~~` e cursor entre |
+| Texto já formatado: `*texto*` | Clique em I → `*_texto_*` (adiciona camada) |
 
 ---
 
@@ -275,16 +192,53 @@ Renderizado como:
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/broadcast/MessagePreview.tsx` | Adicionar estado de edição, formatação WhatsApp, textarea inline |
-| `src/components/broadcast/BroadcastMessageForm.tsx` | Passar `onTextChange` e `disabled` para o MessagePreview |
+| `src/components/broadcast/MessagePreview.tsx` | Atualizar parser para suportar aninhamento + adicionar botões de formatação |
+
+---
+
+## Detalhes de Implementação
+
+### Interface Atualizada
+```typescript
+// Botões aparecem apenas quando está editando
+{isEditing && (
+  <div className="flex items-center gap-2 mt-2">
+    <div className="flex gap-1">
+      <FormatButton 
+        label="B" 
+        title="Negrito (*texto*)"
+        onClick={() => applyFormat('*')}
+      />
+      <FormatButton 
+        label="I" 
+        title="Itálico (_texto_)"
+        onClick={() => applyFormat('_')}
+      />
+      <FormatButton 
+        label="S" 
+        title="Tachado (~texto~)"
+        onClick={() => applyFormat('~')}
+      />
+    </div>
+    <span className="text-xs text-muted-foreground">
+      Selecione texto e clique para formatar
+    </span>
+  </div>
+)}
+```
+
+### Estilo dos Botões
+- **B** (Bold): Texto em negrito no próprio botão
+- **I** (Italic): Texto em itálico no próprio botão  
+- **S** (Strikethrough): Texto com linha no meio
 
 ---
 
 ## Benefícios
 
-- **Edição direta**: Usuário pode editar onde vê o resultado, mais intuitivo
-- **Feedback visual de formatação**: Vê o negrito renderizado em tempo real
-- **Suporte nativo a quebras**: Enter cria nova linha naturalmente
-- **Sintaxe familiar**: Usa `*texto*` igual ao WhatsApp
-- **Dica de ajuda**: Ensina a formatação para novos usuários
+- **Formatação combinada**: Suporte a `*_negrito itálico_*` e outras combinações
+- **Formatação rápida**: Um clique para aplicar estilo ao texto selecionado
+- **Intuitivo**: Botões B/I/S familiares de editores de texto
+- **Acessível**: Tooltips explicando cada formato
+- **Feedback visual**: Botões aparecem apenas no modo de edição
 
