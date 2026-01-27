@@ -613,6 +613,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           recurrence_days: config.recurrenceDays.length > 0 ? config.recurrenceDays : null,
           recurrence_end_at: config.recurrenceEndAt?.toISOString() || null,
           recurrence_count: config.recurrenceCount || null,
+          random_delay: config.randomDelay,
           status: 'pending',
         });
       });
@@ -690,6 +691,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           recurrence_days: config.recurrenceDays.length > 0 ? config.recurrenceDays : null,
           recurrence_end_at: config.recurrenceEndAt?.toISOString() || null,
           recurrence_count: config.recurrenceCount || null,
+          random_delay: config.randomDelay,
           status: 'pending',
         });
       });

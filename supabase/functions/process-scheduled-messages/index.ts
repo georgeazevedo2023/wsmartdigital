@@ -26,6 +26,7 @@ interface ScheduledMessage {
   recurrence_days: number[] | null
   recurrence_end_at: string | null
   recurrence_count: number | null
+  random_delay: 'none' | '5-10' | '10-20' | null
   status: string
   executions_count: number
   instances: { token: string }
@@ -33,6 +34,18 @@ interface ScheduledMessage {
 
 async function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+function getRandomDelay(randomDelaySetting: string | null): number {
+  if (!randomDelaySetting || randomDelaySetting === 'none') {
+    return SEND_DELAY_MS
+  }
+  
+  const [min, max] = randomDelaySetting === '5-10' 
+    ? [5000, 10000] 
+    : [10000, 20000]
+  
+  return Math.floor(Math.random() * (max - min + 1)) + min
 }
 
 async function sendTextMessage(token: string, number: string, content: string): Promise<{ success: boolean; error?: string }> {
@@ -218,7 +231,8 @@ async function processMessage(
         }
         
         if (i < message.recipients.length - 1) {
-          await delay(SEND_DELAY_MS)
+          const delayMs = getRandomDelay(message.random_delay)
+          await delay(delayMs)
         }
       }
     } else {
