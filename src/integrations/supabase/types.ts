@@ -14,6 +14,72 @@ export type Database = {
   }
   public: {
     Tables: {
+      broadcast_logs: {
+        Row: {
+          completed_at: string | null
+          content: string | null
+          created_at: string
+          duration_seconds: number | null
+          error_message: string | null
+          exclude_admins: boolean
+          groups_targeted: number
+          id: string
+          instance_id: string
+          instance_name: string | null
+          media_url: string | null
+          message_type: string
+          random_delay: string | null
+          recipients_failed: number
+          recipients_success: number
+          recipients_targeted: number
+          started_at: string
+          status: string
+          user_id: string
+        }
+        Insert: {
+          completed_at?: string | null
+          content?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          error_message?: string | null
+          exclude_admins?: boolean
+          groups_targeted?: number
+          id?: string
+          instance_id: string
+          instance_name?: string | null
+          media_url?: string | null
+          message_type?: string
+          random_delay?: string | null
+          recipients_failed?: number
+          recipients_success?: number
+          recipients_targeted?: number
+          started_at?: string
+          status?: string
+          user_id: string
+        }
+        Update: {
+          completed_at?: string | null
+          content?: string | null
+          created_at?: string
+          duration_seconds?: number | null
+          error_message?: string | null
+          exclude_admins?: boolean
+          groups_targeted?: number
+          id?: string
+          instance_id?: string
+          instance_name?: string | null
+          media_url?: string | null
+          message_type?: string
+          random_delay?: string | null
+          recipients_failed?: number
+          recipients_success?: number
+          recipients_targeted?: number
+          started_at?: string
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       instances: {
         Row: {
           created_at: string
