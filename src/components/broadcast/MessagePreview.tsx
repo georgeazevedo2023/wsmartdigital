@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
-import { Eye, FileIcon, Mic, PlayCircle, Pencil } from 'lucide-react';
+import { Eye, FileIcon, Mic, PlayCircle, Pencil, Bold, Italic, Strikethrough } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 
 interface MessagePreviewProps {
   type: 'text' | 'image' | 'video' | 'audio' | 'file';
@@ -13,54 +20,89 @@ interface MessagePreviewProps {
   disabled?: boolean;
 }
 
-const formatWhatsAppText = (text: string): React.ReactNode[] => {
-  // Regex patterns para formatação do WhatsApp
-  // *texto* = negrito, _texto_ = itálico, ~texto~ = tachado
-  const formatRegex = /(\*([^*]+)\*)|(_([^_]+)_)|(~([^~]+)~)/g;
-  const parts: React.ReactNode[] = [];
-  let lastIndex = 0;
-  let match;
-  let keyIndex = 0;
-  
-  while ((match = formatRegex.exec(text)) !== null) {
-    // Adicionar texto antes do match
-    if (match.index > lastIndex) {
-      parts.push(<span key={`text-${keyIndex++}`}>{text.slice(lastIndex, match.index)}</span>);
+// Função auxiliar para envolver conteúdo com estilo
+const wrapWithStyle = (
+  content: React.ReactNode[], 
+  style: 'bold' | 'italic' | 'strike', 
+  key: string
+): React.ReactNode => {
+  switch (style) {
+    case 'bold':
+      return <strong key={key} className="font-bold">{content}</strong>;
+    case 'italic':
+      return <em key={key} className="italic">{content}</em>;
+    case 'strike':
+      return <span key={key} className="line-through">{content}</span>;
+    default:
+      return <span key={key}>{content}</span>;
+  }
+};
+
+// Parser recursivo para suportar formatação aninhada
+const formatWhatsAppText = (text: string): React.ReactNode => {
+  const patterns: { regex: RegExp; style: 'bold' | 'italic' | 'strike' }[] = [
+    { regex: /\*([^*]+)\*/, style: 'bold' },
+    { regex: /_([^_]+)_/, style: 'italic' },
+    { regex: /~([^~]+)~/, style: 'strike' }
+  ];
+
+  const applyFormatting = (
+    content: string, 
+    keyPrefix: string = 'fmt'
+  ): React.ReactNode[] => {
+    if (!content) return [];
+
+    // Encontrar o primeiro match entre todos os patterns
+    let firstMatch: RegExpExecArray | null = null;
+    let matchedPattern: { regex: RegExp; style: 'bold' | 'italic' | 'strike' } | null = null;
+    
+    for (const pattern of patterns) {
+      const match = pattern.regex.exec(content);
+      if (match && (!firstMatch || match.index < firstMatch.index)) {
+        firstMatch = match;
+        matchedPattern = pattern;
+      }
     }
     
-    // Verificar qual formato foi encontrado
-    if (match[1]) {
-      // *negrito*
+    // Sem matches - retornar texto como está
+    if (!firstMatch || !matchedPattern) {
+      return content ? [<span key={keyPrefix}>{content}</span>] : [];
+    }
+    
+    const parts: React.ReactNode[] = [];
+    
+    // Texto antes do match
+    if (firstMatch.index > 0) {
       parts.push(
-        <strong key={`bold-${keyIndex++}`} className="font-bold">
-          {match[2]}
-        </strong>
-      );
-    } else if (match[3]) {
-      // _itálico_
-      parts.push(
-        <em key={`italic-${keyIndex++}`} className="italic">
-          {match[4]}
-        </em>
-      );
-    } else if (match[5]) {
-      // ~tachado~
-      parts.push(
-        <span key={`strike-${keyIndex++}`} className="line-through">
-          {match[6]}
+        <span key={`${keyPrefix}-pre`}>
+          {content.slice(0, firstMatch.index)}
         </span>
       );
     }
     
-    lastIndex = match.index + match[0].length;
-  }
+    // Conteúdo formatado (recursivo para suportar aninhamento)
+    const innerContent = applyFormatting(firstMatch[1], `${keyPrefix}-inner`);
+    const wrappedContent = wrapWithStyle(
+      innerContent, 
+      matchedPattern.style, 
+      `${keyPrefix}-wrap`
+    );
+    parts.push(wrappedContent);
+    
+    // Texto depois do match (recursivo)
+    const afterIndex = firstMatch.index + firstMatch[0].length;
+    if (afterIndex < content.length) {
+      const remainingParts = applyFormatting(
+        content.slice(afterIndex), 
+        `${keyPrefix}-post`
+      );
+      parts.push(...remainingParts);
+    }
+    
+    return parts;
+  };
   
-  // Adicionar texto restante
-  if (lastIndex < text.length) {
-    parts.push(<span key={`text-${keyIndex++}`}>{text.slice(lastIndex)}</span>);
-  }
-  
-  return parts.length > 0 ? parts : [<span key="full">{text}</span>];
+  return <>{applyFormatting(text)}</>;
 };
 
 const MessagePreview = ({ 
@@ -102,7 +144,13 @@ const MessagePreview = ({
     e.target.style.height = `${e.target.scrollHeight}px`;
   };
 
-  const handleBlur = () => {
+  const handleBlur = (e: React.FocusEvent) => {
+    // Não fechar se clicou em um botão de formatação
+    const relatedTarget = e.relatedTarget as HTMLElement;
+    if (relatedTarget?.closest('[data-format-button]')) {
+      return;
+    }
+    
     setIsEditing(false);
     if (editText !== text && onTextChange) {
       onTextChange(editText);
@@ -122,6 +170,51 @@ const MessagePreview = ({
     if (!disabled && onTextChange) {
       setIsEditing(true);
     }
+  };
+
+  // Aplicar formatação ao texto selecionado ou inserir caracteres
+  const applyFormat = (formatChar: string) => {
+    if (!textareaRef.current) return;
+    
+    const textarea = textareaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = editText.substring(start, end);
+    
+    let newText: string;
+    let newSelectionStart: number;
+    let newSelectionEnd: number;
+    
+    if (selectedText) {
+      // Texto selecionado: envolver com formatação
+      newText = 
+        editText.substring(0, start) + 
+        formatChar + selectedText + formatChar + 
+        editText.substring(end);
+      newSelectionStart = start;
+      newSelectionEnd = end + 2; // Incluir os caracteres de formatação
+    } else {
+      // Sem seleção: inserir par de caracteres e posicionar cursor no meio
+      newText = 
+        editText.substring(0, start) + 
+        formatChar + formatChar + 
+        editText.substring(end);
+      newSelectionStart = start + 1;
+      newSelectionEnd = start + 1;
+    }
+    
+    setEditText(newText);
+    
+    // Notificar mudança
+    if (onTextChange) {
+      onTextChange(newText);
+    }
+    
+    // Restaurar foco e posição do cursor
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(newSelectionStart, newSelectionEnd);
+    });
   };
   
   if (!hasContent && !onTextChange) return null;
@@ -254,17 +347,71 @@ const MessagePreview = ({
         </div>
       </div>
 
-      {/* Dica de formatação quando editando */}
+      {/* Botões de formatação e dica quando editando */}
       {isEditing && (
-        <p className="text-xs text-muted-foreground flex items-center gap-2">
-          <span>💡</span>
-          <span>
-            <code className="bg-muted px-1 rounded text-[10px]">*negrito*</code>{' '}
-            <code className="bg-muted px-1 rounded text-[10px]">_itálico_</code>{' '}
-            <code className="bg-muted px-1 rounded text-[10px]">~tachado~</code>{' '}
-            • Enter para quebra de linha
+        <div className="flex items-center gap-3">
+          <TooltipProvider delayDuration={300}>
+            <div className="flex gap-1">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="w-8 h-8"
+                    onClick={() => applyFormat('*')}
+                    data-format-button
+                  >
+                    <Bold className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>Negrito <code className="bg-muted px-1 rounded text-[10px] ml-1">*texto*</code></p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="w-8 h-8"
+                    onClick={() => applyFormat('_')}
+                    data-format-button
+                  >
+                    <Italic className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>Itálico <code className="bg-muted px-1 rounded text-[10px] ml-1">_texto_</code></p>
+                </TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    className="w-8 h-8"
+                    onClick={() => applyFormat('~')}
+                    data-format-button
+                  >
+                    <Strikethrough className="w-4 h-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  <p>Tachado <code className="bg-muted px-1 rounded text-[10px] ml-1">~texto~</code></p>
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </TooltipProvider>
+
+          <span className="text-xs text-muted-foreground">
+            💡 Selecione texto e clique para formatar
           </span>
-        </p>
+        </div>
       )}
     </div>
   );
