@@ -1,199 +1,175 @@
 
-# Plano: Adicionar Seleção de Participantes no Disparador
+# Plano: Corrigir Exibição de Participantes (Número + PushName)
 
-## Objetivo
-Quando a opção "Não enviar para Admins/Donos" estiver ativa, exibir a lista de participantes (membros regulares) e permitir que o usuário selecione quais deles receberão a mensagem no privado.
+## Problema Identificado
 
----
+Olhando seu screenshot, os números estão sendo exibidos incorretamente (ex: `+18 53 83690211520`) porque o sistema está usando o JID interno do WhatsApp ao invés do número de telefone real.
 
-## Comportamento Atual
+A UAZAPI retorna dois campos importantes que estamos ignorando:
+- **PhoneNumber**: O número real do telefone (ex: `5511999999999@s.whatsapp.net`)
+- **PushName**: O nome que a pessoa configurou no WhatsApp
 
-Hoje, quando `excludeAdmins` está ativo:
-1. O sistema coleta automaticamente **todos** os membros regulares (não-admin, não-superadmin) dos grupos selecionados
-2. Faz a deduplicação (remove duplicatas por JID)
-3. Envia para **todos** esses contatos únicos
-
-## Novo Comportamento
-
-Quando `excludeAdmins` estiver ativo:
-1. Exibir uma **nova seção** abaixo do toggle mostrando todos os participantes elegíveis
-2. Permitir que o usuário **selecione/desmarque** participantes individualmente
-3. Oferecer botões de "Selecionar Todos" e "Limpar Seleção"
-4. Adicionar busca por nome/número
-5. Mostrar de qual grupo cada participante veio (primeira ocorrência)
-6. O envio será feito apenas para os participantes **selecionados**
+Atualmente, o `GroupSelector.tsx` só captura `jid`, `isAdmin` e `isSuperAdmin`, descartando esses dados úteis.
 
 ---
 
-## Mudanças no Código
+## Solução
 
-### Arquivo: `src/components/broadcast/BroadcastMessageForm.tsx`
+### 1. Atualizar a interface `Participant` no GroupSelector
 
-**1. Adicionar novos estados para controle dos participantes**
+Adicionar os campos `name` (pushname) e `phoneNumber`:
 
 ```typescript
-// Participantes selecionados para envio (JIDs)
-const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
-const [participantSearchTerm, setParticipantSearchTerm] = useState('');
+export interface Participant {
+  jid: string;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+  name?: string;        // PushName do WhatsApp
+  phoneNumber?: string; // Número real (quando disponível)
+}
 ```
 
-**2. Criar função para obter lista de membros únicos com metadados**
+### 2. Atualizar o mapeamento de participantes no GroupSelector
+
+Capturar PushName e PhoneNumber da resposta da UAZAPI:
 
 ```typescript
-// Retorna membros únicos com informações do grupo de origem
-const getUniqueRegularMembersWithInfo = () => {
-  const seenJids = new Set<string>();
-  const uniqueMembers: { 
-    jid: string; 
-    groupName: string; 
-    displayName: string; // número formatado ou nome
-  }[] = [];
+participants: rawParticipants.map((p: any) => ({
+  jid: p.JID || p.jid || p.id || '',
+  isAdmin: p.IsAdmin || p.isAdmin || false,
+  isSuperAdmin: p.IsSuperAdmin || p.isSuperAdmin || false,
+  name: p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined,
+  phoneNumber: p.PhoneNumber || p.phoneNumber || undefined,
+})),
+```
+
+### 3. Atualizar ParticipantInfo no ParticipantSelector
+
+Incluir o pushName na estrutura:
+
+```typescript
+interface ParticipantInfo {
+  jid: string;
+  displayName: string;  // Número formatado DDI+DDD+NUMERO
+  pushName?: string;    // Nome do WhatsApp
+  groupName: string;
+}
+```
+
+### 4. Melhorar a função formatPhoneNumber
+
+Reformular para o padrão DDI + DDD + NUMERO (sem traços ou espaços extras):
+
+```typescript
+const formatPhoneNumber = (value: string): string => {
+  // Remove sufixos do WhatsApp e caracteres não numéricos
+  const number = value.split('@')[0].replace(/\D/g, '');
+  if (!number || number.length < 10) return value;
   
+  // Formato simples: DDI + espaço + DDD + espaço + NUMERO
+  // Ex: 5511999999999 -> 55 11 999999999
+  const ddi = number.slice(0, 2);
+  const ddd = number.slice(2, 4);
+  const numero = number.slice(4);
+  
+  return `${ddi} ${ddd} ${numero}`;
+};
+```
+
+### 5. Atualizar lógica de uniqueParticipants
+
+Usar `phoneNumber` quando disponível, senão `jid`, e incluir o `name`:
+
+```typescript
+const uniqueParticipants = useMemo((): ParticipantInfo[] => {
+  const seenJids = new Set<string>();
+  const participants: ParticipantInfo[] = [];
+
   for (const group of selectedGroups) {
-    const regularMembers = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
+    const regularMembers = group.participants.filter(
+      (p) => !p.isAdmin && !p.isSuperAdmin
+    );
     for (const member of regularMembers) {
       if (!seenJids.has(member.jid)) {
         seenJids.add(member.jid);
-        uniqueMembers.push({ 
-          jid: member.jid, 
+        
+        // Prioriza phoneNumber, senão usa jid
+        const rawNumber = member.phoneNumber || member.jid;
+        
+        participants.push({
+          jid: member.jid,
+          displayName: formatPhoneNumber(rawNumber),
+          pushName: member.name,
           groupName: group.name,
-          displayName: formatPhoneNumber(member.jid) // ex: +55 11 99999-9999
         });
       }
     }
   }
-  
-  return uniqueMembers;
-};
+
+  return participants;
+}, [selectedGroups]);
 ```
 
-**3. Inicializar seleção quando excludeAdmins é ativado**
+### 6. Atualizar UI para exibir PushName + Número
+
+Mostrar o nome (se disponível) como título principal e o número abaixo:
+
+```tsx
+<div className="flex-1 min-w-0">
+  {participant.pushName ? (
+    <>
+      <p className="text-sm font-medium truncate">{participant.pushName}</p>
+      <p className="text-xs text-muted-foreground truncate">
+        {participant.displayName} • {participant.groupName}
+      </p>
+    </>
+  ) : (
+    <>
+      <p className="text-sm font-medium truncate">{participant.displayName}</p>
+      <p className="text-xs text-muted-foreground truncate">
+        {participant.groupName}
+      </p>
+    </>
+  )}
+</div>
+```
+
+### 7. Atualizar busca para incluir pushName
+
+Permitir buscar tanto por número quanto por nome:
 
 ```typescript
-// Quando excludeAdmins muda, inicializa todos como selecionados
-useEffect(() => {
-  if (excludeAdmins) {
-    const uniqueMembers = getUniqueRegularMembersWithInfo();
-    setSelectedParticipants(new Set(uniqueMembers.map(m => m.jid)));
-  } else {
-    setSelectedParticipants(new Set());
-  }
-}, [excludeAdmins, selectedGroups]);
-```
+const filteredParticipants = useMemo(() => {
+  if (!searchTerm.trim()) return uniqueParticipants;
 
-**4. Adicionar UI de seleção de participantes (abaixo do toggle)**
-
-Quando `excludeAdmins` estiver ativo, exibir:
-
-```
-┌───────────────────────────────────────────────────────────────┐
-│ 👥 Participantes para envio                                   │
-│                                                               │
-│ [🔍 Buscar participante...]    [✓ Todos] [☐ Limpar]          │
-│                                                               │
-│ ┌─────────────────────────────────────────────────────────┐  │
-│ │ Scroll Area (max-height: 250px)                         │  │
-│ │                                                          │  │
-│ │ ☑ +55 11 98765-4321                                     │  │
-│ │   └ Casa Do Agricultor Vitória                          │  │
-│ │                                                          │  │
-│ │ ☑ +55 11 91234-5678                                     │  │
-│ │   └ CDA | Consultório Vet                               │  │
-│ │                                                          │  │
-│ │ ☐ +55 21 99999-0000                                     │  │
-│ │   └ Grupo Marketing                                     │  │
-│ │                                                          │  │
-│ └─────────────────────────────────────────────────────────┘  │
-│                                                               │
-│ ℹ️ 45 de 67 participantes selecionados                       │
-└───────────────────────────────────────────────────────────────┘
-```
-
-**5. Modificar lógica de envio**
-
-Atualizar `handleSendText` e `handleSendMedia` para usar apenas os participantes selecionados:
-
-```typescript
-// Antes (envia para todos):
-const uniqueMembers = getUniqueRegularMembers();
-
-// Depois (envia apenas para selecionados):
-const allUniqueMembers = getUniqueRegularMembersWithInfo();
-const membersToSend = allUniqueMembers.filter(m => selectedParticipants.has(m.jid));
-```
-
-**6. Atualizar exibição de contagem**
-
-O texto abaixo do toggle passa a mostrar quantos estão selecionados:
-
-```typescript
-<p className="text-xs text-muted-foreground">
-  {excludeAdmins 
-    ? `${selectedParticipants.size} de ${uniqueRegularMembersCount} contato(s) selecionado(s)`
-    : `Enviará para ${selectedGroups.length} grupo(s)`
-  }
-</p>
+  const search = searchTerm.toLowerCase().replace(/[+\-\s]/g, '');
+  return uniqueParticipants.filter((p) => {
+    const normalizedPhone = p.displayName.replace(/[+\-\s]/g, '').toLowerCase();
+    const normalizedGroup = p.groupName.toLowerCase();
+    const normalizedName = (p.pushName || '').toLowerCase();
+    return normalizedPhone.includes(search) || 
+           normalizedGroup.includes(search) || 
+           normalizedName.includes(search);
+  });
+}, [uniqueParticipants, searchTerm]);
 ```
 
 ---
 
-## Função utilitária para formatar número
+## Resultado Visual Esperado
 
-```typescript
-const formatPhoneNumber = (jid: string): string => {
-  // JID format: 5511987654321@s.whatsapp.net
-  const number = jid.split('@')[0];
-  if (!number || number.length < 10) return jid;
-  
-  // Format: +55 11 98765-4321
-  const countryCode = number.slice(0, 2);
-  const areaCode = number.slice(2, 4);
-  const rest = number.slice(4);
-  
-  if (rest.length === 9) {
-    return `+${countryCode} ${areaCode} ${rest.slice(0, 5)}-${rest.slice(5)}`;
-  } else if (rest.length === 8) {
-    return `+${countryCode} ${areaCode} ${rest.slice(0, 4)}-${rest.slice(4)}`;
-  }
-  
-  return `+${countryCode} ${areaCode} ${rest}`;
-};
 ```
-
----
-
-## Componentes UI Necessários
-
-A seção de participantes usará componentes já existentes:
-- `ScrollArea` - Para lista rolável
-- `Checkbox` - Para seleção individual
-- `Input` - Para busca
-- `Button` - Para ações em lote
-- `Badge` - Para contador
-
----
-
-## Fluxo do Usuário
-
-1. Usuário seleciona grupos no Step 2
-2. Avança para Step 3 (Mensagem)
-3. Ativa "Não enviar para Admins/Donos"
-4. **Nova seção aparece** mostrando lista de participantes
-5. Todos vêm pré-selecionados por padrão
-6. Usuário pode:
-   - Buscar por número
-   - Desmarcar participantes específicos
-   - Usar "Limpar" para desmarcar todos
-   - Usar "Todos" para selecionar todos
-7. Compõe a mensagem e envia
-8. Apenas os participantes selecionados recebem
-
----
-
-## Considerações de Performance
-
-- **Virtualização**: Se a lista tiver muitos participantes (>100), considerar implementar virtualização. Inicialmente, o `ScrollArea` com altura fixa será suficiente para a maioria dos casos.
-- **Memoização**: Usar `useMemo` para `getUniqueRegularMembersWithInfo()` evitando recálculo desnecessário.
+┌─────────────────────────────────────────────────┐
+│ ☑ João Silva                                    │
+│   55 11 999999999 • Casa Do Agricultor Vitória  │
+├─────────────────────────────────────────────────┤
+│ ☑ Maria Oliveira                                │
+│   55 21 988888888 • CDA | Consultório Vet       │
+├─────────────────────────────────────────────────┤
+│ ☑ 55 31 977777777 (sem pushname)                │
+│   Grupo Marketing                               │
+└─────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -201,13 +177,14 @@ A seção de participantes usará componentes já existentes:
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/broadcast/BroadcastMessageForm.tsx` | Adicionar estados, UI de seleção e modificar lógica de envio |
+| `src/components/broadcast/GroupSelector.tsx` | Adicionar `name` e `phoneNumber` na interface e mapeamento |
+| `src/components/broadcast/ParticipantSelector.tsx` | Atualizar interface, formatação, exibição e busca |
 
 ---
 
 ## Benefícios
 
-- **Controle granular**: Usuário pode excluir participantes específicos que não devem receber a mensagem
-- **Transparência**: Mostra exatamente quem vai receber antes de enviar
-- **Flexibilidade**: Permite enviar apenas para um subconjunto de membros
-- **Busca rápida**: Facilita encontrar participantes específicos em listas grandes
+- **Números corretos**: Exibe o número real do telefone, não IDs internos do WhatsApp
+- **Formato limpo**: DDI + DDD + NUMERO sem formatação excessiva
+- **Identificação fácil**: PushName aparece quando disponível, facilitando identificar quem é quem
+- **Busca melhorada**: Pode buscar por nome ou número
