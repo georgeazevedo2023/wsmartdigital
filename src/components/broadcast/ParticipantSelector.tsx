@@ -10,6 +10,7 @@ import type { Group } from './GroupSelector';
 interface ParticipantInfo {
   jid: string;
   displayName: string;
+  pushName?: string;
   groupName: string;
 }
 
@@ -20,22 +21,16 @@ interface ParticipantSelectorProps {
   disabled?: boolean;
 }
 
-// Formata JID para número de telefone legível
-const formatPhoneNumber = (jid: string): string => {
-  const number = jid.split('@')[0];
-  if (!number || number.length < 10) return jid;
+// Formata para DDI + DDD + NUMERO (ex: 55 11 999999999)
+const formatPhoneNumber = (value: string): string => {
+  const number = value.split('@')[0].replace(/\D/g, '');
+  if (!number || number.length < 10) return value;
   
-  const countryCode = number.slice(0, 2);
-  const areaCode = number.slice(2, 4);
-  const rest = number.slice(4);
+  const ddi = number.slice(0, 2);
+  const ddd = number.slice(2, 4);
+  const numero = number.slice(4);
   
-  if (rest.length === 9) {
-    return `+${countryCode} ${areaCode} ${rest.slice(0, 5)}-${rest.slice(5)}`;
-  } else if (rest.length === 8) {
-    return `+${countryCode} ${areaCode} ${rest.slice(0, 4)}-${rest.slice(4)}`;
-  }
-  
-  return `+${countryCode} ${areaCode} ${rest}`;
+  return `${ddi} ${ddd} ${numero}`;
 };
 
 const ParticipantSelector = ({
@@ -58,9 +53,14 @@ const ParticipantSelector = ({
       for (const member of regularMembers) {
         if (!seenJids.has(member.jid)) {
           seenJids.add(member.jid);
+          
+          // Prioriza phoneNumber, senão usa jid
+          const rawNumber = member.phoneNumber || member.jid;
+          
           participants.push({
             jid: member.jid,
-            displayName: formatPhoneNumber(member.jid),
+            displayName: formatPhoneNumber(rawNumber),
+            pushName: member.name,
             groupName: group.name,
           });
         }
@@ -70,7 +70,7 @@ const ParticipantSelector = ({
     return participants;
   }, [selectedGroups]);
 
-  // Filtra participantes pela busca
+  // Filtra participantes pela busca (nome, número ou grupo)
   const filteredParticipants = useMemo(() => {
     if (!searchTerm.trim()) return uniqueParticipants;
 
@@ -78,7 +78,10 @@ const ParticipantSelector = ({
     return uniqueParticipants.filter((p) => {
       const normalizedPhone = p.displayName.replace(/[+\-\s]/g, '').toLowerCase();
       const normalizedGroup = p.groupName.toLowerCase();
-      return normalizedPhone.includes(search) || normalizedGroup.includes(search);
+      const normalizedName = (p.pushName || '').toLowerCase();
+      return normalizedPhone.includes(search) || 
+             normalizedGroup.includes(search) || 
+             normalizedName.includes(search);
     });
   }, [uniqueParticipants, searchTerm]);
 
@@ -190,10 +193,21 @@ const ParticipantSelector = ({
                   className="mt-0.5"
                 />
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{participant.displayName}</p>
-                  <p className="text-xs text-muted-foreground truncate">
-                    {participant.groupName}
-                  </p>
+                  {participant.pushName ? (
+                    <>
+                      <p className="text-sm font-medium truncate">{participant.pushName}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {participant.displayName} • {participant.groupName}
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium truncate">{participant.displayName}</p>
+                      <p className="text-xs text-muted-foreground truncate">
+                        {participant.groupName}
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             ))

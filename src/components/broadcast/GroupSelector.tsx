@@ -15,6 +15,8 @@ export interface Participant {
   jid: string;
   isAdmin: boolean;
   isSuperAdmin: boolean;
+  name?: string;        // PushName do WhatsApp
+  phoneNumber?: string; // Número real (quando disponível)
 }
 
 export interface Group {
@@ -95,6 +97,8 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
             jid: p.JID || p.jid || p.id || '',
             isAdmin: p.IsAdmin || p.isAdmin || false,
             isSuperAdmin: p.IsSuperAdmin || p.isSuperAdmin || false,
+            name: p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined,
+            phoneNumber: p.PhoneNumber || p.phoneNumber || undefined,
           })),
         };
       });
