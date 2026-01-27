@@ -53,12 +53,6 @@ const Sidebar = () => {
   const isActive = (path: string) => location.pathname === path;
   const isInstancesActive = location.pathname.includes('/dashboard/instances');
 
-  useEffect(() => {
-    if (user) {
-      fetchInstances();
-    }
-  }, [user]);
-
   const fetchInstances = async () => {
     try {
       const { data, error } = await supabase
@@ -72,6 +66,24 @@ const Sidebar = () => {
       console.error('Error fetching instances:', error);
     }
   };
+
+  useEffect(() => {
+    if (user) {
+      fetchInstances();
+    }
+  }, [user]);
+
+  // Listen for instance updates (e.g., after sync/delete orphans)
+  useEffect(() => {
+    const handleInstancesUpdate = () => {
+      fetchInstances();
+    };
+
+    window.addEventListener('instances-updated', handleInstancesUpdate);
+    return () => {
+      window.removeEventListener('instances-updated', handleInstancesUpdate);
+    };
+  }, []);
 
   return (
     <aside

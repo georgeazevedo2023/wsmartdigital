@@ -235,6 +235,10 @@ export default function SyncInstancesDialog({
 
       toast.success(`${orphanIds.length} instância(s) órfã(s) removida(s)`);
       setSelectedOrphans(new Set());
+      
+      // Notify sidebar to refresh instances list
+      window.dispatchEvent(new CustomEvent('instances-updated'));
+      
       onSync();
       fetchData(); // Refresh data
     } catch (err: any) {
