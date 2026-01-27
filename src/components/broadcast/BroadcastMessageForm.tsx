@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play } from 'lucide-react';
+import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import { TemplateSelector } from './TemplateSelector';
@@ -31,6 +31,7 @@ interface SendProgress {
   groupName: string;
   status: 'idle' | 'sending' | 'paused' | 'success' | 'error';
   results: { groupName: string; success: boolean; error?: string }[];
+  startedAt: number | null;
 }
 
 type MediaType = 'image' | 'video' | 'audio' | 'file';
@@ -57,7 +58,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     groupName: '',
     status: 'idle',
     results: [],
+    startedAt: null,
   });
+  const [elapsedTime, setElapsedTime] = useState(0);
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   
@@ -109,6 +112,25 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       }
     };
   }, [previewUrl]);
+
+  // Timer for elapsed time during sending
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null;
+    
+    if ((progress.status === 'sending' || progress.status === 'paused') && progress.startedAt) {
+      intervalId = setInterval(() => {
+        if (progress.status === 'sending') {
+          setElapsedTime(Math.floor((Date.now() - progress.startedAt!) / 1000));
+        }
+      }, 1000);
+    } else if (progress.status === 'idle') {
+      setElapsedTime(0);
+    }
+    
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [progress.status, progress.startedAt]);
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -338,6 +360,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           groupName: `${selectedGroups.length} grupo(s) - Envio individual`,
           status: 'sending',
           results: [],
+          startedAt: Date.now(),
         });
 
         let successCount = 0;
@@ -384,6 +407,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           groupName: '',
           status: 'sending',
           results: [],
+          startedAt: Date.now(),
         });
 
         for (let i = 0; i < selectedGroups.length; i++) {
@@ -485,6 +509,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           groupName: `${selectedGroups.length} grupo(s) - Envio individual`,
           status: 'sending',
           results: [],
+          startedAt: Date.now(),
         });
 
         let successCount = 0;
@@ -532,6 +557,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           groupName: '',
           status: 'sending',
           results: [],
+          startedAt: Date.now(),
         });
 
         for (let i = 0; i < selectedGroups.length; i++) {
@@ -750,7 +776,8 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   };
 
   const handleCloseProgress = () => {
-    setProgress(p => ({ ...p, status: 'idle', results: [] }));
+    setProgress(p => ({ ...p, status: 'idle', results: [], startedAt: null }));
+    setElapsedTime(0);
   };
 
   const characterCount = message.length;
@@ -797,6 +824,23 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   };
 
   const estimatedTime = getEstimatedTime();
+
+  // Calculate remaining time during sending
+  const getRemainingTime = (): number | null => {
+    if (!progress.startedAt || elapsedTime === 0) return null;
+    
+    const totalItems = excludeAdmins ? progress.totalMembers : progress.totalGroups;
+    const completedItems = excludeAdmins ? progress.currentMember : progress.currentGroup;
+    
+    if (completedItems === 0 || completedItems >= totalItems) return null;
+    
+    const avgTimePerItem = elapsedTime / completedItems;
+    const remainingItems = totalItems - completedItems;
+    
+    return Math.ceil(avgTimePerItem * remainingItems);
+  };
+
+  const remainingTime = getRemainingTime();
 
   const isMediaValid = activeTab === 'media' && (selectedFile || mediaUrl.trim()) && (mediaType !== 'file' || filename.trim());
   const isTextValid = activeTab === 'text' && message.trim() && !isOverLimit;
@@ -921,6 +965,20 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                       />
                     </div>
                   )}
+
+                  {/* Time indicators */}
+                  <div className="flex items-center justify-between text-sm border-t pt-3 mt-2">
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Timer className="h-4 w-4" />
+                      <span>Decorrido: {formatDuration(elapsedTime)}</span>
+                    </div>
+                    {remainingTime !== null && remainingTime > 0 && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Clock className="h-4 w-4" />
+                        <span>Restante: ~{formatDuration(remainingTime)}</span>
+                      </div>
+                    )}
+                  </div>
 
                   {/* Pause/Resume Buttons */}
                   <div className="flex gap-2 pt-2">
