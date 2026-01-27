@@ -150,6 +150,7 @@ export type Database = {
           media_url: string | null
           message_type: string
           next_run_at: string
+          random_delay: string | null
           recipients: Json | null
           recurrence_count: number | null
           recurrence_days: number[] | null
@@ -177,6 +178,7 @@ export type Database = {
           media_url?: string | null
           message_type: string
           next_run_at: string
+          random_delay?: string | null
           recipients?: Json | null
           recurrence_count?: number | null
           recurrence_days?: number[] | null
@@ -204,6 +206,7 @@ export type Database = {
           media_url?: string | null
           message_type?: string
           next_run_at?: string
+          random_delay?: string | null
           recipients?: Json | null
           recurrence_count?: number | null
           recurrence_days?: number[] | null

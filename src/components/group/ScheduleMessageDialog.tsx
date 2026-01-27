@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Calendar, Clock, Repeat, CalendarDays } from "lucide-react";
+import { Calendar, Clock, Repeat, CalendarDays, Shield } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +39,7 @@ export interface ScheduleConfig {
   recurrenceEndAt?: Date;
   recurrenceCount?: number;
   endType: "never" | "date" | "count";
+  randomDelay: "none" | "5-10" | "10-20";
 }
 
 interface ScheduleMessageDialogProps {
@@ -73,6 +74,7 @@ export function ScheduleMessageDialog({
   const [endType, setEndType] = useState<"never" | "date" | "count">("never");
   const [endDate, setEndDate] = useState<Date | undefined>(undefined);
   const [endCount, setEndCount] = useState(10);
+  const [randomDelay, setRandomDelay] = useState<"none" | "5-10" | "10-20">("none");
 
   const handleConfirm = () => {
     if (!date) return;
@@ -90,6 +92,7 @@ export function ScheduleMessageDialog({
       endType,
       recurrenceEndAt: endType === "date" ? endDate : undefined,
       recurrenceCount: endType === "count" ? endCount : undefined,
+      randomDelay,
     };
 
     onConfirm(config);
@@ -311,6 +314,43 @@ export function ScheduleMessageDialog({
             </div>
           )}
 
+          {/* Intervalo Anti-Bloqueio */}
+          <div className="space-y-3 p-4 bg-muted/50 rounded-lg border border-border/50">
+            <div className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-muted-foreground" />
+              <Label className="text-sm font-medium">Intervalo anti-bloqueio</Label>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Adiciona delays aleatórios entre envios para evitar bloqueio
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={randomDelay === 'none' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setRandomDelay('none')}
+              >
+                Desativado
+              </Button>
+              <Button
+                type="button"
+                variant={randomDelay === '5-10' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setRandomDelay('5-10')}
+              >
+                5-10 seg
+              </Button>
+              <Button
+                type="button"
+                variant={randomDelay === '10-20' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setRandomDelay('10-20')}
+              >
+                10-20 seg
+              </Button>
+            </div>
+          </div>
+
           {/* Preview */}
           <div className="p-3 bg-muted/30 rounded-lg text-sm">
             <p className="font-medium mb-1">Resumo:</p>
@@ -333,6 +373,11 @@ export function ScheduleMessageDialog({
                 {endType === "count" && (
                   <> por {endCount} vezes</>
                 )}
+              </p>
+            )}
+            {randomDelay !== 'none' && (
+              <p className="text-muted-foreground">
+                Intervalo anti-bloqueio: {randomDelay === '5-10' ? '5-10 segundos' : '10-20 segundos'}
               </p>
             )}
           </div>
