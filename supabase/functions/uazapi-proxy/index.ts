@@ -54,18 +54,26 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case 'connect': {
-        // Connect/create instance
+        // Conforme documentação UAZAPI: token da instância no header, body vazio para QR Code
+        if (!instanceToken) {
+          return new Response(
+            JSON.stringify({ error: 'Instance token required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('Connecting instance with token (first 10 chars):', instanceToken.substring(0, 10))
+        
         response = await fetch(`${uazapiUrl}/instance/connect`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'admintoken': adminToken,
+            'token': instanceToken,  // Token da instância no header
           },
-          body: JSON.stringify({
-            instanceName,
-            token: instanceToken,
-          }),
+          body: JSON.stringify({}),  // Body vazio gera QR Code
         })
+        
+        console.log('Connect response status:', response.status)
         break
       }
 
