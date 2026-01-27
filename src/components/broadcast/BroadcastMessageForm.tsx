@@ -14,6 +14,7 @@ import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import { TemplateSelector } from './TemplateSelector';
 import ParticipantSelector from './ParticipantSelector';
+import MessagePreview from './MessagePreview';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Group } from './GroupSelector';
@@ -1588,6 +1589,16 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 />
               </div>
             </TabsContent>
+
+            {/* Message Preview */}
+            <MessagePreview 
+              type={activeTab === 'text' ? 'text' : mediaType}
+              text={activeTab === 'text' ? message : caption}
+              mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
+              previewUrl={activeTab === 'media' ? previewUrl : undefined}
+              filename={filename}
+              isPtt={isPtt}
+            />
 
             {/* Common sections for both tabs */}
             <div className="space-y-4 mt-4">
