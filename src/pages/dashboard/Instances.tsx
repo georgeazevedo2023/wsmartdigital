@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import InstanceCard from '@/components/dashboard/InstanceCard';
@@ -23,9 +23,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Server, Loader2, RefreshCw } from 'lucide-react';
+import { Plus, Search, Server, Loader2, RefreshCw, QrCode } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { cn } from '@/lib/utils';
 
 interface Instance {
   id: string;
@@ -47,6 +48,41 @@ interface UserProfile {
   full_name: string | null;
 }
 
+// Normaliza string base64 para src de imagem
+const normalizeQrSrc = (qr: string): string => {
+  if (qr.startsWith('data:image')) {
+    return qr;
+  }
+  return `data:image/png;base64,${qr}`;
+};
+
+// Extrai QR code da resposta da API (pode vir em diferentes formatos)
+const extractQrCode = (data: any): string | null => {
+  // Formato: { instance: { qrcode: "..." } }
+  if (data?.instance?.qrcode) {
+    return data.instance.qrcode;
+  }
+  // Formato: { qrcode: "..." }
+  if (data?.qrcode) {
+    return data.qrcode;
+  }
+  // Formato: { base64: "..." }
+  if (data?.base64) {
+    return data.base64;
+  }
+  return null;
+};
+
+// Verifica se a instância está conectada na resposta
+const checkIfConnected = (data: any): boolean => {
+  return (
+    data?.instance?.status === 'connected' ||
+    data?.status === 'connected' ||
+    data?.status?.connected === true ||
+    data?.loggedIn === true
+  );
+};
+
 const Instances = () => {
   const { isSuperAdmin, user } = useAuth();
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -60,8 +96,13 @@ const Instances = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
-  const [currentQrCode, setCurrentQrCode] = useState<string | null>(null);
-  const [loadingQrId, setLoadingQrId] = useState<string | null>(null);
+  
+  // Estado centralizado para QR Code
+  const [qrDialogOpen, setQrDialogOpen] = useState(false);
+  const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
+  const [qrCode, setQrCode] = useState<string | null>(null);
+  const [isLoadingQr, setIsLoadingQr] = useState(false);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     fetchInstances();
@@ -69,6 +110,24 @@ const Instances = () => {
       fetchUsers();
     }
   }, [isSuperAdmin]);
+
+  // Cleanup polling ao desmontar
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, []);
+
+  // Cleanup polling quando modal fecha
+  useEffect(() => {
+    if (!qrDialogOpen && pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, [qrDialogOpen]);
 
   // Polling para atualizar status a cada 30 segundos
   useEffect(() => {
@@ -274,8 +333,22 @@ const Instances = () => {
       fetchInstances();
 
       // Show QR code if available
-      if (result.qrcode) {
-        setCurrentQrCode(result.qrcode);
+      const qr = extractQrCode(result);
+      if (qr) {
+        // Abrir modal de QR com a nova instância
+        const newInstance: Instance = {
+          id: instanceId,
+          name: newInstanceName,
+          token,
+          user_id: targetUserId,
+          status: 'disconnected',
+          owner_jid: null,
+          profile_pic_url: null,
+        };
+        setSelectedInstance(newInstance);
+        setQrCode(normalizeQrSrc(qr));
+        setQrDialogOpen(true);
+        startPolling(newInstance);
       }
     } catch (error: any) {
       console.error('Error creating instance:', error);
@@ -285,9 +358,59 @@ const Instances = () => {
     }
   };
 
+  const startPolling = async (instance: Instance) => {
+    // Limpar polling anterior
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+    }
+
+    pollingRef.current = setInterval(async () => {
+      try {
+        const session = await supabase.auth.getSession();
+        if (!session.data.session) return;
+
+        const response = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session.data.session.access_token}`,
+            },
+            body: JSON.stringify({
+              action: 'status',
+              token: instance.token,
+            }),
+          }
+        );
+
+        const data = await response.json();
+        console.log('Polling status response:', data);
+
+        if (checkIfConnected(data)) {
+          // Parar polling
+          if (pollingRef.current) {
+            clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          
+          toast.success('Conectado com sucesso!');
+          setQrDialogOpen(false);
+          setQrCode(null);
+          setSelectedInstance(null);
+          fetchInstances();
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }, 5000);
+  };
+
   const handleConnect = async (instance: Instance) => {
-    setLoadingQrId(instance.id);
-    setCurrentQrCode(null);
+    setSelectedInstance(instance);
+    setQrDialogOpen(true);
+    setIsLoadingQr(true);
+    setQrCode(null);
 
     try {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
@@ -304,20 +427,52 @@ const Instances = () => {
       });
 
       const result = await response.json();
+      console.log('Connect response:', result);
 
       if (!response.ok) {
         throw new Error(result.error || 'Erro ao conectar');
       }
 
-      if (result.qrcode) {
-        setCurrentQrCode(result.qrcode);
+      // Verificar se já está conectado
+      if (checkIfConnected(result)) {
+        toast.success('Instância já está conectada!');
+        setQrDialogOpen(false);
+        fetchInstances();
+        return;
+      }
+
+      // Extrair QR code
+      const qr = extractQrCode(result);
+      if (qr) {
+        setQrCode(normalizeQrSrc(qr));
+        // Iniciar polling para verificar conexão
+        startPolling(instance);
+      } else {
+        console.error('QR code not found in response:', result);
+        toast.error('Não foi possível gerar o QR Code');
       }
     } catch (error: any) {
       console.error('Error connecting:', error);
       toast.error(error.message || 'Erro ao gerar QR Code');
     } finally {
-      setLoadingQrId(null);
+      setIsLoadingQr(false);
     }
+  };
+
+  const handleGenerateNewQr = () => {
+    if (selectedInstance) {
+      handleConnect(selectedInstance);
+    }
+  };
+
+  const handleCloseQrDialog = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+    setQrDialogOpen(false);
+    setQrCode(null);
+    setSelectedInstance(null);
   };
 
   const handleDelete = async (instance: Instance) => {
@@ -491,12 +646,61 @@ const Instances = () => {
               onConnect={handleConnect}
               onDelete={isSuperAdmin ? handleDelete : undefined}
               onManageAccess={isSuperAdmin ? handleManageAccess : undefined}
-              qrCode={currentQrCode || undefined}
-              isLoadingQr={loadingQrId === instance.id}
             />
           ))}
         </div>
       )}
+
+      {/* Modal de QR Code Centralizado */}
+      <Dialog open={qrDialogOpen} onOpenChange={handleCloseQrDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="w-5 h-5" />
+              Conectar {selectedInstance?.name}
+            </DialogTitle>
+            <DialogDescription>
+              Escaneie o QR Code com seu WhatsApp para conectar
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center justify-center p-6 gap-4">
+            {isLoadingQr ? (
+              <div className="w-64 h-64 bg-muted animate-pulse rounded-lg flex items-center justify-center">
+                <div className="flex flex-col items-center gap-2">
+                  <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+                  <span className="text-muted-foreground">Gerando QR Code...</span>
+                </div>
+              </div>
+            ) : qrCode ? (
+              <>
+                <img
+                  src={qrCode}
+                  alt="QR Code"
+                  className="w-64 h-64 rounded-lg border"
+                />
+                <p className="text-sm text-muted-foreground text-center">
+                  Aguardando leitura do QR… (verificando status a cada 5s)
+                </p>
+              </>
+            ) : (
+              <div className="w-64 h-64 bg-muted rounded-lg flex items-center justify-center">
+                <span className="text-muted-foreground text-center px-4">
+                  Erro ao gerar QR Code. Tente novamente.
+                </span>
+              </div>
+            )}
+          </div>
+          <DialogFooter className="flex-row gap-2 sm:justify-center">
+            <Button variant="outline" onClick={handleCloseQrDialog}>
+              Fechar
+            </Button>
+            <Button onClick={handleGenerateNewQr} disabled={isLoadingQr}>
+              <RefreshCw className={cn("w-4 h-4 mr-2", isLoadingQr && "animate-spin")} />
+              Gerar novo QR
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

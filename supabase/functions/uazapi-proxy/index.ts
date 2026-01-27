@@ -68,12 +68,53 @@ Deno.serve(async (req) => {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'token': instanceToken,  // Token da instância no header
+            'token': instanceToken,
           },
-          body: JSON.stringify({}),  // Body vazio gera QR Code
+          body: JSON.stringify({}),
         })
         
         console.log('Connect response status:', response.status)
+        
+        // Log response body para debug
+        const connectRawText = await response.text()
+        console.log('Connect response (first 500 chars):', connectRawText.substring(0, 500))
+        
+        let connectData: unknown
+        try {
+          connectData = JSON.parse(connectRawText)
+        } catch {
+          connectData = { raw: connectRawText }
+        }
+        
+        return new Response(
+          JSON.stringify(connectData),
+          { 
+            status: response.status, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
+
+      case 'status': {
+        // Verificar status da instância
+        if (!instanceToken) {
+          return new Response(
+            JSON.stringify({ error: 'Instance token required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('Checking status with token (first 10 chars):', instanceToken.substring(0, 10))
+        
+        response = await fetch(`${uazapiUrl}/instance/status`, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+        })
+        
+        console.log('Status response status:', response.status)
         break
       }
 
