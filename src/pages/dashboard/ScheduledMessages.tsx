@@ -21,6 +21,7 @@ import {
   CheckCircle2,
   XCircle,
   Loader2,
+  Shield,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -64,6 +65,7 @@ interface ScheduledMessage {
   is_recurring: boolean;
   recurrence_type: string | null;
   recurrence_interval: number;
+  random_delay: 'none' | '5-10' | '10-20' | null;
   status: string;
   executions_count: number;
   last_executed_at: string | null;
@@ -144,7 +146,7 @@ function ScheduledMessageCard({
               {MESSAGE_TYPE_ICONS[message.message_type]}
               {message.group_name || message.group_jid}
             </CardTitle>
-            <CardDescription className="flex items-center gap-2">
+            <CardDescription className="flex items-center gap-2 flex-wrap">
               <span>{message.instances?.name}</span>
               {message.is_recurring && (
                 <span className="flex items-center gap-1 text-xs">
@@ -152,6 +154,12 @@ function ScheduledMessageCard({
                   {message.recurrence_type === "daily" && `A cada ${message.recurrence_interval} dia(s)`}
                   {message.recurrence_type === "weekly" && `A cada ${message.recurrence_interval} semana(s)`}
                   {message.recurrence_type === "monthly" && `A cada ${message.recurrence_interval} mês(es)`}
+                </span>
+              )}
+              {message.random_delay && message.random_delay !== 'none' && (
+                <span className="flex items-center gap-1 text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
+                  <Shield className="h-3 w-3" />
+                  {message.random_delay === '5-10' ? '5-10s' : '10-20s'}
                 </span>
               )}
             </CardDescription>
@@ -307,7 +315,7 @@ export default function ScheduledMessages() {
         .order("next_run_at", { ascending: true });
 
       if (error) throw error;
-      return data as ScheduledMessage[];
+      return data as unknown as ScheduledMessage[];
     },
     enabled: !!user,
   });
