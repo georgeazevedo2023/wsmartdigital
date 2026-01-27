@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Loader2, RefreshCw, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle2, XCircle, AlertCircle, Trash2, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface UazapiInstance {
@@ -30,6 +30,13 @@ interface UazapiInstance {
   ownerJid?: string;
   profilePicUrl?: string;
   profileName?: string;
+}
+
+interface LocalInstance {
+  id: string;
+  name: string;
+  status: string;
+  user_id: string;
 }
 
 interface UserProfile {
@@ -57,6 +64,11 @@ export default function SyncInstancesDialog({
   const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
   const [userAssignments, setUserAssignments] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  
+  // Orphan instances state
+  const [orphanedInstances, setOrphanedInstances] = useState<LocalInstance[]>([]);
+  const [selectedOrphans, setSelectedOrphans] = useState<Set<string>>(new Set());
+  const [deletingOrphans, setDeletingOrphans] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -69,14 +81,15 @@ export default function SyncInstancesDialog({
     setError(null);
     setSelectedInstances(new Set());
     setUserAssignments({});
+    setSelectedOrphans(new Set());
 
     try {
-      // Fetch existing instances from local DB
-      const { data: existingInstances } = await supabase
+      // Fetch ALL local instances (not just IDs)
+      const { data: localInstances } = await supabase
         .from('instances')
-        .select('id');
+        .select('id, name, status, user_id');
 
-      setExistingIds(new Set(existingInstances?.map((i) => i.id) || []));
+      setExistingIds(new Set(localInstances?.map((i) => i.id) || []));
 
       // Fetch users
       const { data: usersData } = await supabase
@@ -132,6 +145,11 @@ export default function SyncInstancesDialog({
       }
 
       setUazapiInstances(instances);
+
+      // Identify orphaned instances (exist locally but NOT in UAZAPI)
+      const uazapiIds = new Set(instances.map((i) => i.id));
+      const orphaned = localInstances?.filter((inst) => !uazapiIds.has(inst.id)) || [];
+      setOrphanedInstances(orphaned);
     } catch (err: any) {
       console.error('Error fetching data:', err);
       setError(err.message || 'Erro ao carregar dados');
@@ -152,11 +170,79 @@ export default function SyncInstancesDialog({
     });
   };
 
+  const toggleOrphan = (id: string) => {
+    setSelectedOrphans((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const toggleAllOrphans = () => {
+    if (selectedOrphans.size === orphanedInstances.length) {
+      setSelectedOrphans(new Set());
+    } else {
+      setSelectedOrphans(new Set(orphanedInstances.map((i) => i.id)));
+    }
+  };
+
   const setUserForInstance = (instanceId: string, userId: string) => {
     setUserAssignments((prev) => ({
       ...prev,
       [instanceId]: userId,
     }));
+  };
+
+  const handleDeleteOrphans = async () => {
+    if (selectedOrphans.size === 0) return;
+
+    setDeletingOrphans(true);
+
+    try {
+      const orphanIds = Array.from(selectedOrphans);
+
+      // First remove access records (no CASCADE)
+      const { error: accessError } = await supabase
+        .from('user_instance_access')
+        .delete()
+        .in('instance_id', orphanIds);
+
+      if (accessError) {
+        console.error('Error removing access records:', accessError);
+      }
+
+      // Then remove scheduled messages (if no CASCADE)
+      const { error: schedError } = await supabase
+        .from('scheduled_messages')
+        .delete()
+        .in('instance_id', orphanIds);
+
+      if (schedError) {
+        console.error('Error removing scheduled messages:', schedError);
+      }
+
+      // Finally remove instances
+      const { error: instError } = await supabase
+        .from('instances')
+        .delete()
+        .in('id', orphanIds);
+
+      if (instError) throw instError;
+
+      toast.success(`${orphanIds.length} instância(s) órfã(s) removida(s)`);
+      setSelectedOrphans(new Set());
+      onSync();
+      fetchData(); // Refresh data
+    } catch (err: any) {
+      console.error('Error deleting orphaned instances:', err);
+      toast.error(err.message || 'Erro ao remover instâncias órfãs');
+    } finally {
+      setDeletingOrphans(false);
+    }
   };
 
   const handleSync = async () => {
@@ -257,7 +343,7 @@ export default function SyncInstancesDialog({
               Tentar novamente
             </Button>
           </div>
-        ) : uazapiInstances.length === 0 ? (
+        ) : uazapiInstances.length === 0 && orphanedInstances.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
             <AlertCircle className="w-8 h-8 mb-4 opacity-50" />
             <p>Nenhuma instância encontrada na UAZAPI</p>
@@ -340,14 +426,83 @@ export default function SyncInstancesDialog({
                   ))}
                 </div>
               )}
+
+              {/* Orphaned instances */}
+              {orphanedInstances.length > 0 && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="font-medium text-sm text-destructive flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4" />
+                      Instâncias Órfãs ({orphanedInstances.length})
+                    </h3>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleAllOrphans}
+                      className="text-xs"
+                    >
+                      {selectedOrphans.size === orphanedInstances.length
+                        ? 'Desmarcar todas'
+                        : 'Selecionar todas'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Existem no sistema local mas não foram encontradas na UAZAPI
+                  </p>
+                  {orphanedInstances.map((inst) => (
+                    <div
+                      key={inst.id}
+                      className="flex items-center gap-4 p-3 rounded-lg border border-destructive/30 bg-destructive/5"
+                    >
+                      <Checkbox
+                        checked={selectedOrphans.has(inst.id)}
+                        onCheckedChange={() => toggleOrphan(inst.id)}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium truncate">{inst.name}</span>
+                          <Badge variant="destructive" className="gap-1">
+                            <XCircle className="w-3 h-3" />
+                            Não encontrada
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-muted-foreground truncate">
+                          {inst.id} • Pode ser removida com segurança
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </ScrollArea>
         )}
 
-        <DialogFooter>
+        <DialogFooter className="flex-wrap gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
+          
+          {orphanedInstances.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={handleDeleteOrphans}
+              disabled={deletingOrphans || selectedOrphans.size === 0}
+            >
+              {deletingOrphans ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Removendo...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Remover Órfãs {selectedOrphans.size > 0 ? `(${selectedOrphans.size})` : ''}
+                </>
+              )}
+            </Button>
+          )}
+          
           <Button
             onClick={handleSync}
             disabled={syncing || selectedInstances.size === 0}
