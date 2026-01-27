@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Cloc
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import { TemplateSelector } from './TemplateSelector';
+import ParticipantSelector from './ParticipantSelector';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Group } from './GroupSelector';
@@ -64,6 +65,9 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const [showScheduleDialog, setShowScheduleDialog] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   
+  // Participant selection for excludeAdmins mode
+  const [selectedParticipants, setSelectedParticipants] = useState<Set<string>>(new Set());
+  
   // Pause and cancel control using refs to allow immediate effect in async loops
   const isPausedRef = useRef(false);
   const isCancelledRef = useRef(false);
@@ -84,7 +88,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   }, 0);
 
   // Calculate unique regular members across all selected groups (for deduplication)
-  const getUniqueRegularMembers = () => {
+  const uniqueRegularMembers = useMemo(() => {
     const seenJids = new Set<string>();
     const uniqueMembers: { jid: string; groupName: string }[] = [];
     
@@ -99,11 +103,24 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     }
     
     return uniqueMembers;
-  };
+  }, [selectedGroups]);
 
-  const uniqueRegularMembersCount = excludeAdmins 
-    ? getUniqueRegularMembers().length 
-    : totalRegularMembers;
+  const uniqueRegularMembersCount = uniqueRegularMembers.length;
+
+  // Initialize/reset selectedParticipants when excludeAdmins or groups change
+  useEffect(() => {
+    if (excludeAdmins) {
+      // Auto-select all participants
+      setSelectedParticipants(new Set(uniqueRegularMembers.map((m) => m.jid)));
+    } else {
+      setSelectedParticipants(new Set());
+    }
+  }, [excludeAdmins, uniqueRegularMembers]);
+
+  // Callback for participant selection changes
+  const handleParticipantSelectionChange = useCallback((newSelection: Set<string>) => {
+    setSelectedParticipants(newSelection);
+  }, []);
 
   // Cleanup preview URL on unmount or file change
   useEffect(() => {
@@ -402,14 +419,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       isCancelledRef.current = false;
 
       if (excludeAdmins) {
-        // DEDUPLICATION: Get unique members across all groups
-        const uniqueMembers = getUniqueRegularMembers();
+        // DEDUPLICATION: Get unique members across all groups, filtered by selection
+        const membersToSend = uniqueRegularMembers.filter((m) => selectedParticipants.has(m.jid));
+        
+        if (membersToSend.length === 0) {
+          toast.error('Selecione pelo menos um participante');
+          return;
+        }
         
         setProgress({
           currentGroup: 1,
           totalGroups: 1,
           currentMember: 0,
-          totalMembers: uniqueMembers.length,
+          totalMembers: membersToSend.length,
           groupName: `${selectedGroups.length} grupo(s) - Envio individual`,
           status: 'sending',
           results: [],
@@ -419,7 +441,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         let successCount = 0;
         let failCount = 0;
 
-        for (let j = 0; j < uniqueMembers.length; j++) {
+        for (let j = 0; j < membersToSend.length; j++) {
           // Check for cancellation
           if (isCancelledRef.current) {
             results.push({ 
@@ -435,7 +457,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
               content: trimmedMessage,
               mediaUrl: null,
               groupsTargeted: selectedGroups.length,
-              recipientsTargeted: uniqueMembers.length,
+              recipientsTargeted: membersToSend.length,
               recipientsSuccess: successCount,
               recipientsFailed: failCount,
               status: 'cancelled',
@@ -462,7 +484,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
               content: trimmedMessage,
               mediaUrl: null,
               groupsTargeted: selectedGroups.length,
-              recipientsTargeted: uniqueMembers.length,
+              recipientsTargeted: membersToSend.length,
               recipientsSuccess: successCount,
               recipientsFailed: failCount,
               status: 'cancelled',
@@ -472,22 +494,22 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           }
           
           try {
-            await sendToNumber(uniqueMembers[j].jid, trimmedMessage, accessToken);
+            await sendToNumber(membersToSend[j].jid, trimmedMessage, accessToken);
             successCount++;
           } catch (err) {
-            console.error(`Erro ao enviar para ${uniqueMembers[j].jid}:`, err);
+            console.error(`Erro ao enviar para ${membersToSend[j].jid}:`, err);
             failCount++;
           }
           
           setProgress(p => ({ ...p, currentMember: j + 1 }));
           
-          if (j < uniqueMembers.length - 1) {
+          if (j < membersToSend.length - 1) {
             await delay(getRandomDelay());
           }
         }
 
         results.push({ 
-          groupName: `Envio individual (${uniqueMembers.length} contatos únicos)`, 
+          groupName: `Envio individual (${membersToSend.length} contatos únicos)`,
           success: failCount === 0 
         });
 
@@ -499,7 +521,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           content: trimmedMessage,
           mediaUrl: null,
           groupsTargeted: selectedGroups.length,
-          recipientsTargeted: uniqueMembers.length,
+          recipientsTargeted: membersToSend.length,
           recipientsSuccess: successCount,
           recipientsFailed: failCount,
           status: 'completed',
@@ -672,14 +694,19 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
       isCancelledRef.current = false;
 
       if (excludeAdmins) {
-        // DEDUPLICATION: Get unique members across all groups
-        const uniqueMembers = getUniqueRegularMembers();
+        // DEDUPLICATION: Get unique members across all groups, filtered by selection
+        const membersToSend = uniqueRegularMembers.filter((m) => selectedParticipants.has(m.jid));
+        
+        if (membersToSend.length === 0) {
+          toast.error('Selecione pelo menos um participante');
+          return;
+        }
         
         setProgress({
           currentGroup: 1,
           totalGroups: 1,
           currentMember: 0,
-          totalMembers: uniqueMembers.length,
+          totalMembers: membersToSend.length,
           groupName: `${selectedGroups.length} grupo(s) - Envio individual`,
           status: 'sending',
           results: [],
@@ -689,7 +716,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         let successCount = 0;
         let failCount = 0;
 
-        for (let j = 0; j < uniqueMembers.length; j++) {
+        for (let j = 0; j < membersToSend.length; j++) {
           // Check for cancellation
           if (isCancelledRef.current) {
             const mediaLabel = mediaType === 'image' ? 'Imagem' : mediaType === 'video' ? 'Vídeo' : mediaType === 'audio' ? 'Áudio' : 'Arquivo';
@@ -706,7 +733,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
               content: caption.trim() || null,
               mediaUrl: mediaUrl.trim() || null,
               groupsTargeted: selectedGroups.length,
-              recipientsTargeted: uniqueMembers.length,
+              recipientsTargeted: membersToSend.length,
               recipientsSuccess: successCount,
               recipientsFailed: failCount,
               status: 'cancelled',
@@ -734,7 +761,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
               content: caption.trim() || null,
               mediaUrl: mediaUrl.trim() || null,
               groupsTargeted: selectedGroups.length,
-              recipientsTargeted: uniqueMembers.length,
+              recipientsTargeted: membersToSend.length,
               recipientsSuccess: successCount,
               recipientsFailed: failCount,
               status: 'cancelled',
@@ -744,22 +771,22 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           }
           
           try {
-            await sendMediaToNumber(uniqueMembers[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
+            await sendMediaToNumber(membersToSend[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
             successCount++;
           } catch (err) {
-            console.error(`Erro ao enviar mídia para ${uniqueMembers[j].jid}:`, err);
+            console.error(`Erro ao enviar mídia para ${membersToSend[j].jid}:`, err);
             failCount++;
           }
           
           setProgress(p => ({ ...p, currentMember: j + 1 }));
           
-          if (j < uniqueMembers.length - 1) {
+          if (j < membersToSend.length - 1) {
             await delay(getRandomDelay());
           }
         }
 
         results.push({ 
-          groupName: `Envio individual (${uniqueMembers.length} contatos únicos)`, 
+          groupName: `Envio individual (${membersToSend.length} contatos únicos)`,
           success: failCount === 0 
         });
 
@@ -771,7 +798,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
           content: caption.trim() || null,
           mediaUrl: mediaUrl.trim() || null,
           groupsTargeted: selectedGroups.length,
-          recipientsTargeted: uniqueMembers.length,
+          recipientsTargeted: membersToSend.length,
           recipientsSuccess: successCount,
           recipientsFailed: failCount,
           status: 'completed',
@@ -1078,7 +1105,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const isOverLimit = characterCount > MAX_MESSAGE_LENGTH;
   const isSending = progress.status === 'sending' || progress.status === 'paused';
 
-  const targetCount = excludeAdmins ? uniqueRegularMembersCount : selectedGroups.length;
+  const targetCount = excludeAdmins ? selectedParticipants.size : selectedGroups.length;
 
   // Calcular tempo estimado de envio
   const getEstimatedTime = (): { min: number; max: number } | null => {
@@ -1138,7 +1165,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
 
   const isMediaValid = activeTab === 'media' && (selectedFile || mediaUrl.trim()) && (mediaType !== 'file' || filename.trim());
   const isTextValid = activeTab === 'text' && message.trim() && !isOverLimit;
-  const canSend = (isTextValid || isMediaValid) && selectedGroups.length > 0 && !(excludeAdmins && uniqueRegularMembersCount === 0);
+  const canSend = (isTextValid || isMediaValid) && selectedGroups.length > 0 && !(excludeAdmins && selectedParticipants.size === 0);
   const canSchedule = activeTab === 'text' 
     ? (message.trim() && !isOverLimit && selectedGroups.length > 0)
     : (mediaUrl.trim() && selectedGroups.length > 0 && (mediaType !== 'file' || filename.trim()));
@@ -1574,7 +1601,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                     </Label>
                     <p className="text-xs text-muted-foreground">
                       {excludeAdmins 
-                        ? `Enviará para ${uniqueRegularMembersCount} contato${uniqueRegularMembersCount !== 1 ? 's' : ''} único${uniqueRegularMembersCount !== 1 ? 's' : ''} (sem duplicatas)`
+                        ? `${selectedParticipants.size} de ${uniqueRegularMembersCount} contato(s) selecionado(s)`
                         : `Enviará para ${selectedGroups.length} grupo${selectedGroups.length !== 1 ? 's' : ''}`
                       }
                     </p>
@@ -1587,6 +1614,16 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                   disabled={isSending}
                 />
               </div>
+
+              {/* Participant Selector - shows when excludeAdmins is active */}
+              {excludeAdmins && (
+                <ParticipantSelector
+                  selectedGroups={selectedGroups}
+                  selectedParticipants={selectedParticipants}
+                  onSelectionChange={handleParticipantSelectionChange}
+                  disabled={isSending}
+                />
+              )}
 
               {/* Randomizador de delay anti-bloqueio */}
               <div className="p-3 bg-muted/50 rounded-lg border border-border/50 space-y-3">
@@ -1658,7 +1695,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
                 </Badge>
                 <Badge variant="outline" className="gap-1">
                   <Users className="w-3 h-3" />
-                  {excludeAdmins ? uniqueRegularMembersCount : totalMembers} destinatário{(excludeAdmins ? uniqueRegularMembersCount : totalMembers) !== 1 ? 's' : ''}
+                  {excludeAdmins ? selectedParticipants.size : totalMembers} destinatário{(excludeAdmins ? selectedParticipants.size : totalMembers) !== 1 ? 's' : ''}
                 </Badge>
                 {activeTab === 'media' && (
                   <Badge variant="secondary" className="gap-1">
