@@ -1598,6 +1598,14 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
               previewUrl={activeTab === 'media' ? previewUrl : undefined}
               filename={filename}
               isPtt={isPtt}
+              onTextChange={(newText) => {
+                if (activeTab === 'text') {
+                  setMessage(newText);
+                } else {
+                  setCaption(newText);
+                }
+              }}
+              disabled={progress.status === 'sending' || progress.status === 'paused'}
             />
 
             {/* Common sections for both tabs */}
