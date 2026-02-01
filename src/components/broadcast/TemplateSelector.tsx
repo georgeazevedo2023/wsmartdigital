@@ -74,6 +74,8 @@ const getMediaIcon = (type: string) => {
       return <Mic className="w-4 h-4" />;
     case 'document':
       return <FileIcon className="w-4 h-4" />;
+    case 'carousel':
+      return <FolderOpen className="w-4 h-4" />;
     default:
       return <FileText className="w-4 h-4" />;
   }
@@ -91,6 +93,8 @@ const getMediaLabel = (type: string) => {
       return 'Voz';
     case 'document':
       return 'Documento';
+    case 'carousel':
+      return 'Carrossel';
     default:
       return 'Texto';
   }

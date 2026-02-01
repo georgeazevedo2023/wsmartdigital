@@ -121,6 +121,7 @@ export type Database = {
       }
       message_templates: {
         Row: {
+          carousel_data: Json | null
           category: string | null
           content: string | null
           created_at: string
@@ -133,6 +134,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          carousel_data?: Json | null
           category?: string | null
           content?: string | null
           created_at?: string
@@ -145,6 +147,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          carousel_data?: Json | null
           category?: string | null
           content?: string | null
           created_at?: string
