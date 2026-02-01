@@ -1061,6 +1061,12 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
       return;
     }
 
+    // Validate participant selection when excludeAdmins is enabled
+    if (excludeAdmins && selectedParticipants.size === 0) {
+      toast.error('Selecione pelo menos um participante');
+      return;
+    }
+
     try {
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
@@ -1074,111 +1080,218 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
       
       isCancelledRef.current = false;
 
-      // Carousel always sends to groups (not individuals)
-      setProgress({
-        currentGroup: 0,
-        totalGroups: selectedGroups.length,
-        currentMember: 0,
-        totalMembers: 0,
-        groupName: '',
-        status: 'sending',
-        results: [],
-        startedAt: Date.now(),
-      });
+      if (excludeAdmins) {
+        // Send to individual participants
+        const membersToSend = uniqueRegularMembers.filter(m => selectedParticipants.has(m.jid));
 
-      for (let i = 0; i < selectedGroups.length; i++) {
-        if (isCancelledRef.current) {
-          const sentCount = results.filter(r => r.success).length;
-          const failedCount = results.filter(r => !r.success).length;
-          setProgress(p => ({ ...p, status: 'cancelled', results }));
-          toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
-          
-          await saveBroadcastLog({
-            messageType: 'carousel',
-            content: carouselData.message || null,
-            mediaUrl: null,
-            groupsTargeted: selectedGroups.length,
-            recipientsTargeted: selectedGroups.length,
-            recipientsSuccess: sentCount,
-            recipientsFailed: failedCount,
-            status: 'cancelled',
-            startedAt: progress.startedAt || Date.now(),
-          });
-          return;
+        setProgress({
+          currentGroup: 0,
+          totalGroups: 1,
+          currentMember: 0,
+          totalMembers: membersToSend.length,
+          groupName: `${membersToSend.length} participante(s)`,
+          status: 'sending',
+          results: [],
+          startedAt: Date.now(),
+        });
+
+        for (let j = 0; j < membersToSend.length; j++) {
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} mensagem(s) enviada(s).`);
+            
+            await saveBroadcastLog({
+              messageType: 'carousel',
+              content: carouselData.message || null,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: membersToSend.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
+            return;
+          }
+
+          await waitWhilePaused();
+
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} mensagem(s) enviada(s).`);
+            
+            await saveBroadcastLog({
+              messageType: 'carousel',
+              content: carouselData.message || null,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: membersToSend.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
+            return;
+          }
+
+          const member = membersToSend[j];
+
+          try {
+            setProgress(p => ({
+              ...p,
+              currentMember: j + 1,
+              groupName: `Enviando para ${j + 1} de ${membersToSend.length}`,
+            }));
+
+            await sendCarouselToNumber(member.jid, carouselData, accessToken);
+            results.push({ groupName: member.jid, success: true });
+          } catch (error) {
+            console.error(`Erro ao enviar carrossel para ${member.jid}:`, error);
+            results.push({
+              groupName: member.jid,
+              success: false,
+              error: error instanceof Error ? error.message : 'Erro desconhecido',
+            });
+          }
+
+          if (j < membersToSend.length - 1) {
+            await delay(getRandomDelay());
+          }
         }
-        
-        await waitWhilePaused();
-        
-        if (isCancelledRef.current) {
-          const sentCount = results.filter(r => r.success).length;
-          const failedCount = results.filter(r => !r.success).length;
-          setProgress(p => ({ ...p, status: 'cancelled', results }));
-          toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
-          
-          await saveBroadcastLog({
-            messageType: 'carousel',
-            content: carouselData.message || null,
-            mediaUrl: null,
-            groupsTargeted: selectedGroups.length,
-            recipientsTargeted: selectedGroups.length,
-            recipientsSuccess: sentCount,
-            recipientsFailed: failedCount,
-            status: 'cancelled',
-            startedAt: progress.startedAt || Date.now(),
-          });
-          return;
+
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+
+        setProgress(p => ({ ...p, status: 'success', results }));
+
+        await saveBroadcastLog({
+          messageType: 'carousel',
+          content: carouselData.message || null,
+          mediaUrl: null,
+          groupsTargeted: selectedGroups.length,
+          recipientsTargeted: membersToSend.length,
+          recipientsSuccess: successCount,
+          recipientsFailed: failCount,
+          status: 'completed',
+          startedAt: progress.startedAt || Date.now(),
+        });
+
+        if (failCount > 0) {
+          toast.warning(`Carrossel enviado para ${successCount} contato(s). ${failCount} falha(s).`);
+        } else {
+          toast.success(`Carrossel enviado para ${successCount} contato(s)!`);
         }
-        
-        const group = selectedGroups[i];
-        
-        try {
-          setProgress(p => ({
-            ...p,
-            currentGroup: i + 1,
-            groupName: group.name,
-            currentMember: 0,
-            totalMembers: 1,
-          }));
-
-          await sendCarouselToNumber(group.id, carouselData, accessToken);
-          setProgress(p => ({ ...p, currentMember: 1 }));
-
-          results.push({ groupName: group.name, success: true });
-        } catch (error) {
-          console.error(`Erro ao enviar carrossel para grupo ${group.name}:`, error);
-          results.push({ 
-            groupName: group.name, 
-            success: false, 
-            error: error instanceof Error ? error.message : 'Erro desconhecido' 
-          });
-        }
-
-        if (i < selectedGroups.length - 1) {
-          await delay(getGroupDelay());
-        }
-      }
-
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
-
-      setProgress(p => ({ ...p, status: 'success', results }));
-
-      await saveBroadcastLog({
-        messageType: 'carousel',
-        content: carouselData.message || null,
-        mediaUrl: null,
-        groupsTargeted: selectedGroups.length,
-        recipientsTargeted: selectedGroups.length,
-        recipientsSuccess: successCount,
-        recipientsFailed: failCount,
-        status: 'completed',
-        startedAt: progress.startedAt || Date.now(),
-      });
-
-      if (failCount > 0) {
-        toast.warning(`Carrossel enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
       } else {
-        toast.success(`Carrossel enviado para ${successCount} grupo(s)!`);
+        // Send to groups (original flow)
+        setProgress({
+          currentGroup: 0,
+          totalGroups: selectedGroups.length,
+          currentMember: 0,
+          totalMembers: 0,
+          groupName: '',
+          status: 'sending',
+          results: [],
+          startedAt: Date.now(),
+        });
+
+        for (let i = 0; i < selectedGroups.length; i++) {
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            
+            await saveBroadcastLog({
+              messageType: 'carousel',
+              content: carouselData.message || null,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: selectedGroups.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
+            return;
+          }
+          
+          await waitWhilePaused();
+          
+          if (isCancelledRef.current) {
+            const sentCount = results.filter(r => r.success).length;
+            const failedCount = results.filter(r => !r.success).length;
+            setProgress(p => ({ ...p, status: 'cancelled', results }));
+            toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+            
+            await saveBroadcastLog({
+              messageType: 'carousel',
+              content: carouselData.message || null,
+              mediaUrl: null,
+              groupsTargeted: selectedGroups.length,
+              recipientsTargeted: selectedGroups.length,
+              recipientsSuccess: sentCount,
+              recipientsFailed: failedCount,
+              status: 'cancelled',
+              startedAt: progress.startedAt || Date.now(),
+            });
+            return;
+          }
+          
+          const group = selectedGroups[i];
+          
+          try {
+            setProgress(p => ({
+              ...p,
+              currentGroup: i + 1,
+              groupName: group.name,
+              currentMember: 0,
+              totalMembers: 1,
+            }));
+
+            await sendCarouselToNumber(group.id, carouselData, accessToken);
+            setProgress(p => ({ ...p, currentMember: 1 }));
+
+            results.push({ groupName: group.name, success: true });
+          } catch (error) {
+            console.error(`Erro ao enviar carrossel para grupo ${group.name}:`, error);
+            results.push({ 
+              groupName: group.name, 
+              success: false, 
+              error: error instanceof Error ? error.message : 'Erro desconhecido' 
+            });
+          }
+
+          if (i < selectedGroups.length - 1) {
+            await delay(getGroupDelay());
+          }
+        }
+
+        const successCount = results.filter(r => r.success).length;
+        const failCount = results.filter(r => !r.success).length;
+
+        setProgress(p => ({ ...p, status: 'success', results }));
+
+        await saveBroadcastLog({
+          messageType: 'carousel',
+          content: carouselData.message || null,
+          mediaUrl: null,
+          groupsTargeted: selectedGroups.length,
+          recipientsTargeted: selectedGroups.length,
+          recipientsSuccess: successCount,
+          recipientsFailed: failCount,
+          status: 'completed',
+          startedAt: progress.startedAt || Date.now(),
+        });
+
+        if (failCount > 0) {
+          toast.warning(`Carrossel enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
+        } else {
+          toast.success(`Carrossel enviado para ${successCount} grupo(s)!`);
+        }
       }
 
       // Reset carousel
@@ -1915,44 +2028,42 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               />
             )}
 
-            {/* Common sections for text and media tabs (carousel has different flow) */}
-            {activeTab !== 'carousel' && (
-              <div className="space-y-4 mt-4">
-                {/* Toggle para excluir admins */}
-                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
-                  <div className="flex items-center gap-3">
-                    <Users className="w-5 h-5 text-muted-foreground" />
-                    <div className="space-y-0.5">
-                      <Label htmlFor="exclude-admins-broadcast" className="text-sm font-medium cursor-pointer">
-                        Não enviar para Admins/Donos
-                      </Label>
-                      <p className="text-xs text-muted-foreground">
-                        {excludeAdmins 
-                          ? `${selectedParticipants.size} de ${uniqueRegularMembersCount} contato(s) selecionado(s)`
-                          : `Enviará para ${selectedGroups.length} grupo${selectedGroups.length !== 1 ? 's' : ''}`
-                        }
-                      </p>
-                    </div>
+            {/* Common sections for all tabs - Toggle and ParticipantSelector */}
+            <div className="space-y-4 mt-4">
+              {/* Toggle para excluir admins */}
+              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
+                <div className="flex items-center gap-3">
+                  <Users className="w-5 h-5 text-muted-foreground" />
+                  <div className="space-y-0.5">
+                    <Label htmlFor="exclude-admins-broadcast" className="text-sm font-medium cursor-pointer">
+                      Não enviar para Admins/Donos
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      {excludeAdmins 
+                        ? `${selectedParticipants.size} de ${uniqueRegularMembersCount} contato(s) selecionado(s)`
+                        : `Enviará para ${selectedGroups.length} grupo${selectedGroups.length !== 1 ? 's' : ''}`
+                      }
+                    </p>
                   </div>
-                  <Switch
-                    id="exclude-admins-broadcast"
-                    checked={excludeAdmins}
-                    onCheckedChange={setExcludeAdmins}
-                    disabled={isSending}
-                  />
                 </div>
-
-                {/* Participant Selector - shows when excludeAdmins is active */}
-                {excludeAdmins && (
-                  <ParticipantSelector
-                    selectedGroups={selectedGroups}
-                    selectedParticipants={selectedParticipants}
-                    onSelectionChange={handleParticipantSelectionChange}
-                    disabled={isSending}
-                  />
-                )}
+                <Switch
+                  id="exclude-admins-broadcast"
+                  checked={excludeAdmins}
+                  onCheckedChange={setExcludeAdmins}
+                  disabled={isSending}
+                />
               </div>
-            )}
+
+              {/* Participant Selector - shows when excludeAdmins is active */}
+              {excludeAdmins && (
+                <ParticipantSelector
+                  selectedGroups={selectedGroups}
+                  selectedParticipants={selectedParticipants}
+                  onSelectionChange={handleParticipantSelectionChange}
+                  disabled={isSending}
+                />
+              )}
+            </div>
 
             {/* Common sections for all tabs */}
             <div className="space-y-4 mt-4">
@@ -2012,7 +2123,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               </div>
 
               {/* Deduplication info when excludeAdmins is enabled */}
-              {activeTab !== 'carousel' && excludeAdmins && totalRegularMembers > uniqueRegularMembersCount && (
+              {excludeAdmins && totalRegularMembers > uniqueRegularMembersCount && (
                 <div className="p-3 bg-primary/5 rounded-lg border border-primary/20 text-sm text-muted-foreground">
                   <span className="font-medium text-primary">Deduplicação ativa:</span> {totalRegularMembers - uniqueRegularMembersCount} contato(s) em múltiplos grupos receberão apenas 1 mensagem.
                 </div>
@@ -2024,12 +2135,10 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
                   <MessageSquare className="w-3 h-3" />
                   {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
                 </Badge>
-                {activeTab !== 'carousel' && (
-                  <Badge variant="outline" className="gap-1">
-                    <Users className="w-3 h-3" />
-                    {excludeAdmins ? selectedParticipants.size : totalMembers} destinatário{(excludeAdmins ? selectedParticipants.size : totalMembers) !== 1 ? 's' : ''}
-                  </Badge>
-                )}
+                <Badge variant="outline" className="gap-1">
+                  <Users className="w-3 h-3" />
+                  {excludeAdmins ? selectedParticipants.size : (activeTab === 'carousel' ? selectedGroups.length : totalMembers)} destinatário{(excludeAdmins ? selectedParticipants.size : (activeTab === 'carousel' ? selectedGroups.length : totalMembers)) !== 1 ? 's' : ''}
+                </Badge>
                 {activeTab === 'carousel' && (
                   <Badge variant="secondary" className="gap-1">
                     <LayoutGrid className="w-3 h-3" />
@@ -2066,7 +2175,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
                   size="sm"
                 >
                   <Send className="w-4 h-4 mr-2" />
-                  Enviar para {activeTab === 'carousel' ? selectedGroups.length : targetCount}
+                  Enviar para {excludeAdmins ? selectedParticipants.size : (activeTab === 'carousel' ? selectedGroups.length : targetCount)}
                 </Button>
               </div>
             </div>
