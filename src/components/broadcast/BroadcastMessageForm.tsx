@@ -19,10 +19,17 @@ import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Group } from './GroupSelector';
 
+interface InitialData {
+  messageType: string;
+  content: string | null;
+  mediaUrl: string | null;
+}
+
 interface BroadcastMessageFormProps {
   instance: Instance;
   selectedGroups: Group[];
   onComplete?: () => void;
+  initialData?: InitialData;
 }
 
 interface SendProgress {
@@ -47,9 +54,14 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp
 const ALLOWED_VIDEO_TYPES = ['video/mp4'];
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/wav'];
 
-const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: BroadcastMessageFormProps) => {
-  const [activeTab, setActiveTab] = useState<'text' | 'media'>('text');
-  const [message, setMessage] = useState('');
+const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialData }: BroadcastMessageFormProps) => {
+  const [activeTab, setActiveTab] = useState<'text' | 'media'>(() => {
+    if (initialData && initialData.messageType !== 'text') {
+      return 'media';
+    }
+    return 'text';
+  });
+  const [message, setMessage] = useState(() => initialData?.content || '');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
   const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20'>('none');
   const [progress, setProgress] = useState<SendProgress>({
@@ -74,12 +86,25 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
   const isCancelledRef = useRef(false);
 
   // Media states
-  const [mediaType, setMediaType] = useState<MediaType>('image');
-  const [mediaUrl, setMediaUrl] = useState('');
+  const [mediaType, setMediaType] = useState<MediaType>(() => {
+    if (initialData) {
+      if (initialData.messageType === 'image') return 'image';
+      if (initialData.messageType === 'video') return 'video';
+      if (initialData.messageType === 'audio' || initialData.messageType === 'ptt') return 'audio';
+      if (initialData.messageType === 'document' || initialData.messageType === 'file') return 'file';
+    }
+    return 'image';
+  });
+  const [mediaUrl, setMediaUrl] = useState(() => initialData?.mediaUrl || '');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [caption, setCaption] = useState('');
-  const [isPtt, setIsPtt] = useState(false);
+  const [caption, setCaption] = useState(() => {
+    if (initialData && initialData.messageType !== 'text') {
+      return initialData.content || '';
+    }
+    return '';
+  });
+  const [isPtt, setIsPtt] = useState(() => initialData?.messageType === 'ptt');
   const [filename, setFilename] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -212,6 +237,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
     status: 'completed' | 'cancelled' | 'error';
     startedAt: number;
     errorMessage?: string;
+    groupNames?: string[];
   }) => {
     try {
       const session = await supabase.auth.getSession();
@@ -238,6 +264,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete }: Broadcas
         completed_at: new Date(completedAt).toISOString(),
         duration_seconds: durationSeconds,
         error_message: params.errorMessage || null,
+        group_names: params.groupNames || selectedGroups.map(g => g.name),
       });
     } catch (err) {
       console.error('Error saving broadcast log:', err);

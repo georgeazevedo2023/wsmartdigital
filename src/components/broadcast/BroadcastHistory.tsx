@@ -32,7 +32,9 @@ import {
   RefreshCw,
   Filter,
   X,
-  Calendar
+  Calendar,
+  Eye,
+  Play
 } from 'lucide-react';
 import { format, formatDistanceToNow, isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -56,12 +58,175 @@ interface BroadcastLog {
   duration_seconds: number | null;
   error_message: string | null;
   created_at: string;
+  group_names: string[] | null;
+}
+
+interface BroadcastHistoryProps {
+  onResend?: (log: BroadcastLog) => void;
 }
 
 type StatusFilter = 'all' | 'completed' | 'cancelled' | 'error';
 type MessageTypeFilter = 'all' | 'text' | 'image' | 'video' | 'audio' | 'document';
 
-const BroadcastHistory = () => {
+// WhatsApp formatting parser (same logic as MessagePreview)
+const formatWhatsAppText = (text: string): React.ReactNode => {
+  const wrapWithStyle = (
+    content: React.ReactNode[],
+    style: 'bold' | 'italic' | 'strike',
+    key: string
+  ): React.ReactNode => {
+    const className =
+      style === 'bold'
+        ? 'font-bold'
+        : style === 'italic'
+        ? 'italic'
+        : 'line-through';
+    return (
+      <span key={key} className={className}>
+        {content}
+      </span>
+    );
+  };
+
+  const applyFormatting = (
+    content: string,
+    keyPrefix: string = 'fmt'
+  ): React.ReactNode[] => {
+    const patterns: { regex: RegExp; style: 'bold' | 'italic' | 'strike' }[] = [
+      { regex: /\*([^*]+)\*/, style: 'bold' },
+      { regex: /_([^_]+)_/, style: 'italic' },
+      { regex: /~([^~]+)~/, style: 'strike' },
+    ];
+
+    let firstMatch: RegExpExecArray | null = null;
+    let matchedPattern: (typeof patterns)[0] | null = null;
+
+    for (const pattern of patterns) {
+      const match = pattern.regex.exec(content);
+      if (match && (!firstMatch || match.index < firstMatch.index)) {
+        firstMatch = match;
+        matchedPattern = pattern;
+      }
+    }
+
+    if (!firstMatch || !matchedPattern) {
+      return content ? [<span key={keyPrefix}>{content}</span>] : [];
+    }
+
+    const parts: React.ReactNode[] = [];
+
+    if (firstMatch.index > 0) {
+      parts.push(
+        ...applyFormatting(content.slice(0, firstMatch.index), `${keyPrefix}-pre`)
+      );
+    }
+
+    const innerContent = applyFormatting(firstMatch[1], `${keyPrefix}-inner`);
+    const wrappedContent = wrapWithStyle(
+      innerContent,
+      matchedPattern.style,
+      `${keyPrefix}-wrap`
+    );
+    parts.push(wrappedContent);
+
+    const afterIndex = firstMatch.index + firstMatch[0].length;
+    if (afterIndex < content.length) {
+      parts.push(
+        ...applyFormatting(content.slice(afterIndex), `${keyPrefix}-post`)
+      );
+    }
+
+    return parts;
+  };
+
+  return <>{applyFormatting(text)}</>;
+};
+
+// Read-only message preview component
+const HistoryMessagePreview = ({ 
+  type, 
+  content, 
+  mediaUrl 
+}: { 
+  type: string; 
+  content: string | null; 
+  mediaUrl: string | null;
+}) => {
+  const isImage = type === 'image';
+  const isVideo = type === 'video';
+  const isAudio = type === 'audio' || type === 'ptt';
+  const isDocument = type === 'document' || type === 'file';
+  const hasMedia = isImage || isVideo || isAudio || isDocument;
+
+  return (
+    <div className="bg-muted/30 rounded-lg p-3">
+      <div className="flex items-start gap-2 mb-2">
+        <Eye className="w-4 h-4 text-muted-foreground mt-0.5" />
+        <span className="text-xs text-muted-foreground">Preview da mensagem</span>
+      </div>
+      <div className="flex justify-end">
+        <div className="max-w-[85%] bg-primary/10 rounded-lg rounded-tr-none p-3 border border-border/30">
+          {/* Media rendering */}
+          {isImage && mediaUrl && (
+            <div className="mb-2 rounded-md overflow-hidden">
+              <img 
+                src={mediaUrl} 
+                alt="Preview" 
+                className="max-h-32 w-auto object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            </div>
+          )}
+          
+          {isVideo && mediaUrl && (
+            <div className="mb-2 rounded-md overflow-hidden bg-muted relative">
+              <div className="w-full h-24 flex items-center justify-center">
+                <div className="w-10 h-10 rounded-full bg-white/80 flex items-center justify-center">
+                  <Play className="w-5 h-5 text-primary ml-0.5" fill="currentColor" />
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {isAudio && (
+            <div className="mb-2 flex items-center gap-2 bg-muted/50 rounded-full px-3 py-2">
+              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                <Mic className="w-4 h-4 text-primary" />
+              </div>
+              <div className="flex-1 h-1 bg-muted rounded-full">
+                <div className="w-1/3 h-full bg-primary/50 rounded-full" />
+              </div>
+              <span className="text-xs text-muted-foreground">0:00</span>
+            </div>
+          )}
+          
+          {isDocument && (
+            <div className="mb-2 flex items-center gap-2 bg-muted/50 rounded-md p-2">
+              <FileIcon className="w-8 h-8 text-primary" />
+              <span className="text-xs text-muted-foreground truncate">Documento</span>
+            </div>
+          )}
+          
+          {/* Text content */}
+          {content && (
+            <p className="text-sm whitespace-pre-wrap break-words">
+              {formatWhatsAppText(content)}
+            </p>
+          )}
+          
+          {/* Timestamp */}
+          <div className="flex justify-end items-center gap-1 mt-1">
+            <span className="text-[10px] text-muted-foreground">✓✓</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<MessageTypeFilter>('all');
@@ -115,12 +280,15 @@ const BroadcastHistory = () => {
         }
       }
 
-      // Search query (content or instance name)
+      // Search query (content, instance name, or group names)
       if (searchQuery) {
         const query = searchQuery.toLowerCase();
         const matchesContent = log.content?.toLowerCase().includes(query);
         const matchesInstance = log.instance_name?.toLowerCase().includes(query);
-        if (!matchesContent && !matchesInstance) {
+        const matchesGroups = log.group_names?.some(name => 
+          name.toLowerCase().includes(query)
+        );
+        if (!matchesContent && !matchesInstance && !matchesGroups) {
           return false;
         }
       }
@@ -330,7 +498,7 @@ const BroadcastHistory = () => {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por conteúdo ou instância..."
+              placeholder="Buscar por conteúdo, instância ou grupo..."
               className="flex-1 min-w-[200px] h-8 text-sm"
             />
           </div>
@@ -364,7 +532,7 @@ const BroadcastHistory = () => {
             </Button>
           </div>
         ) : (
-          <ScrollArea className="h-[400px] pr-4">
+          <ScrollArea className="h-[500px] pr-4">
             <div className="space-y-3">
               {filteredLogs.map((log) => {
                 const isExpanded = expandedId === log.id;
@@ -419,7 +587,34 @@ const BroadcastHistory = () => {
                     </div>
 
                     {isExpanded && (
-                      <div className="mt-3 pt-3 border-t space-y-2">
+                      <div className="mt-3 pt-3 border-t space-y-4">
+                        {/* Group Names */}
+                        {log.group_names && log.group_names.length > 0 && (
+                          <div>
+                            <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
+                              <Users className="w-3 h-3" />
+                              Grupos ({log.group_names.length}):
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {log.group_names.map((name, idx) => (
+                                <Badge key={idx} variant="secondary" className="text-xs">
+                                  {name}
+                                </Badge>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Message Preview */}
+                        {(log.content || log.media_url) && (
+                          <HistoryMessagePreview 
+                            type={log.message_type}
+                            content={log.content}
+                            mediaUrl={log.media_url}
+                          />
+                        )}
+
+                        {/* Stats Grid */}
                         <div className="grid grid-cols-2 gap-4 text-sm">
                           <div className="flex items-center gap-2 text-muted-foreground">
                             <Clock className="w-4 h-4" />
@@ -453,23 +648,32 @@ const BroadcastHistory = () => {
                           </div>
                         </div>
 
-                        {log.content && (
-                          <div className="mt-2 p-2 bg-muted/50 rounded text-sm">
-                            <p className="text-muted-foreground text-xs mb-1">Mensagem:</p>
-                            <p className="line-clamp-3">{log.content}</p>
-                          </div>
-                        )}
-
                         {log.error_message && (
-                          <div className="mt-2 p-2 bg-destructive/10 rounded text-sm text-destructive">
+                          <div className="p-2 bg-destructive/10 rounded text-sm text-destructive">
                             <p className="text-xs mb-1">Erro:</p>
                             <p>{log.error_message}</p>
                           </div>
                         )}
 
-                        <div className="text-xs text-muted-foreground pt-1">
+                        <div className="text-xs text-muted-foreground">
                           {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
                         </div>
+
+                        {/* Resend Button */}
+                        {onResend && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="w-full"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onResend(log);
+                            }}
+                          >
+                            <RefreshCw className="w-4 h-4 mr-2" />
+                            Reenviar esta mensagem
+                          </Button>
+                        )}
                       </div>
                     )}
                   </div>

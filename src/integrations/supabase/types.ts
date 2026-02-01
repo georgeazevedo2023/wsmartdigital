@@ -22,6 +22,7 @@ export type Database = {
           duration_seconds: number | null
           error_message: string | null
           exclude_admins: boolean
+          group_names: string[] | null
           groups_targeted: number
           id: string
           instance_id: string
@@ -43,6 +44,7 @@ export type Database = {
           duration_seconds?: number | null
           error_message?: string | null
           exclude_admins?: boolean
+          group_names?: string[] | null
           groups_targeted?: number
           id?: string
           instance_id: string
@@ -64,6 +66,7 @@ export type Database = {
           duration_seconds?: number | null
           error_message?: string | null
           exclude_admins?: boolean
+          group_names?: string[] | null
           groups_targeted?: number
           id?: string
           instance_id?: string
