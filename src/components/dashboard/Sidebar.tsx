@@ -166,7 +166,7 @@ const Sidebar = () => {
                   : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
               )}
             >
-              <span>Novo disparo</span>
+              <span>Grupos</span>
             </Link>
             <Link
               to="/dashboard/broadcast/history"
