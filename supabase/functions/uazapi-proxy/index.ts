@@ -327,6 +327,75 @@ Deno.serve(async (req) => {
         )
       }
 
+      case 'send-carousel': {
+        // Send carousel message to group
+        if (!instanceToken || !groupjid || !body.carousel) {
+          return new Response(
+            JSON.stringify({ error: 'Token, groupjid and carousel required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const carouselEndpoint = `${uazapiUrl}/send/carousel`
+        
+        // Build payload according to UAZAPI documentation
+        const carouselBody = {
+          phone: groupjid,
+          message: body.message || '',
+          carousel: body.carousel.map((card: { text: string; image: string; buttons: Array<{ id: string; label: string; type: string; url?: string; phone?: string }> }, idx: number) => ({
+            text: card.text,
+            image: card.image,
+            buttons: card.buttons.map((btn, btnIdx) => {
+              const buttonData: Record<string, unknown> = {
+                id: String(btnIdx + 1),
+                label: btn.label,
+                type: btn.type,
+              }
+              if (btn.type === 'URL' && btn.url) {
+                buttonData.url = btn.url
+              }
+              if (btn.type === 'CALL' && btn.phone) {
+                buttonData.phone = btn.phone
+              }
+              return buttonData
+            }),
+          })),
+        }
+        
+        console.log('Sending carousel to:', carouselEndpoint)
+        console.log('Carousel cards count:', body.carousel.length)
+        console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
+        
+        const carouselResponse = await fetch(carouselEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify(carouselBody),
+        })
+        
+        console.log('Carousel response status:', carouselResponse.status)
+        
+        const carouselRawText = await carouselResponse.text()
+        console.log('Carousel raw response:', carouselRawText.substring(0, 300))
+        
+        let carouselData: unknown
+        try {
+          carouselData = JSON.parse(carouselRawText)
+        } catch {
+          carouselData = { raw: carouselRawText }
+        }
+        
+        return new Response(
+          JSON.stringify(carouselData),
+          { 
+            status: carouselResponse.status, 
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          }
+        )
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: 'Invalid action' }),

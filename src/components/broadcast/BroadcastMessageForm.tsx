@@ -9,12 +9,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
-import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer, StopCircle } from 'lucide-react';
+import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer, StopCircle, LayoutGrid } from 'lucide-react';
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import { TemplateSelector } from './TemplateSelector';
 import ParticipantSelector from './ParticipantSelector';
 import MessagePreview from './MessagePreview';
+import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Group } from './GroupSelector';
@@ -44,6 +45,7 @@ interface SendProgress {
 }
 
 type MediaType = 'image' | 'video' | 'audio' | 'file';
+type ActiveTab = 'text' | 'media' | 'carousel';
 
 const MAX_MESSAGE_LENGTH = 4096;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -55,7 +57,10 @@ const ALLOWED_VIDEO_TYPES = ['video/mp4'];
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/wav'];
 
 const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialData }: BroadcastMessageFormProps) => {
-  const [activeTab, setActiveTab] = useState<'text' | 'media'>(() => {
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    if (initialData && initialData.messageType === 'carousel') {
+      return 'carousel';
+    }
     if (initialData && initialData.messageType !== 'text') {
       return 'media';
     }
@@ -107,6 +112,12 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
   const [isPtt, setIsPtt] = useState(() => initialData?.messageType === 'ptt');
   const [filename, setFilename] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Carousel state
+  const [carouselData, setCarouselData] = useState<CarouselData>({
+    message: '',
+    cards: [createEmptyCard(), createEmptyCard()],
+  });
 
   const totalMembers = selectedGroups.reduce((acc, g) => acc + g.size, 0);
   const totalRegularMembers = selectedGroups.reduce((acc, g) => {
@@ -406,9 +417,60 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
     return response.json();
   };
 
+  const sendCarouselToNumber = async (
+    number: string, 
+    carousel: CarouselData,
+    accessToken: string
+  ) => {
+    // Convert local files to base64 for carousel images
+    const processedCards = await Promise.all(
+      carousel.cards.map(async (card) => {
+        let imageUrl = card.image;
+        if (card.imageFile) {
+          imageUrl = await fileToBase64(card.imageFile);
+          // Extract only base64 part without prefix
+          const base64Data = imageUrl.split(',')[1] || imageUrl;
+          imageUrl = base64Data;
+        }
+        return {
+          text: card.text,
+          image: imageUrl,
+          buttons: card.buttons,
+        };
+      })
+    );
+
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          action: 'send-carousel',
+          token: instance.token,
+          groupjid: number,
+          message: carousel.message,
+          carousel: processedCards,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || 'Erro ao enviar carrossel');
+    }
+
+    return response.json();
+  };
+
   const handleSend = async () => {
     if (activeTab === 'text') {
       await handleSendText();
+    } else if (activeTab === 'carousel') {
+      await handleSendCarousel();
     } else {
       await handleSendMedia();
     }
@@ -966,9 +1028,178 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
     }
   };
 
+  const handleSendCarousel = async () => {
+    // Validate carousel
+    if (carouselData.cards.length < 2) {
+      toast.error('O carrossel precisa ter pelo menos 2 cards');
+      return;
+    }
+
+    const hasInvalidCards = carouselData.cards.some(card => 
+      (!card.image && !card.imageFile) || !card.text.trim()
+    );
+    if (hasInvalidCards) {
+      toast.error('Todos os cards devem ter imagem e texto');
+      return;
+    }
+
+    const hasInvalidButtons = carouselData.cards.some(card =>
+      card.buttons.some(btn => {
+        if (!btn.label.trim()) return true;
+        if (btn.type === 'URL' && !btn.url?.trim()) return true;
+        if (btn.type === 'CALL' && !btn.phone?.trim()) return true;
+        return false;
+      })
+    );
+    if (hasInvalidButtons) {
+      toast.error('Preencha todos os campos dos botões');
+      return;
+    }
+
+    if (selectedGroups.length === 0) {
+      toast.error('Selecione pelo menos um grupo');
+      return;
+    }
+
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        toast.error('Sessão expirada');
+        setProgress(p => ({ ...p, status: 'error' }));
+        return;
+      }
+
+      const accessToken = session.data.session.access_token;
+      const results: SendProgress['results'] = [];
+      
+      isCancelledRef.current = false;
+
+      // Carousel always sends to groups (not individuals)
+      setProgress({
+        currentGroup: 0,
+        totalGroups: selectedGroups.length,
+        currentMember: 0,
+        totalMembers: 0,
+        groupName: '',
+        status: 'sending',
+        results: [],
+        startedAt: Date.now(),
+      });
+
+      for (let i = 0; i < selectedGroups.length; i++) {
+        if (isCancelledRef.current) {
+          const sentCount = results.filter(r => r.success).length;
+          const failedCount = results.filter(r => !r.success).length;
+          setProgress(p => ({ ...p, status: 'cancelled', results }));
+          toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+          
+          await saveBroadcastLog({
+            messageType: 'carousel',
+            content: carouselData.message || null,
+            mediaUrl: null,
+            groupsTargeted: selectedGroups.length,
+            recipientsTargeted: selectedGroups.length,
+            recipientsSuccess: sentCount,
+            recipientsFailed: failedCount,
+            status: 'cancelled',
+            startedAt: progress.startedAt || Date.now(),
+          });
+          return;
+        }
+        
+        await waitWhilePaused();
+        
+        if (isCancelledRef.current) {
+          const sentCount = results.filter(r => r.success).length;
+          const failedCount = results.filter(r => !r.success).length;
+          setProgress(p => ({ ...p, status: 'cancelled', results }));
+          toast.info(`Envio cancelado. ${sentCount} grupo(s) enviado(s).`);
+          
+          await saveBroadcastLog({
+            messageType: 'carousel',
+            content: carouselData.message || null,
+            mediaUrl: null,
+            groupsTargeted: selectedGroups.length,
+            recipientsTargeted: selectedGroups.length,
+            recipientsSuccess: sentCount,
+            recipientsFailed: failedCount,
+            status: 'cancelled',
+            startedAt: progress.startedAt || Date.now(),
+          });
+          return;
+        }
+        
+        const group = selectedGroups[i];
+        
+        try {
+          setProgress(p => ({
+            ...p,
+            currentGroup: i + 1,
+            groupName: group.name,
+            currentMember: 0,
+            totalMembers: 1,
+          }));
+
+          await sendCarouselToNumber(group.id, carouselData, accessToken);
+          setProgress(p => ({ ...p, currentMember: 1 }));
+
+          results.push({ groupName: group.name, success: true });
+        } catch (error) {
+          console.error(`Erro ao enviar carrossel para grupo ${group.name}:`, error);
+          results.push({ 
+            groupName: group.name, 
+            success: false, 
+            error: error instanceof Error ? error.message : 'Erro desconhecido' 
+          });
+        }
+
+        if (i < selectedGroups.length - 1) {
+          await delay(getGroupDelay());
+        }
+      }
+
+      const successCount = results.filter(r => r.success).length;
+      const failCount = results.filter(r => !r.success).length;
+
+      setProgress(p => ({ ...p, status: 'success', results }));
+
+      await saveBroadcastLog({
+        messageType: 'carousel',
+        content: carouselData.message || null,
+        mediaUrl: null,
+        groupsTargeted: selectedGroups.length,
+        recipientsTargeted: selectedGroups.length,
+        recipientsSuccess: successCount,
+        recipientsFailed: failCount,
+        status: 'completed',
+        startedAt: progress.startedAt || Date.now(),
+      });
+
+      if (failCount > 0) {
+        toast.warning(`Carrossel enviado para ${successCount} grupo(s). ${failCount} falha(s).`);
+      } else {
+        toast.success(`Carrossel enviado para ${successCount} grupo(s)!`);
+      }
+
+      // Reset carousel
+      setCarouselData({
+        message: '',
+        cards: [createEmptyCard(), createEmptyCard()],
+      });
+      onComplete?.();
+    } catch (error) {
+      console.error('Error sending carousel broadcast:', error);
+      toast.error('Erro ao enviar carrossel');
+      setProgress(p => ({ ...p, status: 'error' }));
+    }
+  };
+
   const handleSchedule = async (config: ScheduleConfig) => {
     if (activeTab === 'text') {
       await handleScheduleText(config);
+    } else if (activeTab === 'carousel') {
+      toast.error('Agendamento de carrossel não suportado ainda');
+      return;
     } else {
       await handleScheduleMedia(config);
     }
@@ -1193,13 +1424,25 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
 
   const isMediaValid = activeTab === 'media' && (selectedFile || mediaUrl.trim()) && (mediaType !== 'file' || filename.trim());
   const isTextValid = activeTab === 'text' && message.trim() && !isOverLimit;
-  const canSend = (isTextValid || isMediaValid) && selectedGroups.length > 0 && !(excludeAdmins && selectedParticipants.size === 0);
+  const isCarouselValid = activeTab === 'carousel' && carouselData.cards.length >= 2 && 
+    carouselData.cards.every(card => (card.image || card.imageFile) && card.text.trim()) &&
+    carouselData.cards.every(card => card.buttons.every(btn => 
+      btn.label.trim() && 
+      (btn.type !== 'URL' || btn.url?.trim()) && 
+      (btn.type !== 'CALL' || btn.phone?.trim())
+    ));
+  const canSend = (isTextValid || isMediaValid || isCarouselValid) && selectedGroups.length > 0 && !(excludeAdmins && activeTab !== 'carousel' && selectedParticipants.size === 0);
   const canSchedule = activeTab === 'text' 
     ? (message.trim() && !isOverLimit && selectedGroups.length > 0)
-    : (mediaUrl.trim() && selectedGroups.length > 0 && (mediaType !== 'file' || filename.trim()));
+    : activeTab === 'media'
+    ? (mediaUrl.trim() && selectedGroups.length > 0 && (mediaType !== 'file' || filename.trim()))
+    : false; // Carousel scheduling not supported yet
 
   const handleSelectTemplate = (template: MessageTemplate) => {
-    if (template.message_type === 'text') {
+    if (template.message_type === 'carousel' && template.carousel_data) {
+      setActiveTab('carousel');
+      setCarouselData(template.carousel_data);
+    } else if (template.message_type === 'text') {
       setActiveTab('text');
       setMessage(template.content || '');
     } else {
@@ -1224,7 +1467,30 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
   };
 
   const handleSaveTemplate = () => {
-    if (activeTab === 'text') {
+    if (activeTab === 'carousel') {
+      if (carouselData.cards.length < 2) {
+        toast.error('O carrossel precisa ter pelo menos 2 cards');
+        return null;
+      }
+      // For carousel templates, we cannot save local files
+      const hasLocalFiles = carouselData.cards.some(card => card.imageFile);
+      if (hasLocalFiles) {
+        toast.error('Para salvar template de carrossel, use URLs para as imagens');
+        return null;
+      }
+      return {
+        name: '',
+        content: carouselData.message || undefined,
+        message_type: 'carousel',
+        carousel_data: {
+          message: carouselData.message,
+          cards: carouselData.cards.map(card => ({
+            ...card,
+            imageFile: undefined, // Remove file references
+          })),
+        },
+      };
+    } else if (activeTab === 'text') {
       const trimmedMessage = message.trim();
       if (!trimmedMessage) {
         toast.error('Digite uma mensagem para salvar');
@@ -1407,8 +1673,8 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           </div>
         </CardHeader>
         <CardContent>
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'text' | 'media')}>
-            <TabsList className="grid w-full grid-cols-2 mb-4">
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
+            <TabsList className="grid w-full grid-cols-3 mb-4">
               <TabsTrigger value="text" className="flex items-center gap-2">
                 <MessageSquare className="w-4 h-4" />
                 Texto
@@ -1416,6 +1682,10 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               <TabsTrigger value="media" className="flex items-center gap-2">
                 <Image className="w-4 h-4" />
                 Mídia
+              </TabsTrigger>
+              <TabsTrigger value="carousel" className="flex items-center gap-2">
+                <LayoutGrid className="w-4 h-4" />
+                Carrossel
               </TabsTrigger>
             </TabsList>
             
@@ -1617,60 +1887,75 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               </div>
             </TabsContent>
 
-            {/* Message Preview */}
-            <MessagePreview 
-              type={activeTab === 'text' ? 'text' : mediaType}
-              text={activeTab === 'text' ? message : caption}
-              mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
-              previewUrl={activeTab === 'media' ? previewUrl : undefined}
-              filename={filename}
-              isPtt={isPtt}
-              onTextChange={(newText) => {
-                if (activeTab === 'text') {
-                  setMessage(newText);
-                } else {
-                  setCaption(newText);
-                }
-              }}
-              disabled={progress.status === 'sending' || progress.status === 'paused'}
-            />
+            <TabsContent value="carousel" className="space-y-4">
+              <CarouselEditor
+                value={carouselData}
+                onChange={setCarouselData}
+                disabled={isSending}
+              />
+            </TabsContent>
 
-            {/* Common sections for both tabs */}
-            <div className="space-y-4 mt-4">
-              {/* Toggle para excluir admins */}
-              <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
-                <div className="flex items-center gap-3">
-                  <Users className="w-5 h-5 text-muted-foreground" />
-                  <div className="space-y-0.5">
-                    <Label htmlFor="exclude-admins-broadcast" className="text-sm font-medium cursor-pointer">
-                      Não enviar para Admins/Donos
-                    </Label>
-                    <p className="text-xs text-muted-foreground">
-                      {excludeAdmins 
-                        ? `${selectedParticipants.size} de ${uniqueRegularMembersCount} contato(s) selecionado(s)`
-                        : `Enviará para ${selectedGroups.length} grupo${selectedGroups.length !== 1 ? 's' : ''}`
-                      }
-                    </p>
+            {/* Message Preview - only for text and media tabs */}
+            {activeTab !== 'carousel' && (
+              <MessagePreview 
+                type={activeTab === 'text' ? 'text' : mediaType}
+                text={activeTab === 'text' ? message : caption}
+                mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
+                previewUrl={activeTab === 'media' ? previewUrl : undefined}
+                filename={filename}
+                isPtt={isPtt}
+                onTextChange={(newText) => {
+                  if (activeTab === 'text') {
+                    setMessage(newText);
+                  } else {
+                    setCaption(newText);
+                  }
+                }}
+                disabled={progress.status === 'sending' || progress.status === 'paused'}
+              />
+            )}
+
+            {/* Common sections for text and media tabs (carousel has different flow) */}
+            {activeTab !== 'carousel' && (
+              <div className="space-y-4 mt-4">
+                {/* Toggle para excluir admins */}
+                <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg border border-border/50">
+                  <div className="flex items-center gap-3">
+                    <Users className="w-5 h-5 text-muted-foreground" />
+                    <div className="space-y-0.5">
+                      <Label htmlFor="exclude-admins-broadcast" className="text-sm font-medium cursor-pointer">
+                        Não enviar para Admins/Donos
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {excludeAdmins 
+                          ? `${selectedParticipants.size} de ${uniqueRegularMembersCount} contato(s) selecionado(s)`
+                          : `Enviará para ${selectedGroups.length} grupo${selectedGroups.length !== 1 ? 's' : ''}`
+                        }
+                      </p>
+                    </div>
                   </div>
+                  <Switch
+                    id="exclude-admins-broadcast"
+                    checked={excludeAdmins}
+                    onCheckedChange={setExcludeAdmins}
+                    disabled={isSending}
+                  />
                 </div>
-                <Switch
-                  id="exclude-admins-broadcast"
-                  checked={excludeAdmins}
-                  onCheckedChange={setExcludeAdmins}
-                  disabled={isSending}
-                />
+
+                {/* Participant Selector - shows when excludeAdmins is active */}
+                {excludeAdmins && (
+                  <ParticipantSelector
+                    selectedGroups={selectedGroups}
+                    selectedParticipants={selectedParticipants}
+                    onSelectionChange={handleParticipantSelectionChange}
+                    disabled={isSending}
+                  />
+                )}
               </div>
+            )}
 
-              {/* Participant Selector - shows when excludeAdmins is active */}
-              {excludeAdmins && (
-                <ParticipantSelector
-                  selectedGroups={selectedGroups}
-                  selectedParticipants={selectedParticipants}
-                  onSelectionChange={handleParticipantSelectionChange}
-                  disabled={isSending}
-                />
-              )}
-
+            {/* Common sections for all tabs */}
+            <div className="space-y-4 mt-4">
               {/* Randomizador de delay anti-bloqueio */}
               <div className="p-3 bg-muted/50 rounded-lg border border-border/50 space-y-3">
                 <div className="flex items-center gap-3">
@@ -1727,7 +2012,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               </div>
 
               {/* Deduplication info when excludeAdmins is enabled */}
-              {excludeAdmins && totalRegularMembers > uniqueRegularMembersCount && (
+              {activeTab !== 'carousel' && excludeAdmins && totalRegularMembers > uniqueRegularMembersCount && (
                 <div className="p-3 bg-primary/5 rounded-lg border border-primary/20 text-sm text-muted-foreground">
                   <span className="font-medium text-primary">Deduplicação ativa:</span> {totalRegularMembers - uniqueRegularMembersCount} contato(s) em múltiplos grupos receberão apenas 1 mensagem.
                 </div>
@@ -1739,10 +2024,18 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
                   <MessageSquare className="w-3 h-3" />
                   {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
                 </Badge>
-                <Badge variant="outline" className="gap-1">
-                  <Users className="w-3 h-3" />
-                  {excludeAdmins ? selectedParticipants.size : totalMembers} destinatário{(excludeAdmins ? selectedParticipants.size : totalMembers) !== 1 ? 's' : ''}
-                </Badge>
+                {activeTab !== 'carousel' && (
+                  <Badge variant="outline" className="gap-1">
+                    <Users className="w-3 h-3" />
+                    {excludeAdmins ? selectedParticipants.size : totalMembers} destinatário{(excludeAdmins ? selectedParticipants.size : totalMembers) !== 1 ? 's' : ''}
+                  </Badge>
+                )}
+                {activeTab === 'carousel' && (
+                  <Badge variant="secondary" className="gap-1">
+                    <LayoutGrid className="w-3 h-3" />
+                    {carouselData.cards.length} card{carouselData.cards.length !== 1 ? 's' : ''}
+                  </Badge>
+                )}
                 {activeTab === 'media' && (
                   <Badge variant="secondary" className="gap-1">
                     {mediaType === 'image' && <Image className="w-3 h-3" />}
@@ -1756,22 +2049,24 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
 
               {/* Actions */}
               <div className="flex justify-end gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  onClick={() => setShowScheduleDialog(true)}
-                  disabled={isSending || !canSchedule}
-                  size="sm"
-                >
-                  <Clock className="w-4 h-4 mr-2" />
-                  Agendar
-                </Button>
+                {activeTab !== 'carousel' && (
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowScheduleDialog(true)}
+                    disabled={isSending || !canSchedule}
+                    size="sm"
+                  >
+                    <Clock className="w-4 h-4 mr-2" />
+                    Agendar
+                  </Button>
+                )}
                 <Button
                   onClick={handleSend}
                   disabled={isSending || !canSend}
                   size="sm"
                 >
                   <Send className="w-4 h-4 mr-2" />
-                  Enviar para {targetCount}
+                  Enviar para {activeTab === 'carousel' ? selectedGroups.length : targetCount}
                 </Button>
               </div>
             </div>

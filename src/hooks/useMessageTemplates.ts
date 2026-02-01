@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import type { CarouselData } from '@/components/broadcast/CarouselEditor';
 
 export interface MessageTemplate {
   id: string;
@@ -11,6 +12,7 @@ export interface MessageTemplate {
   media_url: string | null;
   filename: string | null;
   category: string | null;
+  carousel_data: CarouselData | null;
   created_at: string;
   updated_at: string;
 }
@@ -26,6 +28,7 @@ interface UseMessageTemplatesReturn {
     media_url?: string;
     filename?: string;
     category?: string;
+    carousel_data?: CarouselData;
   }) => Promise<MessageTemplate | null>;
   updateTemplate: (id: string, updates: {
     name?: string;
@@ -63,7 +66,13 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
 
       if (error) throw error;
 
-      setTemplates((data as MessageTemplate[]) || []);
+      // Map data with carousel_data parsing
+      const mappedData = (data || []).map(item => ({
+        ...item,
+        carousel_data: item.carousel_data as unknown as CarouselData | null,
+      })) as MessageTemplate[];
+
+      setTemplates(mappedData);
     } catch (error) {
       console.error('Error fetching templates:', error);
     } finally {
@@ -82,6 +91,7 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
     media_url?: string;
     filename?: string;
     category?: string;
+    carousel_data?: CarouselData;
   }): Promise<MessageTemplate | null> => {
     try {
       const { data: session } = await supabase.auth.getSession();
@@ -90,23 +100,29 @@ export function useMessageTemplates(): UseMessageTemplatesReturn {
         return null;
       }
 
+      const insertData = {
+        user_id: session.session.user.id,
+        name: template.name,
+        content: template.content || null,
+        message_type: template.message_type,
+        media_url: template.media_url || null,
+        filename: template.filename || null,
+        category: template.category || null,
+        carousel_data: template.carousel_data ? JSON.parse(JSON.stringify(template.carousel_data)) : null,
+      };
+
       const { data, error } = await supabase
         .from('message_templates')
-        .insert({
-          user_id: session.session.user.id,
-          name: template.name,
-          content: template.content || null,
-          message_type: template.message_type,
-          media_url: template.media_url || null,
-          filename: template.filename || null,
-          category: template.category || null,
-        })
+        .insert(insertData)
         .select()
         .single();
 
       if (error) throw error;
 
-      const newTemplate = data as MessageTemplate;
+      const newTemplate = {
+        ...data,
+        carousel_data: data.carousel_data as unknown as CarouselData | null,
+      } as MessageTemplate;
       setTemplates(prev => [newTemplate, ...prev]);
       toast.success('Template salvo!');
       return newTemplate;
