@@ -1,261 +1,170 @@
 
-# Plano: Editor de Templates de Carrossel no Disparador
 
-## Visão Geral
-Criar um editor visual completo para templates de carrossel no Disparador, permitindo que usuários definam cards com imagens, textos e botões de ação, seguindo a estrutura da API UAZAPI.
+# Plano: Adicionar Funcionalidade "Excluir Admins" ao Editor de Carrossel
+
+## Objetivo
+Integrar ao editor de carrossel a mesma funcionalidade de "Não enviar para Admins/Donos" que já existe nas abas de texto e mídia, permitindo envio individual para participantes selecionados.
 
 ---
 
-## Estrutura do Carrossel (baseado na documentação)
+## Situação Atual
 
-```text
-{
-  "phone": "551199999999",
-  "message": "Texto principal da mensagem",
-  "carousel": [
-    {
-      "text": "Texto do card 1",
-      "image": "https://url-da-imagem.com/1.jpg",
-      "buttons": [
-        { "id": "1", "label": "Ver mais", "type": "URL", "url": "https://..." },
-        { "id": "2", "label": "Tenho interesse", "type": "REPLY" }
-      ]
-    },
-    {
-      "text": "Texto do card 2",
-      "image": "https://url-da-imagem.com/2.jpg",
-      "buttons": [
-        { "id": "1", "label": "Ligar", "type": "CALL", "phone": "551199999999" }
-      ]
-    }
-  ]
-}
+A funcionalidade de exclusão de admins com seleção de participantes já existe e está implementada no `BroadcastMessageForm.tsx`:
+- Toggle "Não enviar para Admins/Donos"
+- Componente `ParticipantSelector` para seleção individual
+- Lógica de deduplicação de contatos entre grupos
+- Contagem de participantes selecionados vs total
+
+Porém, na aba "Carrossel", essa funcionalidade está **explicitamente desabilitada** com a condição `{activeTab !== 'carousel' && ...}`.
+
+---
+
+## Mudanças Necessárias
+
+### 1. Mostrar Toggle e ParticipantSelector no Carrossel
+
+Atualmente (linhas 1918-1955):
+```tsx
+{/* Common sections for text and media tabs (carousel has different flow) */}
+{activeTab !== 'carousel' && (
+  <div className="space-y-4 mt-4">
+    {/* Toggle para excluir admins */}
+    ...
+    {/* Participant Selector */}
+    ...
+  </div>
+)}
 ```
 
-### Limites e Regras
-| Item | Limite |
-|------|--------|
-| Cards por carrossel | Mínimo 2, máximo 10 |
-| Botões por card | Máximo 3 |
-| Tipos de botão | URL, REPLY, CALL |
-| Imagem | Obrigatória por card |
-| Texto do card | Obrigatório |
+Será alterado para mostrar também na aba carousel (removendo a condição de exclusão).
+
+### 2. Atualizar `handleSendCarousel` para Suportar Envio Individual
+
+A função atual (linhas 1031-1195) sempre envia para o JID do grupo. Precisa ser modificada para:
+- Verificar se `excludeAdmins` está ativo
+- Se sim, iterar pelos participantes selecionados em `selectedParticipants`
+- Aplicar a mesma lógica de delay e controles de pausa/cancelamento
+
+### 3. Atualizar Summary e Contadores
+
+O badge de destinatários na aba carousel (linhas 2027-2038) precisa mostrar a contagem correta quando `excludeAdmins` estiver ativo.
 
 ---
 
-## Layout Visual do Editor
+## Layout Visual Esperado
 
-```text
+```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  📋 Carrossel                                                    [Tabs ...]│
+│  Carrossel                                                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  [Editor do carrossel - cards, botões, preview...]                          │
+│                                                                             │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                             │
-│  Mensagem principal:                                                        │
+│  ┌────────────────────────────────────────────────────────────┬──────────┐  │
+│  │ 👥 Não enviar para Admins/Donos                            │   🔵     │  │
+│  │    1 de 3 contato(s) selecionado(s)                        │          │  │
+│  └────────────────────────────────────────────────────────────┴──────────┘  │
+│                                                                             │
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │ Digite a mensagem que acompanha o carrossel...                          ││
+│  │ 👥 Participantes para envio                   1 de 3 selecionado(s)    ││
+│  │ ┌───────────────────────────────┐  [Todos] [Limpar]                    ││
+│  │ │ 🔍 Buscar por número ou grupo │                                      ││
+│  │ └───────────────────────────────┘                                      ││
+│  │ ┌─────────────────────────────────────────────────────────────────────┐││
+│  │ │ ✓ 55 81 93856099                                                    │││
+│  │ │   Motorac 2026                                                      │││
+│  │ ├─────────────────────────────────────────────────────────────────────┤││
+│  │ │ ○ 55 81 93221157                                                    │││
+│  │ │   Motorac 2026                                                      │││
+│  │ ├─────────────────────────────────────────────────────────────────────┤││
+│  │ │ ○ 55 81 91975413                                                    │││
+│  │ │   Motorac 2026                                                      │││
+│  │ └─────────────────────────────────────────────────────────────────────┘││
+│  │ 2 participante(s) não receberão a mensagem.                            ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                                                             │
-│  Cards do carrossel (2-10):                                     [+ Adicionar│
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │ Card 1                                                    [↑] [↓] [🗑]│ │
-│  │ ┌─────────────────┬─────────────────────────────────────────────────┐ │ │
-│  │ │  ┌───────────┐  │ Texto do card:                                  │ │ │
-│  │ │  │           │  │ ┌────────────────────────────────────────────┐  │ │ │
-│  │ │  │  [Upload] │  │ │ Descrição do produto ou serviço...        │  │ │ │
-│  │ │  │   ou URL  │  │ └────────────────────────────────────────────┘  │ │ │
-│  │ │  │           │  │                                                 │ │ │
-│  │ │  └───────────┘  │ Botões:                           [+ Add Botão] │ │ │
-│  │ │                 │ ┌─────────┬────────┬──────────────────────────┐ │ │ │
-│  │ │                 │ │ [URL ▼] │ Label  │ https://exemplo.com      │ │ │ │
-│  │ │                 │ └─────────┴────────┴──────────────────────────┘ │ │ │
-│  │ │                 │ ┌─────────┬────────┬──────────────────────────┐ │ │ │
-│  │ │                 │ │ [REPLY] │ Label  │                          │ │ │ │
-│  │ │                 │ └─────────┴────────┴──────────────────────────┘ │ │ │
-│  │ └─────────────────┴─────────────────────────────────────────────────┘ │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────────────────┐│
+│  │ ⏰ Intervalo entre envios (anti-bloqueio)                               ││
+│  │    [Desativado] [5-10 seg] [10-20 seg]                                 ││
+│  └─────────────────────────────────────────────────────────────────────────┘│
 │                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │ Card 2                                                    [↑] [↓] [🗑]│ │
-│  │ ...                                                                   │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
+│  [📦 3 grupos] [👥 1 destinatário] [🃏 5 cards]                              │
 │                                                                             │
-│  ┌───────────────────────────────────────────────────────────────────────┐ │
-│  │ 👁️ Preview do Carrossel                                               │ │
-│  │                                                                       │ │
-│  │  "Mensagem principal"                                                 │ │
-│  │  ┌────────┐ ┌────────┐ ┌────────┐                                     │ │
-│  │  │ Card 1 │ │ Card 2 │ │ Card 3 │  ← ●●● →                            │ │
-│  │  │[imagem]│ │[imagem]│ │[imagem]│                                     │ │
-│  │  │ texto  │ │ texto  │ │ texto  │                                     │ │
-│  │  │[botão1]│ │[botão1]│ │[botão1]│                                     │ │
-│  │  │[botão2]│ │[botão2]│ │[botão2]│                                     │ │
-│  │  └────────┘ └────────┘ └────────┘                                     │ │
-│  └───────────────────────────────────────────────────────────────────────┘ │
+│                                          [Enviar para 1] ──────────────────│
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Componentes a Criar
+## Arquivos a Modificar
 
-### 1. CarouselEditor.tsx (Componente Principal)
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/broadcast/BroadcastMessageForm.tsx` | Remover exclusão do carousel do toggle/selector; atualizar `handleSendCarousel` |
+
+---
+
+## Detalhes Técnicos
+
+### Modificar Exibição do Toggle e Selector
+
+Remover a condição `{activeTab !== 'carousel' && ...}` do bloco que contém o toggle e o ParticipantSelector para que apareça em todas as abas.
+
+### Atualizar handleSendCarousel
+
 ```typescript
-interface CarouselCard {
-  id: string;          // ID único para React key
-  text: string;        // Texto do card
-  image: string;       // URL da imagem ou base64
-  imageFile?: File;    // Arquivo local (se upload)
-  buttons: CarouselButton[];
-}
+const handleSendCarousel = async () => {
+  // ... validações existentes ...
 
-interface CarouselButton {
-  id: string;
-  type: 'URL' | 'REPLY' | 'CALL';
-  label: string;
-  url?: string;        // Para tipo URL
-  phone?: string;      // Para tipo CALL
-}
-
-interface CarouselEditorProps {
-  value: {
-    message: string;
-    cards: CarouselCard[];
-  };
-  onChange: (value: { message: string; cards: CarouselCard[] }) => void;
-  disabled?: boolean;
-}
-```
-
-### 2. CarouselCardEditor.tsx (Editor de Card Individual)
-- Upload de imagem (arquivo local ou URL)
-- Campo de texto do card
-- Lista de botões editável
-- Botões de reordenação (mover para cima/baixo)
-- Botão de exclusão
-
-### 3. CarouselButtonEditor.tsx (Editor de Botão)
-- Select para tipo (URL, REPLY, CALL)
-- Campo de label
-- Campo condicional (URL ou telefone baseado no tipo)
-
-### 4. CarouselPreview.tsx (Preview Visual)
-- Exibe o carrossel como aparecerá no WhatsApp
-- Navegação horizontal entre cards
-- Visualização de botões
-
----
-
-## Mudanças no Banco de Dados
-
-Adicionar coluna para armazenar dados do carrossel em templates:
-
-```sql
-ALTER TABLE message_templates 
-ADD COLUMN carousel_data jsonb DEFAULT NULL;
-```
-
-A estrutura `carousel_data` armazenará:
-```json
-{
-  "message": "Texto principal",
-  "cards": [
-    {
-      "text": "Texto card",
-      "image": "url",
-      "buttons": [...]
+  if (excludeAdmins) {
+    // Envio individual para participantes selecionados
+    const membersToSend = uniqueRegularMembers.filter(m => 
+      selectedParticipants.has(m.jid)
+    );
+    
+    if (membersToSend.length === 0) {
+      toast.error('Selecione pelo menos um participante');
+      return;
     }
-  ]
-}
+    
+    // Loop pelos membros com delay
+    for (let j = 0; j < membersToSend.length; j++) {
+      // Check cancel/pause
+      await sendCarouselToNumber(membersToSend[j].jid, carouselData, accessToken);
+      // Delay
+    }
+  } else {
+    // Envio para grupos (fluxo atual)
+  }
+};
 ```
 
----
+### Atualizar Badge de Destinatários
 
-## Mudanças nos Arquivos Existentes
-
-### BroadcastMessageForm.tsx
-- Adicionar nova aba "Carrossel" no TabsList
-- Integrar `CarouselEditor` no conteúdo da aba
-- Adicionar estado para dados do carrossel
-- Implementar função `sendCarousel` para envio
-
-### uazapi-proxy/index.ts (Edge Function)
-- Adicionar case `send-carousel` para roteamento
-- Mapear payload para o formato esperado pela API UAZAPI
-
-### useMessageTemplates.ts
-- Atualizar interface para incluir `carousel_data`
-- Atualizar funções de CRUD para o novo campo
-
-### TemplateSelector.tsx
-- Adicionar ícone específico para templates de carrossel
-- Atualizar callback `onSelect` para incluir dados do carrossel
-
----
-
-## Fluxo de Envio do Carrossel
-
-```text
-1. Usuário monta o carrossel no editor
-2. Clica em "Enviar"
-3. Para cada grupo selecionado:
-   a. Converter imagens locais para base64 (se necessário)
-   b. Montar payload no formato UAZAPI
-   c. Chamar edge function com action: 'send-carousel'
-4. Edge function roteia para /send/carousel da UAZAPI
-5. Log de broadcast salvo com message_type: 'carousel'
+```tsx
+{activeTab === 'carousel' && (
+  <Badge variant="outline" className="gap-1">
+    <Users className="w-3 h-3" />
+    {excludeAdmins ? selectedParticipants.size : selectedGroups.length} destinatário(s)
+  </Badge>
+)}
 ```
 
----
+### Atualizar Botão de Envio
 
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação | Descrição |
-|---------|------|-----------|
-| `src/components/broadcast/CarouselEditor.tsx` | Criar | Editor principal do carrossel |
-| `src/components/broadcast/CarouselCardEditor.tsx` | Criar | Editor de card individual |
-| `src/components/broadcast/CarouselButtonEditor.tsx` | Criar | Editor de botão |
-| `src/components/broadcast/CarouselPreview.tsx` | Criar | Preview visual do carrossel |
-| `src/components/broadcast/BroadcastMessageForm.tsx` | Modificar | Adicionar aba de carrossel |
-| `supabase/functions/uazapi-proxy/index.ts` | Modificar | Adicionar rota send-carousel |
-| `src/hooks/useMessageTemplates.ts` | Modificar | Suporte a carousel_data |
-| **Banco de Dados** | Migração | Adicionar coluna carousel_data |
-
----
-
-## Validações
-
-### Client-side
-- Mínimo 2 cards, máximo 10
-- Cada card deve ter imagem e texto
-- Máximo 3 botões por card
-- Botão URL requer URL válida
-- Botão CALL requer telefone válido
-- Label do botão obrigatório
-
-### Server-side (Edge Function)
-- Validar estrutura do payload
-- Verificar tamanho das imagens (base64)
-- Sanitizar URLs
-
----
-
-## Funcionalidades do Editor
-
-- Adicionar/remover cards
-- Reordenar cards (drag & drop ou botões)
-- Upload de imagem por arquivo ou URL
-- Preview em tempo real
-- Validação visual (erros destacados)
-- Salvar como template
-- Carregar template existente
+O botão já usa `targetCount` para texto/mídia. Para carousel, precisa usar a mesma lógica:
+```tsx
+Enviar para {excludeAdmins ? selectedParticipants.size : selectedGroups.length}
+```
 
 ---
 
 ## Benefícios
 
-- **Visual**: Editor WYSIWYG intuitivo para montar carrosséis
-- **Flexibilidade**: Suporte a todos os tipos de botões (URL, REPLY, CALL)
-- **Produtividade**: Salvar carrosséis como templates reutilizáveis
-- **Validação**: Feedback em tempo real sobre erros
-- **Preview**: Ver exatamente como ficará antes de enviar
+- **Consistência**: Mesma funcionalidade disponível em todas as abas do disparador
+- **Controle**: Usuário pode escolher exatamente quem receberá o carrossel
+- **Anti-spam**: Combinado com o delay aleatório, reduz risco de bloqueio
+- **Reutilização**: Usa os mesmos componentes e lógica já testados
+
