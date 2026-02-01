@@ -338,13 +338,17 @@ Deno.serve(async (req) => {
 
         const carouselEndpoint = `${uazapiUrl}/send/carousel`
         
-        // Build payload according to UAZAPI documentation
-        const carouselBody = {
-          phone: groupjid,
-          message: body.message || '',
-          carousel: body.carousel.map((card: { text: string; image: string; buttons: Array<{ id: string; label: string; type: string; url?: string; phone?: string }> }, idx: number) => ({
+        // Process carousel cards - handle base64 images
+        const processedCards = body.carousel.map((card: { text: string; image: string; buttons: Array<{ id?: string; label: string; type: string; url?: string; phone?: string }> }, idx: number) => {
+          // Check if image is base64 and extract just the data
+          let imageValue = card.image
+          if (card.image && card.image.startsWith('data:')) {
+            imageValue = card.image.split(',')[1] || card.image
+          }
+          
+          return {
             text: card.text,
-            image: card.image,
+            image: imageValue,
             buttons: card.buttons.map((btn, btnIdx) => {
               const buttonData: Record<string, unknown> = {
                 id: String(btnIdx + 1),
@@ -359,11 +363,19 @@ Deno.serve(async (req) => {
               }
               return buttonData
             }),
-          })),
+          }
+        })
+        
+        // Build payload according to UAZAPI documentation
+        // UAZAPI expects: phone, message, carousel[]
+        const carouselBody = {
+          phone: groupjid,
+          message: body.message || '',
+          carousel: processedCards,
         }
         
         console.log('Sending carousel to:', carouselEndpoint)
-        console.log('Carousel cards count:', body.carousel.length)
+        console.log('Carousel payload:', JSON.stringify(carouselBody).substring(0, 500))
         console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
         
         const carouselResponse = await fetch(carouselEndpoint, {
@@ -378,7 +390,7 @@ Deno.serve(async (req) => {
         console.log('Carousel response status:', carouselResponse.status)
         
         const carouselRawText = await carouselResponse.text()
-        console.log('Carousel raw response:', carouselRawText.substring(0, 300))
+        console.log('Carousel raw response:', carouselRawText.substring(0, 500))
         
         let carouselData: unknown
         try {
