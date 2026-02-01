@@ -366,44 +366,70 @@ Deno.serve(async (req) => {
           }
         })
         
-        // Build payload according to UAZAPI documentation
-        // UAZAPI expects: phone, message, carousel[]
-        const carouselBody = {
-          phone: groupjid,
-          message: body.message || '',
-          carousel: processedCards,
-        }
-        
-        console.log('Sending carousel to:', carouselEndpoint)
-        console.log('Carousel payload:', JSON.stringify(carouselBody).substring(0, 500))
-        console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
-        
-        const carouselResponse = await fetch(carouselEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'token': instanceToken,
+        // UAZAPI schemas vary by provider/version. We'll try a couple of common shapes.
+        // Attempt 1: phone/message/carousel
+        // Attempt 2: number/text/carousel (similar to /send/text and /send/media)
+
+        const messageText = String(body.message ?? '').trim()
+
+        const payloadCandidates: Array<Record<string, unknown>> = [
+          {
+            phone: groupjid,
+            message: messageText,
+            carousel: processedCards,
           },
-          body: JSON.stringify(carouselBody),
-        })
-        
-        console.log('Carousel response status:', carouselResponse.status)
-        
-        const carouselRawText = await carouselResponse.text()
-        console.log('Carousel raw response:', carouselRawText.substring(0, 500))
-        
+          {
+            number: groupjid,
+            text: messageText,
+            carousel: processedCards,
+          },
+        ]
+
+        console.log('Sending carousel to:', carouselEndpoint)
+        console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
+        console.log('Carousel cards count:', processedCards.length)
+
+        let lastStatus = 500
+        let lastRawText = ''
+
+        for (let attempt = 0; attempt < payloadCandidates.length; attempt++) {
+          const candidate = payloadCandidates[attempt]
+          console.log(`Carousel attempt #${attempt + 1} payload:`, JSON.stringify(candidate).substring(0, 500))
+
+          const resp = await fetch(carouselEndpoint, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'token': instanceToken,
+            },
+            body: JSON.stringify(candidate),
+          })
+
+          lastStatus = resp.status
+          lastRawText = await resp.text()
+          console.log(`Carousel attempt #${attempt + 1} status:`, lastStatus)
+          console.log(`Carousel attempt #${attempt + 1} raw response:`, lastRawText.substring(0, 500))
+
+          // If it's not the "Missing required fields" class of error, don't keep retrying.
+          if (resp.ok) break
+
+          const lowered = lastRawText.toLowerCase()
+          const shouldRetry = lowered.includes('missing required fields')
+          if (!shouldRetry) break
+        }
+
         let carouselData: unknown
         try {
-          carouselData = JSON.parse(carouselRawText)
+          carouselData = JSON.parse(lastRawText)
         } catch {
-          carouselData = { raw: carouselRawText }
+          carouselData = { raw: lastRawText }
         }
-        
+
         return new Response(
           JSON.stringify(carouselData),
-          { 
-            status: carouselResponse.status, 
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
+          {
+            status: lastStatus,
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
           }
         )
       }
