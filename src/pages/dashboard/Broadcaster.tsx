@@ -3,15 +3,26 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft } from 'lucide-react';
+import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import GroupSelector, { Group } from '@/components/broadcast/GroupSelector';
 import BroadcastMessageForm from '@/components/broadcast/BroadcastMessageForm';
 import BroadcastHistory from '@/components/broadcast/BroadcastHistory';
 
+// Interface matching the BroadcastLog from history
+interface ResendData {
+  messageType: string;
+  content: string | null;
+  mediaUrl: string | null;
+  instanceId: string;
+  instanceName: string | null;
+}
+
 const Broadcaster = () => {
   const [step, setStep] = useState<'instance' | 'groups' | 'message'>('instance');
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<Group[]>([]);
+  const [resendData, setResendData] = useState<ResendData | null>(null);
 
   const handleInstanceSelect = (instance: Instance) => {
     setSelectedInstance(instance);
@@ -23,6 +34,7 @@ const Broadcaster = () => {
     setSelectedGroups([]);
     setStep('instance');
     setSelectedInstance(null);
+    setResendData(null);
   };
 
   const handleBack = () => {
@@ -32,11 +44,38 @@ const Broadcaster = () => {
       setStep('instance');
       setSelectedInstance(null);
       setSelectedGroups([]);
+      setResendData(null);
     }
   };
 
   const handleContinueToMessage = () => {
     setStep('message');
+  };
+
+  const handleResend = (log: {
+    instance_id: string;
+    instance_name: string | null;
+    message_type: string;
+    content: string | null;
+    media_url: string | null;
+  }) => {
+    // Store the resend data
+    setResendData({
+      messageType: log.message_type,
+      content: log.content,
+      mediaUrl: log.media_url,
+      instanceId: log.instance_id,
+      instanceName: log.instance_name,
+    });
+
+    // Reset selections and go to instance step
+    setSelectedInstance(null);
+    setSelectedGroups([]);
+    setStep('instance');
+
+    toast.info('Selecione a instância e os grupos para reenviar a mensagem', {
+      duration: 4000,
+    });
   };
 
   return (
@@ -57,6 +96,37 @@ const Broadcaster = () => {
           </Button>
         )}
       </div>
+
+      {/* Resend Banner */}
+      {resendData && (
+        <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">Reenviando mensagem</span>
+              <Badge variant="secondary" className="text-xs">
+                {resendData.messageType === 'text' ? 'Texto' : 
+                 resendData.messageType === 'image' ? 'Imagem' :
+                 resendData.messageType === 'video' ? 'Vídeo' :
+                 resendData.messageType === 'audio' || resendData.messageType === 'ptt' ? 'Áudio' : 'Documento'}
+              </Badge>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setResendData(null)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+          </div>
+          {resendData.content && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+              "{resendData.content}"
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Progress Steps */}
       <div className="flex items-center gap-2 text-sm">
@@ -201,12 +271,17 @@ const Broadcaster = () => {
             instance={selectedInstance}
             selectedGroups={selectedGroups}
             onComplete={handleComplete}
+            initialData={resendData ? {
+              messageType: resendData.messageType,
+              content: resendData.content,
+              mediaUrl: resendData.mediaUrl,
+            } : undefined}
           />
         </div>
       )}
 
       {/* Broadcast History - Always visible */}
-      <BroadcastHistory />
+      <BroadcastHistory onResend={handleResend} />
     </div>
   );
 };
