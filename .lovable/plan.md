@@ -1,99 +1,62 @@
 
-
-# Plano: Adicionar Funcionalidade "Excluir Admins" ao Editor de Carrossel
+# Plano: Mover Histórico de Envios para Submenu do Disparador
 
 ## Objetivo
-Integrar ao editor de carrossel a mesma funcionalidade de "Não enviar para Admins/Donos" que já existe nas abas de texto e mídia, permitindo envio individual para participantes selecionados.
+Remover o componente de Histórico de Envios da página principal do Disparador e transformá-lo em uma página separada acessível através de um submenu colapsável no sidebar, similar ao funcionamento do menu "Instâncias".
 
 ---
 
 ## Situação Atual
 
-A funcionalidade de exclusão de admins com seleção de participantes já existe e está implementada no `BroadcastMessageForm.tsx`:
-- Toggle "Não enviar para Admins/Donos"
-- Componente `ParticipantSelector` para seleção individual
-- Lógica de deduplicação de contatos entre grupos
-- Contagem de participantes selecionados vs total
-
-Porém, na aba "Carrossel", essa funcionalidade está **explicitamente desabilitada** com a condição `{activeTab !== 'carousel' && ...}`.
+1. **Sidebar**: O menu "Disparador" é um link simples sem submenu
+2. **Broadcaster.tsx**: A página contém tanto o formulário de disparo quanto o `<BroadcastHistory />` no final
+3. **Rotas**: Apenas `/dashboard/broadcast` existe para o disparador
 
 ---
 
 ## Mudanças Necessárias
 
-### 1. Mostrar Toggle e ParticipantSelector no Carrossel
+### 1. Criar Nova Página para o Histórico
 
-Atualmente (linhas 1918-1955):
-```tsx
-{/* Common sections for text and media tabs (carousel has different flow) */}
-{activeTab !== 'carousel' && (
-  <div className="space-y-4 mt-4">
-    {/* Toggle para excluir admins */}
-    ...
-    {/* Participant Selector */}
-    ...
-  </div>
-)}
+Criar `src/pages/dashboard/BroadcastHistoryPage.tsx` que:
+- Renderiza o componente `BroadcastHistory` como página principal
+- Mantém funcionalidade de "Reenviar" que redireciona para `/dashboard/broadcast` com os dados
+
+### 2. Adicionar Rota no App.tsx
+
+```
+/dashboard/broadcast          → Broadcaster (sem histórico)
+/dashboard/broadcast/history  → BroadcastHistoryPage
 ```
 
-Será alterado para mostrar também na aba carousel (removendo a condição de exclusão).
+### 3. Modificar Sidebar
 
-### 2. Atualizar `handleSendCarousel` para Suportar Envio Individual
+Transformar o link "Disparador" em um menu colapsável com submenu:
+- **Novo disparo** → `/dashboard/broadcast`
+- **Histórico** → `/dashboard/broadcast/history`
 
-A função atual (linhas 1031-1195) sempre envia para o JID do grupo. Precisa ser modificada para:
-- Verificar se `excludeAdmins` está ativo
-- Se sim, iterar pelos participantes selecionados em `selectedParticipants`
-- Aplicar a mesma lógica de delay e controles de pausa/cancelamento
+### 4. Remover Histórico do Broadcaster.tsx
 
-### 3. Atualizar Summary e Contadores
-
-O badge de destinatários na aba carousel (linhas 2027-2038) precisa mostrar a contagem correta quando `excludeAdmins` estiver ativo.
+Remover a linha `<BroadcastHistory onResend={handleResend} />` da página principal do disparador.
 
 ---
 
-## Layout Visual Esperado
+## Layout da Sidebar (Novo)
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Carrossel                                                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│  [Editor do carrossel - cards, botões, preview...]                          │
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌────────────────────────────────────────────────────────────┬──────────┐  │
-│  │ 👥 Não enviar para Admins/Donos                            │   🔵     │  │
-│  │    1 de 3 contato(s) selecionado(s)                        │          │  │
-│  └────────────────────────────────────────────────────────────┴──────────┘  │
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │ 👥 Participantes para envio                   1 de 3 selecionado(s)    ││
-│  │ ┌───────────────────────────────┐  [Todos] [Limpar]                    ││
-│  │ │ 🔍 Buscar por número ou grupo │                                      ││
-│  │ └───────────────────────────────┘                                      ││
-│  │ ┌─────────────────────────────────────────────────────────────────────┐││
-│  │ │ ✓ 55 81 93856099                                                    │││
-│  │ │   Motorac 2026                                                      │││
-│  │ ├─────────────────────────────────────────────────────────────────────┤││
-│  │ │ ○ 55 81 93221157                                                    │││
-│  │ │   Motorac 2026                                                      │││
-│  │ ├─────────────────────────────────────────────────────────────────────┤││
-│  │ │ ○ 55 81 91975413                                                    │││
-│  │ │   Motorac 2026                                                      │││
-│  │ └─────────────────────────────────────────────────────────────────────┘││
-│  │ 2 participante(s) não receberão a mensagem.                            ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────────┐│
-│  │ ⏰ Intervalo entre envios (anti-bloqueio)                               ││
-│  │    [Desativado] [5-10 seg] [10-20 seg]                                 ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-│                                                                             │
-│  [📦 3 grupos] [👥 1 destinatário] [🃏 5 cards]                              │
-│                                                                             │
-│                                          [Enviar para 1] ──────────────────│
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────┐
+│ 🏠 Dashboard                    │
+├─────────────────────────────────┤
+│ 📤 Disparador              ▼    │
+│    ├─ Novo disparo              │
+│    └─ Histórico                 │
+├─────────────────────────────────┤
+│ 📅 Agendamentos                 │
+├─────────────────────────────────┤
+│ 🖥️ Instâncias               ▼    │
+│    ├─ Todas as instâncias       │
+│    └─ ...                       │
+└─────────────────────────────────┘
 ```
 
 ---
@@ -102,69 +65,94 @@ O badge de destinatários na aba carousel (linhas 2027-2038) precisa mostrar a c
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/broadcast/BroadcastMessageForm.tsx` | Remover exclusão do carousel do toggle/selector; atualizar `handleSendCarousel` |
+| `src/pages/dashboard/BroadcastHistoryPage.tsx` | **Criar** - Nova página para histórico |
+| `src/App.tsx` | Adicionar rota `/dashboard/broadcast/history` |
+| `src/components/dashboard/Sidebar.tsx` | Transformar Disparador em menu colapsável |
+| `src/pages/dashboard/Broadcaster.tsx` | Remover `<BroadcastHistory />` e ajustar "Reenviar" |
 
 ---
 
 ## Detalhes Técnicos
 
-### Modificar Exibição do Toggle e Selector
-
-Remover a condição `{activeTab !== 'carousel' && ...}` do bloco que contém o toggle e o ParticipantSelector para que apareça em todas as abas.
-
-### Atualizar handleSendCarousel
+### Nova Página: BroadcastHistoryPage.tsx
 
 ```typescript
-const handleSendCarousel = async () => {
-  // ... validações existentes ...
+import BroadcastHistory from '@/components/broadcast/BroadcastHistory';
+import { useNavigate } from 'react-router-dom';
 
-  if (excludeAdmins) {
-    // Envio individual para participantes selecionados
-    const membersToSend = uniqueRegularMembers.filter(m => 
-      selectedParticipants.has(m.jid)
-    );
-    
-    if (membersToSend.length === 0) {
-      toast.error('Selecione pelo menos um participante');
-      return;
-    }
-    
-    // Loop pelos membros com delay
-    for (let j = 0; j < membersToSend.length; j++) {
-      // Check cancel/pause
-      await sendCarouselToNumber(membersToSend[j].jid, carouselData, accessToken);
-      // Delay
-    }
-  } else {
-    // Envio para grupos (fluxo atual)
-  }
+const BroadcastHistoryPage = () => {
+  const navigate = useNavigate();
+
+  const handleResend = (log) => {
+    // Salvar dados no sessionStorage e navegar
+    sessionStorage.setItem('resendData', JSON.stringify({
+      messageType: log.message_type,
+      content: log.content,
+      mediaUrl: log.media_url,
+      instanceId: log.instance_id,
+      instanceName: log.instance_name,
+    }));
+    navigate('/dashboard/broadcast');
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold">Histórico de Envios</h1>
+        <p className="text-muted-foreground">
+          Visualize e gerencie o histórico de mensagens enviadas
+        </p>
+      </div>
+      <BroadcastHistory onResend={handleResend} />
+    </div>
+  );
 };
 ```
 
-### Atualizar Badge de Destinatários
+### Sidebar com Submenu Disparador
 
-```tsx
-{activeTab === 'carousel' && (
-  <Badge variant="outline" className="gap-1">
-    <Users className="w-3 h-3" />
-    {excludeAdmins ? selectedParticipants.size : selectedGroups.length} destinatário(s)
-  </Badge>
-)}
+Criar estrutura Collapsible similar ao menu de Instâncias:
+
+```typescript
+// Adicionar state para controlar abertura
+const [broadcastOpen, setBroadcastOpen] = useState(true);
+
+// Detectar se está ativo
+const isBroadcastActive = location.pathname.startsWith('/dashboard/broadcast');
+
+// Submenu items
+const broadcastItems = [
+  { label: 'Novo disparo', path: '/dashboard/broadcast' },
+  { label: 'Histórico', path: '/dashboard/broadcast/history' },
+];
 ```
 
-### Atualizar Botão de Envio
+### Atualizar Broadcaster.tsx
 
-O botão já usa `targetCount` para texto/mídia. Para carousel, precisa usar a mesma lógica:
-```tsx
-Enviar para {excludeAdmins ? selectedParticipants.size : selectedGroups.length}
+1. Remover importação do `BroadcastHistory`
+2. Remover linha `<BroadcastHistory onResend={handleResend} />`
+3. Ler dados de reenvio do `sessionStorage` no `useEffect`
+4. Limpar `sessionStorage` após usar os dados
+
+---
+
+## Fluxo de Reenvio Atualizado
+
+```
+1. Usuário está em /dashboard/broadcast/history
+2. Clica em "Reenviar" em uma mensagem
+3. Dados são salvos no sessionStorage
+4. Navega para /dashboard/broadcast
+5. Broadcaster lê dados do sessionStorage
+6. Exibe banner de reenvio e pré-carrega dados
+7. Limpa sessionStorage
 ```
 
 ---
 
 ## Benefícios
 
-- **Consistência**: Mesma funcionalidade disponível em todas as abas do disparador
-- **Controle**: Usuário pode escolher exatamente quem receberá o carrossel
-- **Anti-spam**: Combinado com o delay aleatório, reduz risco de bloqueio
-- **Reutilização**: Usa os mesmos componentes e lógica já testados
-
+- **Organização**: Histórico separado da área de disparo
+- **Performance**: Página de disparo carrega mais rápido sem histórico
+- **UX**: Menu colapsável consistente com o padrão de Instâncias
+- **Navegação**: Acesso direto ao histórico pelo sidebar
