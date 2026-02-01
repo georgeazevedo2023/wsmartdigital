@@ -359,23 +359,30 @@ Deno.serve(async (req) => {
             imageValue = card.image.split(',')[1] || card.image
           }
           
+          // Build buttons array with UAZAPI expected field names
+          // UAZAPI expects: display_text (not label), buttonParamsJSON for some types
+          const processedButtons = card.buttons?.map((btn, btnIdx) => {
+            // Try multiple formats that UAZAPI might expect
+            return {
+              id: String(btnIdx + 1),
+              // UAZAPI may use different field names for button text
+              label: btn.label,
+              display_text: btn.label, 
+              text: btn.label,
+              type: btn.type,
+              // For URL buttons
+              ...(btn.type === 'URL' && btn.url ? { url: btn.url } : {}),
+              // For CALL buttons
+              ...(btn.type === 'CALL' && btn.phone ? { phone: btn.phone, phoneNumber: btn.phone } : {}),
+            }
+          }) || []
+          
+          console.log(`Card ${idx + 1} buttons:`, JSON.stringify(processedButtons))
+          
           return {
             text: card.text,
             image: imageValue,
-            buttons: card.buttons.map((btn, btnIdx) => {
-              const buttonData: Record<string, unknown> = {
-                id: String(btnIdx + 1),
-                label: btn.label,
-                type: btn.type,
-              }
-              if (btn.type === 'URL' && btn.url) {
-                buttonData.url = btn.url
-              }
-              if (btn.type === 'CALL' && btn.phone) {
-                buttonData.phone = btn.phone
-              }
-              return buttonData
-            }),
+            buttons: processedButtons,
           }
         })
         
