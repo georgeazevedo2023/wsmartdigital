@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -7,7 +7,6 @@ import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import GroupSelector, { Group } from '@/components/broadcast/GroupSelector';
 import BroadcastMessageForm from '@/components/broadcast/BroadcastMessageForm';
-import BroadcastHistory from '@/components/broadcast/BroadcastHistory';
 
 // Interface matching the BroadcastLog from history
 interface ResendData {
@@ -23,6 +22,24 @@ const Broadcaster = () => {
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<Group[]>([]);
   const [resendData, setResendData] = useState<ResendData | null>(null);
+
+  // Check for resend data from history page
+  useEffect(() => {
+    const storedData = sessionStorage.getItem('resendData');
+    if (storedData) {
+      try {
+        const parsed = JSON.parse(storedData);
+        setResendData(parsed);
+        sessionStorage.removeItem('resendData');
+        toast.info('Selecione a instância e os grupos para reenviar a mensagem', {
+          duration: 4000,
+        });
+      } catch (e) {
+        console.error('Failed to parse resend data:', e);
+        sessionStorage.removeItem('resendData');
+      }
+    }
+  }, []);
 
   const handleInstanceSelect = (instance: Instance) => {
     setSelectedInstance(instance);
@@ -52,31 +69,6 @@ const Broadcaster = () => {
     setStep('message');
   };
 
-  const handleResend = (log: {
-    instance_id: string;
-    instance_name: string | null;
-    message_type: string;
-    content: string | null;
-    media_url: string | null;
-  }) => {
-    // Store the resend data
-    setResendData({
-      messageType: log.message_type,
-      content: log.content,
-      mediaUrl: log.media_url,
-      instanceId: log.instance_id,
-      instanceName: log.instance_name,
-    });
-
-    // Reset selections and go to instance step
-    setSelectedInstance(null);
-    setSelectedGroups([]);
-    setStep('instance');
-
-    toast.info('Selecione a instância e os grupos para reenviar a mensagem', {
-      duration: 4000,
-    });
-  };
 
   return (
     <div className="space-y-6">
@@ -280,8 +272,6 @@ const Broadcaster = () => {
         </div>
       )}
 
-      {/* Broadcast History - Always visible */}
-      <BroadcastHistory onResend={handleResend} />
     </div>
   );
 };

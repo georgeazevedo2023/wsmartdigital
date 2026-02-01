@@ -37,11 +37,11 @@ const Sidebar = () => {
   const { profile, isSuperAdmin, signOut, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [instancesOpen, setInstancesOpen] = useState(true);
+  const [broadcastOpen, setBroadcastOpen] = useState(true);
   const [instances, setInstances] = useState<Instance[]>([]);
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Send, label: 'Disparador', path: '/dashboard/broadcast' },
     { icon: Calendar, label: 'Agendamentos', path: '/dashboard/scheduled' },
   ];
 
@@ -52,6 +52,7 @@ const Sidebar = () => {
 
   const isActive = (path: string) => location.pathname === path;
   const isInstancesActive = location.pathname.includes('/dashboard/instances');
+  const isBroadcastActive = location.pathname.startsWith('/dashboard/broadcast');
 
   const fetchInstances = async () => {
     try {
@@ -129,6 +130,72 @@ const Sidebar = () => {
             {!collapsed && <span className="font-medium">{item.label}</span>}
           </Link>
         ))}
+
+        {/* Disparador com submenu */}
+        <Collapsible open={broadcastOpen && !collapsed} onOpenChange={setBroadcastOpen}>
+          <CollapsibleTrigger asChild>
+            <button
+              className={cn(
+                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all w-full text-left',
+                isBroadcastActive
+                  ? 'bg-primary/10 text-primary border border-primary/20'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent'
+              )}
+            >
+              <Send className="w-5 h-5 shrink-0" />
+              {!collapsed && (
+                <>
+                  <span className="font-medium flex-1">Disparador</span>
+                  <ChevronDown
+                    className={cn(
+                      'w-4 h-4 transition-transform',
+                      broadcastOpen && 'transform rotate-180'
+                    )}
+                  />
+                </>
+              )}
+            </button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="pl-5 mt-1 space-y-1">
+            <Link
+              to="/dashboard/broadcast"
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
+                isActive('/dashboard/broadcast')
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+              )}
+            >
+              <span>Novo disparo</span>
+            </Link>
+            <Link
+              to="/dashboard/broadcast/history"
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
+                isActive('/dashboard/broadcast/history')
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+              )}
+            >
+              <span>Histórico</span>
+            </Link>
+          </CollapsibleContent>
+        </Collapsible>
+
+        {/* Link simples para disparador quando colapsado */}
+        {collapsed && (
+          <Link
+            to="/dashboard/broadcast"
+            className={cn(
+              'flex items-center justify-center px-3 py-2.5 rounded-lg transition-all',
+              isBroadcastActive
+                ? 'bg-primary/10 text-primary border border-primary/20'
+                : 'text-sidebar-foreground hover:bg-sidebar-accent'
+            )}
+          >
+            <Send className="w-5 h-5" />
+          </Link>
+        )}
 
         {/* Instâncias com submenu */}
         <Collapsible open={instancesOpen && !collapsed} onOpenChange={setInstancesOpen}>
