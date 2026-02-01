@@ -328,7 +328,7 @@ Deno.serve(async (req) => {
       }
 
       case 'send-carousel': {
-        // Send carousel message to group
+        // Send carousel message to group or individual contact
         if (!instanceToken || !groupjid || !body.carousel) {
           return new Response(
             JSON.stringify({ error: 'Token, groupjid and carousel required' }),
@@ -337,6 +337,19 @@ Deno.serve(async (req) => {
         }
 
         const carouselEndpoint = `${uazapiUrl}/send/carousel`
+        
+        // Detect destination type: group (@g.us) or individual contact
+        const isGroup = groupjid.endsWith('@g.us')
+        
+        // Normalize destination - ensure proper suffix for contacts without @
+        let normalizedDestination = groupjid
+        if (!groupjid.includes('@') && !isGroup) {
+          // It's a raw phone number, add WhatsApp suffix
+          normalizedDestination = `${groupjid}@s.whatsapp.net`
+        }
+        
+        console.log('Carousel destination type:', isGroup ? 'GROUP' : 'CONTACT')
+        console.log('Normalized destination:', normalizedDestination)
         
         // Process carousel cards - handle base64 images
         const processedCards = body.carousel.map((card: { text: string; image: string; buttons: Array<{ id?: string; label: string; type: string; url?: string; phone?: string }> }, idx: number) => {
@@ -366,35 +379,43 @@ Deno.serve(async (req) => {
           }
         })
         
-        // UAZAPI schemas vary by provider/version. We'll try a couple of common shapes.
-        // Attempt 1: phone/message/carousel
-        // Attempt 2: number/text/carousel (similar to /send/text and /send/media)
-
         const messageText = String(body.message ?? '').trim()
 
-        const payloadCandidates: Array<Record<string, unknown>> = [
-          {
-            phone: groupjid,
-            message: messageText,
-            carousel: processedCards,
-          },
-          {
-            number: groupjid,
-            text: messageText,
-            carousel: processedCards,
-          },
-        ]
+        // Build payload candidates based on destination type
+        // UAZAPI may expect different field names for groups vs contacts
+        // Common patterns: phone/message, number/text, chatId/message, groupjid
+        const payloadCandidates: Array<Record<string, unknown>> = []
+        
+        if (isGroup) {
+          // For groups, try group-specific field names first
+          payloadCandidates.push(
+            { groupjid: groupjid, message: messageText, carousel: processedCards },
+            { chatId: groupjid, message: messageText, carousel: processedCards },
+            { phone: groupjid, message: messageText, carousel: processedCards },
+            { number: groupjid, text: messageText, carousel: processedCards },
+          )
+        } else {
+          // For individual contacts, prioritize phone/number fields
+          payloadCandidates.push(
+            { phone: normalizedDestination, message: messageText, carousel: processedCards },
+            { number: normalizedDestination, text: messageText, carousel: processedCards },
+            { phone: groupjid, message: messageText, carousel: processedCards },
+            { number: groupjid, text: messageText, carousel: processedCards },
+          )
+        }
 
         console.log('Sending carousel to:', carouselEndpoint)
         console.log('Token (first 10 chars):', instanceToken.substring(0, 10))
         console.log('Carousel cards count:', processedCards.length)
+        console.log('Payload candidates count:', payloadCandidates.length)
 
         let lastStatus = 500
         let lastRawText = ''
 
         for (let attempt = 0; attempt < payloadCandidates.length; attempt++) {
           const candidate = payloadCandidates[attempt]
-          console.log(`Carousel attempt #${attempt + 1} payload:`, JSON.stringify(candidate).substring(0, 500))
+          console.log(`Carousel attempt #${attempt + 1} payload keys:`, Object.keys(candidate).join(', '))
+          console.log(`Carousel attempt #${attempt + 1} payload:`, JSON.stringify(candidate).substring(0, 600))
 
           const resp = await fetch(carouselEndpoint, {
             method: 'POST',
@@ -410,11 +431,15 @@ Deno.serve(async (req) => {
           console.log(`Carousel attempt #${attempt + 1} status:`, lastStatus)
           console.log(`Carousel attempt #${attempt + 1} raw response:`, lastRawText.substring(0, 500))
 
-          // If it's not the "Missing required fields" class of error, don't keep retrying.
-          if (resp.ok) break
+          // Success - break out of retry loop
+          if (resp.ok) {
+            console.log(`Carousel SUCCESS with attempt #${attempt + 1}`)
+            break
+          }
 
+          // Only retry if it's a "Missing required fields" type error
           const lowered = lastRawText.toLowerCase()
-          const shouldRetry = lowered.includes('missing required fields')
+          const shouldRetry = lowered.includes('missing required fields') || lowered.includes('missing')
           if (!shouldRetry) break
         }
 
