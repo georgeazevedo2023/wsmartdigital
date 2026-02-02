@@ -122,6 +122,86 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_database_entries: {
+        Row: {
+          created_at: string | null
+          database_id: string
+          group_name: string | null
+          id: string
+          is_verified: boolean | null
+          jid: string
+          name: string | null
+          phone: string
+          source: string | null
+          verification_status: string | null
+          verified_name: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          database_id: string
+          group_name?: string | null
+          id?: string
+          is_verified?: boolean | null
+          jid: string
+          name?: string | null
+          phone: string
+          source?: string | null
+          verification_status?: string | null
+          verified_name?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          database_id?: string
+          group_name?: string | null
+          id?: string
+          is_verified?: boolean | null
+          jid?: string
+          name?: string | null
+          phone?: string
+          source?: string | null
+          verification_status?: string | null
+          verified_name?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_database_entries_database_id_fkey"
+            columns: ["database_id"]
+            isOneToOne: false
+            referencedRelation: "lead_databases"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_databases: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          id: string
+          leads_count: number | null
+          name: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          leads_count?: number | null
+          name: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          id?: string
+          leads_count?: number | null
+          name?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       message_templates: {
         Row: {
           carousel_data: Json | null
