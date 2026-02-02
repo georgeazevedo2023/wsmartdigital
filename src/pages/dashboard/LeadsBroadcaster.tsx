@@ -118,6 +118,21 @@ const LeadsBroadcaster = () => {
     }
   };
 
+  const handleRemoveInvalid = () => {
+    const validLeads = leads.filter(l => l.verificationStatus !== 'invalid');
+    const removedCount = leads.length - validLeads.length;
+    
+    // Update leads
+    setLeads(validLeads);
+    
+    // Update selection to remove invalid leads
+    const validIds = new Set(validLeads.map(l => l.id));
+    const newSelection = new Set([...selectedLeads].filter(id => validIds.has(id)));
+    setSelectedLeads(newSelection);
+    
+    toast.success(`${removedCount} contato${removedCount !== 1 ? 's' : ''} inválido${removedCount !== 1 ? 's' : ''} removido${removedCount !== 1 ? 's' : ''}`);
+  };
+
   const handleSelectOnlyValid = () => {
     const validIds = new Set(
       leads
@@ -126,6 +141,15 @@ const LeadsBroadcaster = () => {
     );
     setSelectedLeads(validIds);
     toast.success(`${validIds.size} contatos válidos selecionados`);
+  };
+
+  const handleRemoveInvalidAndSelect = () => {
+    handleRemoveInvalid();
+    // After removing, select all remaining (which are valid or not verified)
+    setTimeout(() => {
+      const remainingIds = new Set(leads.filter(l => l.verificationStatus !== 'invalid').map(l => l.id));
+      setSelectedLeads(remainingIds);
+    }, 0);
   };
 
   const hasVerifiedLeads = leads.some(l => l.verificationStatus);
@@ -305,18 +329,25 @@ const LeadsBroadcaster = () => {
                 
                 {/* Verification summary */}
                 {hasVerifiedLeads && (
-                  <div className="flex items-center gap-3 mt-3 pt-3 border-t">
+                  <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t">
                     <Badge variant="default" className="bg-green-500/20 text-green-600 border-green-500/30 hover:bg-green-500/20">
                       {validLeadsCount} válidos
                     </Badge>
                     <Badge variant="destructive" className="bg-red-500/20 text-red-600 border-red-500/30 hover:bg-red-500/20">
                       {invalidLeadsCount} inválidos
                     </Badge>
-                    {validLeadsCount > 0 && (
-                      <Button variant="ghost" size="sm" onClick={handleSelectOnlyValid} className="text-xs h-7">
-                        Selecionar apenas válidos
-                      </Button>
-                    )}
+                    <div className="flex gap-2 ml-auto">
+                      {invalidLeadsCount > 0 && (
+                        <Button variant="ghost" size="sm" onClick={handleRemoveInvalid} className="text-xs h-7 text-destructive hover:text-destructive">
+                          Remover inválidos
+                        </Button>
+                      )}
+                      {validLeadsCount > 0 && (
+                        <Button variant="ghost" size="sm" onClick={handleSelectOnlyValid} className="text-xs h-7">
+                          Selecionar válidos
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
               </CardHeader>
