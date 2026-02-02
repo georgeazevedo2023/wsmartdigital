@@ -16,7 +16,7 @@ interface StatsCardProps {
 
 const StatsCard = ({ title, value, icon: Icon, description, trend, className }: StatsCardProps) => {
   return (
-    <Card className={cn('glass border-border/50', className)}>
+    <Card className={cn('glass-card', className)}>
       <CardContent className="p-6">
         <div className="flex items-start justify-between">
           <div className="space-y-1">

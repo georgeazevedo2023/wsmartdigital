@@ -81,7 +81,7 @@ const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loa
   return (
     <div className="grid gap-4 md:grid-cols-2 animate-fade-in" style={{ animationDelay: '175ms' }}>
       {/* Pie Chart - Status Distribution */}
-      <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+      <Card className="glass-card">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Distribuição de Status</CardTitle>
         </CardHeader>
@@ -124,7 +124,7 @@ const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loa
       </Card>
 
       {/* Bar Chart - Groups per Instance */}
-      <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+      <Card className="glass-card">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Grupos por Instância</CardTitle>
         </CardHeader>
@@ -169,7 +169,7 @@ const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loa
       </Card>
 
       {/* Horizontal Bar Chart - Participants per Instance */}
-      <Card className="border-border/50 bg-card/50 backdrop-blur-sm md:col-span-2">
+      <Card className="glass-card md:col-span-2">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm font-medium">Participantes por Instância</CardTitle>
         </CardHeader>
