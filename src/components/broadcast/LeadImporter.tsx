@@ -9,12 +9,20 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { supabase } from '@/integrations/supabase/client';
-import { ClipboardPaste, Users, Plus, Search, Loader2, FileSpreadsheet, Upload, X } from 'lucide-react';
+import { ClipboardPaste, Users, Plus, Search, Loader2, FileSpreadsheet, Upload, X, ArrowLeft, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import type { Instance } from './InstanceSelector';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
+
+interface ParsedFileData {
+  headers: string[];
+  rows: string[][];
+  hasHeader: boolean;
+}
 
 interface LeadImporterProps {
   instance: Instance;
@@ -42,11 +50,17 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
   const [pasteText, setPasteText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
   
-  // CSV tab state
+  // CSV/Excel tab state
   const [csvFile, setCsvFile] = useState<File | null>(null);
   const [isProcessingCsv, setIsProcessingCsv] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  
+  // Column mapping state
+  const [parsedData, setParsedData] = useState<ParsedFileData | null>(null);
+  const [phoneColumnIndex, setPhoneColumnIndex] = useState<number>(-1);
+  const [nameColumnIndex, setNameColumnIndex] = useState<number>(-1);
+  const [showColumnMapping, setShowColumnMapping] = useState(false);
   
   // Manual tab state
   const [manualPhone, setManualPhone] = useState('');
@@ -222,10 +236,11 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
     return ext.endsWith('.csv') || ext.endsWith('.xlsx') || ext.endsWith('.xls');
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file && isValidFileType(file.name)) {
       setCsvFile(file);
+      await parseFileForMapping(file);
     } else if (file) {
       toast.error('Por favor, selecione um arquivo .csv, .xlsx ou .xls');
     }
@@ -241,13 +256,14 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
     setIsDragging(false);
   };
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
     
     const file = e.dataTransfer.files?.[0];
     if (file && isValidFileType(file.name)) {
       setCsvFile(file);
+      await parseFileForMapping(file);
     } else if (file) {
       toast.error('Por favor, arraste um arquivo .csv, .xlsx ou .xls');
     }
@@ -261,21 +277,17 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
     return data.filter(row => row.some(cell => cell?.toString().trim()));
   };
 
-  const processFile = async () => {
-    if (!csvFile) return;
-    
+  const parseFileForMapping = async (file: File) => {
     setIsProcessingCsv(true);
     
     try {
-      const isExcel = csvFile.name.toLowerCase().endsWith('.xlsx') || csvFile.name.toLowerCase().endsWith('.xls');
+      const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
       let dataRows: string[][];
       
       if (isExcel) {
-        // Process Excel file
-        dataRows = await processExcelFile(csvFile);
+        dataRows = await processExcelFile(file);
       } else {
-        // Process CSV file
-        const text = await csvFile.text();
+        const text = await file.text();
         const lines = text.split(/\r?\n/).filter(line => line.trim());
         
         if (lines.length === 0) {
@@ -297,67 +309,91 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
       // Check for header
       const firstRowStr = dataRows[0].map(v => v?.toString().toLowerCase() || '').join(' ');
       const hasHeader = detectHeader(firstRowStr, ',');
-      const dataLines = hasHeader ? dataRows.slice(1) : dataRows;
       
-      if (dataLines.length === 0) {
+      // Build headers (either from first row or generate column letters)
+      const columnCount = Math.max(...dataRows.map(r => r.length));
+      let headers: string[];
+      let rows: string[][];
+      
+      if (hasHeader) {
+        headers = dataRows[0].map((v, i) => v?.toString().trim() || `Coluna ${String.fromCharCode(65 + i)}`);
+        rows = dataRows.slice(1);
+      } else {
+        headers = Array.from({ length: columnCount }, (_, i) => `Coluna ${String.fromCharCode(65 + i)}`);
+        rows = dataRows;
+      }
+      
+      if (rows.length === 0) {
         toast.error('Nenhum dado encontrado no arquivo');
         setIsProcessingCsv(false);
         return;
       }
       
-      // Detect column positions from first data line
-      const firstLineValues = dataLines[0].map(v => v?.toString() || '');
-      const { phoneIndex, nameIndex } = findPhoneAndNameColumns(firstLineValues);
+      // Auto-detect columns from first data row
+      const firstRowValues = rows[0].map(v => v?.toString() || '');
+      const { phoneIndex, nameIndex } = findPhoneAndNameColumns(firstRowValues);
       
-      if (phoneIndex === -1) {
-        toast.error('Não foi possível identificar a coluna de telefone');
-        setIsProcessingCsv(false);
-        return;
-      }
-      
-      const leads: Lead[] = [];
-      const errors: string[] = [];
-      
-      dataLines.forEach((row, index) => {
-        const phoneValue = row[phoneIndex]?.toString() || '';
-        const nameValue = nameIndex >= 0 ? row[nameIndex]?.toString() : undefined;
-        
-        const jid = parsePhoneToJid(phoneValue);
-        if (jid) {
-          leads.push({
-            id: crypto.randomUUID(),
-            phone: formatPhoneDisplay(phoneValue),
-            name: nameValue?.trim() || undefined,
-            jid,
-            source: 'paste',
-          });
-        } else if (phoneValue.trim()) {
-          errors.push(`Linha ${index + 1 + (hasHeader ? 1 : 0)}: "${phoneValue}" - número inválido`);
-        }
-      });
-      
-      const fileType = isExcel ? 'Excel' : 'CSV';
-      
-      if (leads.length > 0) {
-        onLeadsImported(leads);
-        setCsvFile(null);
-        if (csvInputRef.current) csvInputRef.current.value = '';
-        toast.success(`${leads.length} contato${leads.length !== 1 ? 's' : ''} importado${leads.length !== 1 ? 's' : ''} do ${fileType}`);
-      } else {
-        toast.error('Nenhum contato válido encontrado no arquivo');
-      }
-      
-      if (errors.length > 0 && errors.length <= 3) {
-        errors.forEach(err => toast.error(err));
-      } else if (errors.length > 3) {
-        toast.error(`${errors.length} números inválidos não foram importados`);
-      }
+      setParsedData({ headers, rows, hasHeader });
+      setPhoneColumnIndex(phoneIndex);
+      setNameColumnIndex(nameIndex);
+      setShowColumnMapping(true);
     } catch (error) {
-      console.error('Error processing file:', error);
+      console.error('Error parsing file:', error);
       toast.error('Erro ao processar o arquivo');
     } finally {
       setIsProcessingCsv(false);
     }
+  };
+
+  const handleConfirmMapping = () => {
+    if (!parsedData || phoneColumnIndex === -1) {
+      toast.error('Selecione a coluna de telefone');
+      return;
+    }
+    
+    const leads: Lead[] = [];
+    const errors: string[] = [];
+    
+    parsedData.rows.forEach((row, index) => {
+      const phoneValue = row[phoneColumnIndex]?.toString() || '';
+      const nameValue = nameColumnIndex >= 0 ? row[nameColumnIndex]?.toString() : undefined;
+      
+      const jid = parsePhoneToJid(phoneValue);
+      if (jid) {
+        leads.push({
+          id: crypto.randomUUID(),
+          phone: formatPhoneDisplay(phoneValue),
+          name: nameValue?.trim() || undefined,
+          jid,
+          source: 'paste',
+        });
+      } else if (phoneValue.trim()) {
+        errors.push(`Linha ${index + 1 + (parsedData.hasHeader ? 1 : 0)}: "${phoneValue}" - número inválido`);
+      }
+    });
+    
+    if (leads.length > 0) {
+      onLeadsImported(leads);
+      resetFileState();
+      toast.success(`${leads.length} contato${leads.length !== 1 ? 's' : ''} importado${leads.length !== 1 ? 's' : ''}`);
+    } else {
+      toast.error('Nenhum contato válido encontrado no arquivo');
+    }
+    
+    if (errors.length > 0 && errors.length <= 3) {
+      errors.forEach(err => toast.error(err));
+    } else if (errors.length > 3) {
+      toast.error(`${errors.length} números inválidos não foram importados`);
+    }
+  };
+
+  const resetFileState = () => {
+    setCsvFile(null);
+    setParsedData(null);
+    setPhoneColumnIndex(-1);
+    setNameColumnIndex(-1);
+    setShowColumnMapping(false);
+    if (csvInputRef.current) csvInputRef.current.value = '';
   };
 
   const handleManualAdd = () => {
@@ -553,70 +589,162 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
       </TabsContent>
 
       <TabsContent value="csv" className="space-y-4">
-        <div>
-          <Label>Arquivo CSV ou Excel</Label>
-          <p className="text-xs text-muted-foreground mb-2">
-            O arquivo deve conter uma coluna com números de telefone. Opcionalmente pode ter uma coluna com nomes.
-          </p>
-        </div>
-        
-        <div
-          className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
-            isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50'
-          }`}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => csvInputRef.current?.click()}
-        >
-          <input
-            ref={csvInputRef}
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={handleFileUpload}
-            className="hidden"
-          />
-          <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
-          <p className="font-medium">Clique para selecionar</p>
-          <p className="text-xs text-muted-foreground mt-1">ou arraste o arquivo aqui</p>
-          <p className="text-xs text-muted-foreground mt-3">Formatos: .csv, .xlsx, .xls</p>
-        </div>
-        
-        {csvFile && (
-          <Card>
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <FileSpreadsheet className="w-5 h-5 text-primary" />
-                <div>
-                  <p className="font-medium text-sm">{csvFile.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(csvFile.size / 1024).toFixed(1)} KB
-                  </p>
+        {!showColumnMapping ? (
+          <>
+            <div>
+              <Label>Arquivo CSV ou Excel</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                O arquivo deve conter uma coluna com números de telefone. Opcionalmente pode ter uma coluna com nomes.
+              </p>
+            </div>
+            
+            <div
+              className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors cursor-pointer ${
+                isDragging ? 'border-primary bg-primary/5' : 'border-muted-foreground/25 hover:border-primary/50'
+              }`}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              onClick={() => csvInputRef.current?.click()}
+            >
+              <input
+                ref={csvInputRef}
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              {isProcessingCsv ? (
+                <>
+                  <Loader2 className="w-10 h-10 mx-auto mb-3 text-muted-foreground animate-spin" />
+                  <p className="font-medium">Processando arquivo...</p>
+                </>
+              ) : (
+                <>
+                  <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
+                  <p className="font-medium">Clique para selecionar</p>
+                  <p className="text-xs text-muted-foreground mt-1">ou arraste o arquivo aqui</p>
+                  <p className="text-xs text-muted-foreground mt-3">Formatos: .csv, .xlsx, .xls</p>
+                </>
+              )}
+            </div>
+          </>
+        ) : parsedData && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <Button variant="ghost" size="sm" onClick={resetFileState}>
+                <ArrowLeft className="w-4 h-4 mr-2" />
+                Voltar
+              </Button>
+              <Badge variant="outline">
+                {csvFile?.name} • {parsedData.rows.length} linha{parsedData.rows.length !== 1 ? 's' : ''}
+              </Badge>
+            </div>
+            
+            <Card>
+              <CardContent className="p-4 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <Label>Coluna de Telefone *</Label>
+                    <Select
+                      value={phoneColumnIndex >= 0 ? phoneColumnIndex.toString() : ''}
+                      onValueChange={(v) => setPhoneColumnIndex(parseInt(v))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione a coluna" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {parsedData.headers.map((header, index) => (
+                          <SelectItem key={index} value={index.toString()}>
+                            {header}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Coluna de Nome (opcional)</Label>
+                    <Select
+                      value={nameColumnIndex >= 0 ? nameColumnIndex.toString() : 'none'}
+                      onValueChange={(v) => setNameColumnIndex(v === 'none' ? -1 : parseInt(v))}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Nenhuma" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Nenhuma</SelectItem>
+                        {parsedData.headers.map((header, index) => (
+                          <SelectItem key={index} value={index.toString()} disabled={index === phoneColumnIndex}>
+                            {header}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
+              </CardContent>
+            </Card>
+            
+            <div>
+              <Label className="mb-2 block">Preview (primeiras 5 linhas)</Label>
+              <div className="border rounded-lg overflow-hidden">
+                <ScrollArea className="max-h-48">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        {parsedData.headers.map((header, index) => (
+                          <TableHead 
+                            key={index}
+                            className={`whitespace-nowrap ${
+                              index === phoneColumnIndex 
+                                ? 'bg-primary/10 text-primary' 
+                                : index === nameColumnIndex 
+                                  ? 'bg-secondary' 
+                                  : ''
+                            }`}
+                          >
+                            {header}
+                            {index === phoneColumnIndex && <Badge className="ml-2 text-xs" variant="default">Tel</Badge>}
+                            {index === nameColumnIndex && <Badge className="ml-2 text-xs" variant="secondary">Nome</Badge>}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {parsedData.rows.slice(0, 5).map((row, rowIndex) => (
+                        <TableRow key={rowIndex}>
+                          {parsedData.headers.map((_, colIndex) => (
+                            <TableCell 
+                              key={colIndex}
+                              className={`whitespace-nowrap ${
+                                colIndex === phoneColumnIndex 
+                                  ? 'bg-primary/5 font-medium' 
+                                  : colIndex === nameColumnIndex 
+                                    ? 'bg-secondary/50' 
+                                    : ''
+                              }`}
+                            >
+                              {row[colIndex]?.toString() || '-'}
+                            </TableCell>
+                          ))}
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
               </div>
-              <div className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setCsvFile(null);
-                    if (csvInputRef.current) csvInputRef.current.value = '';
-                  }}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-                <Button onClick={processFile} disabled={isProcessingCsv}>
-                  {isProcessingCsv ? (
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  ) : (
-                    <FileSpreadsheet className="w-4 h-4 mr-2" />
-                  )}
-                  Importar
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+            
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={resetFileState}>
+                Cancelar
+              </Button>
+              <Button onClick={handleConfirmMapping} disabled={phoneColumnIndex === -1}>
+                <Check className="w-4 h-4 mr-2" />
+                Importar {parsedData.rows.length} contato{parsedData.rows.length !== 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
         )}
       </TabsContent>
 
