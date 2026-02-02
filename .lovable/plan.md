@@ -1,140 +1,140 @@
 
+# Atualizar Estilo Visual da Tela de Login
 
-# Corrigir Formatacao de Numeros no ParticipantSelector
+## Visao Geral
+Aplicar o estilo visual das imagens de referencia ao projeto, mantendo todos os elementos e funcionalidades existentes. As mudancas sao puramente esteticas.
 
-## Problema Identificado
+## Elementos Visuais Identificados nas Imagens
 
-O numero `29570900168819` que aparece formatado como "29 57 0900168819" nao e um numero de telefone real - e um **LID (Linked Device ID)** interno do WhatsApp. Alguns participantes retornam apenas esse LID e nao possuem `PhoneNumber`.
+### 1. Fundo com Gradiente Multi-Cor
+- Gradiente diagonal com azul escuro, roxo/magenta e verde-agua
+- Efeito de "aurora" ou "nebulosa" suave
 
-A UAZAPI retorna participantes com dois campos importantes:
-- **PhoneNumber**: O numero real do WhatsApp (ex: `5581994460365@s.whatsapp.net`)
-- **JID/LID**: ID interno do WhatsApp (ex: `29570900168819@lid`)
+### 2. Card Glassmorphism Aprimorado
+- Fundo semi-transparente com blur forte
+- Borda com brilho sutil verde-agua/azulado
+- Cantos bem arredondados
 
-O codigo atual esta usando `member.jid` como fonte principal, mas deveria priorizar `PhoneNumber`.
+### 3. Logo/Icone
+- Fundo com gradiente verde-agua (nao apenas bg-primary/10)
+- Icone de telefone (Phone) em vez de MessageSquare
+- Bordas arredondadas (rounded-2xl)
 
----
+### 4. Inputs Estilizados
+- Fundo escuro semi-transparente
+- Icones integrados a esquerda do input (Mail, Lock)
+- Bordas sutis
 
-## Solucao em 3 Partes
+### 5. Botao Principal
+- Verde vibrante
+- Seta (ArrowRight) a direita do texto
 
-### Parte 1: Priorizar PhoneNumber no GroupSelector
-
-Modificar o mapeamento de participantes em `GroupSelector.tsx` para sempre priorizar `PhoneNumber` sobre `JID`.
-
-**Arquivo:** `src/components/broadcast/GroupSelector.tsx`
-**Linhas:** 95-101
-
-```typescript
-// De:
-participants: rawParticipants.map((p: any) => ({
-  jid: p.JID || p.jid || p.id || '',
-  ...
-  phoneNumber: p.PhoneNumber || p.phoneNumber || undefined,
-})),
-
-// Para:
-participants: rawParticipants.map((p: any) => {
-  // PhoneNumber e o numero real, JID pode ser LID interno
-  const phoneNumber = p.PhoneNumber || p.phoneNumber || '';
-  const jid = p.JID || p.jid || p.id || '';
-  
-  return {
-    jid: phoneNumber || jid, // Prioriza PhoneNumber como identificador
-    phoneNumber: phoneNumber,
-    isAdmin: p.IsAdmin || p.isAdmin || false,
-    isSuperAdmin: p.IsSuperAdmin || p.isSuperAdmin || false,
-    name: p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined,
-  };
-}),
-```
-
-### Parte 2: Atualizar ParticipantSelector para usar PhoneNumber
-
-Modificar `ParticipantSelector.tsx` para:
-1. Usar `member.phoneNumber` como fonte primaria para exibicao
-2. Formatar apenas numeros que comecam com 55
-3. Exibir indicador visual quando so houver LID (sem numero real)
-
-**Arquivo:** `src/components/broadcast/ParticipantSelector.tsx`
-**Linhas:** 26-43 e 66-75
-
-```typescript
-// Formatacao atualizada
-const formatPhoneNumber = (value: string): string => {
-  const number = value.split('@')[0].replace(/\D/g, '');
-  if (!number || number.length < 10) return value;
-  
-  // So formata se comecar com 55 (Brasil)
-  if (number.startsWith('55') && number.length >= 12 && number.length <= 13) {
-    const ddi = number.slice(0, 2); // 55
-    const ddd = number.slice(2, 4); // DDD
-    const numero = number.slice(4); // Numero
-    return `${ddi} ${ddd} ${numero}`;
-  }
-  
-  // Outros numeros: apenas digitos
-  return number;
-};
-
-// Verificar se e LID
-const isLidOnly = (member: Participant): boolean => {
-  const jid = member.jid || '';
-  return jid.includes('@lid') && !member.phoneNumber;
-};
-
-// Ao montar participantes, usar phoneNumber quando disponivel
-participants.push({
-  jid: member.jid,
-  displayName: member.phoneNumber 
-    ? formatPhoneNumber(member.phoneNumber) 
-    : formatPhoneNumber(member.jid),
-  pushName: member.name,
-  groupName: group.name,
-  isLidOnly: !member.phoneNumber && member.jid.includes('@lid'),
-});
-```
-
-### Parte 3: Buscar PhoneNumber para LIDs (Endpoint Extra)
-
-Adicionar uma action `resolve-lid` no `uazapi-proxy` para buscar o PhoneNumber de participantes que so possuem LID. Essa busca sera opcional e sob demanda.
-
-**Arquivo:** `supabase/functions/uazapi-proxy/index.ts`
-**Nova action:** `resolve-lid`
-
-Essa busca usara o endpoint `/chat/check` da UAZAPI para verificar/resolver os LIDs.
+### 6. Badge de Seguranca
+- Badge verde outline com icone de escudo
+- Texto "Conexao segura"
 
 ---
 
-## Resumo das Alteracoes
+## Arquivos a Modificar
 
-| Arquivo | Alteracao |
+| Arquivo | Descricao |
 |---------|-----------|
-| `src/components/broadcast/GroupSelector.tsx` | Priorizar PhoneNumber no mapeamento de participantes |
-| `src/components/broadcast/ParticipantSelector.tsx` | Usar phoneNumber como fonte primaria, formatar so 55, indicar LIDs |
-| `supabase/functions/uazapi-proxy/index.ts` | Adicionar action `resolve-lid` para buscar PhoneNumber de LIDs |
+| `src/index.css` | Adicionar classes utilitarias para gradiente aurora e glassmorphism aprimorado |
+| `src/pages/Login.tsx` | Atualizar estrutura visual (icones, inputs com icones, badge seguranca) |
 
 ---
 
-## Interface Atualizada
+## Mudancas Detalhadas
 
-```text
-Participantes para envio                           3 de 5 selecionado(s)
+### 1. src/index.css
 
-[x] Joao Silva                                     <-- PushName
-    55 81 994460365 • Grupo Vendas                 <-- PhoneNumber formatado
+Adicionar novas classes utilitarias:
 
-[x] Maria Santos
-    55 81 993856099 • Grupo Marketing
+```css
+/* Gradiente de fundo estilo aurora */
+.bg-aurora {
+  background: linear-gradient(
+    135deg,
+    hsl(220 40% 8%) 0%,
+    hsl(240 30% 15%) 25%,
+    hsl(280 40% 12%) 50%,
+    hsl(200 50% 12%) 75%,
+    hsl(170 40% 10%) 100%
+  );
+}
 
-[ ] Participante Desconhecido                      <-- Sem PushName
-    [Sem numero] • Grupo Vendas                    <-- Indicador visual de LID
+/* Card glassmorphism aprimorado */
+.glass-card {
+  @apply bg-slate-900/60 backdrop-blur-2xl;
+  border: 1px solid rgba(34, 197, 94, 0.15);
+  box-shadow: 
+    0 0 40px -10px rgba(34, 197, 94, 0.1),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+}
+```
+
+### 2. src/pages/Login.tsx
+
+#### Estrutura Atualizada:
+- Trocar `bg-background` por `bg-aurora` no container principal
+- Remover decoracoes de fundo antigas (circulos blur)
+- Trocar icone `MessageSquare` por `Phone` com fundo gradiente
+- Adicionar inputs com icones integrados (estilo relativo/absoluto)
+- Adicionar seta no botao "Entrar"
+- Adicionar badge "Conexao segura" com Shield no final do card
+- Remover tabs (baseado na imagem, so mostra login simples)
+
+#### Icones a Importar:
+- `Phone` (logo)
+- `Mail` (input email)
+- `Lock` (input senha)
+- `ArrowRight` (botao)
+- `Shield` (badge seguranca)
+
+---
+
+## Resultado Visual Esperado
+
+```
++------------------------------------------+
+|                                          |
+|     [Logo Verde Gradiente com Phone]     |
+|            WsmartQR                      |
+|   Conecte-se ao futuro da comunicacao   |
+|                                          |
+|  Email                                   |
+|  +----------------------------------+    |
+|  | [Mail]  seu@email.com            |    |
+|  +----------------------------------+    |
+|                                          |
+|  Senha                                   |
+|  +----------------------------------+    |
+|  | [Lock]  ********                 |    |
+|  +----------------------------------+    |
+|                                          |
+|  [========= Entrar -> ============]      |
+|                                          |
+|      [Shield] Conexao segura             |
+|                                          |
++------------------------------------------+
 ```
 
 ---
 
-## Comportamento Esperado
+## Decisao de Design: Tabs vs Login Simples
 
-1. **Numeros brasileiros (55)**: Formatados como `55 81 994460365`
-2. **Numeros internacionais**: Exibidos apenas como digitos `14155552671`
-3. **Participantes so com LID**: Exibidos com indicador "[Sem numero]" e opcao de buscar
-4. **Botao "Buscar numeros"**: Aparece quando ha LIDs, chama o endpoint para resolver
+A imagem de referencia mostra apenas a tela de login (sem tabs de cadastro). Duas opcoes:
 
+**Opcao A**: Manter as tabs existentes (login + cadastro) mas estiliza-las de acordo
+**Opcao B**: Simplificar para apenas login, como na imagem
+
+Vou implementar a **Opcao A** mantendo as funcionalidades, mas ajustando o visual para ficar consistente com a referencia.
+
+---
+
+## Observacoes
+
+- Nenhuma funcionalidade sera alterada
+- Apenas estilos CSS e estrutura visual do JSX
+- Os handlers de login/signup permanecem identicos
+- O fluxo de navegacao continua o mesmo
