@@ -477,13 +477,14 @@ Deno.serve(async (req) => {
         
         console.log('Checking', body.phones.length, 'numbers for WhatsApp registration')
         
+        // UAZAPI expects { numbers: [...] } not { phone: [...] }
         const checkResponse = await fetch(`${uazapiUrl}/chat/check`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'token': instanceToken,
           },
-          body: JSON.stringify({ phone: body.phones }),
+          body: JSON.stringify({ numbers: body.phones }),
         })
         
         console.log('Check response status:', checkResponse.status)
@@ -525,13 +526,14 @@ Deno.serve(async (req) => {
         // Extract just the numeric part from LIDs (remove @lid suffix)
         const cleanLids = body.lids.map((lid: string) => lid.split('@')[0])
         
+        // UAZAPI expects { numbers: [...] } not { phone: [...] }
         const resolveResponse = await fetch(`${uazapiUrl}/chat/check`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'token': instanceToken,
           },
-          body: JSON.stringify({ phone: cleanLids }),
+          body: JSON.stringify({ numbers: cleanLids }),
         })
         
         console.log('Resolve LIDs response status:', resolveResponse.status)
