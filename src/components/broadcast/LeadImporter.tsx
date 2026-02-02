@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { ClipboardPaste, Users, Plus, Search, Loader2, FileSpreadsheet, Upload, X } from 'lucide-react';
 import { toast } from 'sonner';
+import * as XLSX from 'xlsx';
 import type { Instance } from './InstanceSelector';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
 
@@ -216,12 +217,17 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
     return { phoneIndex, nameIndex };
   };
 
-  const handleCsvUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const isValidFileType = (fileName: string): boolean => {
+    const ext = fileName.toLowerCase();
+    return ext.endsWith('.csv') || ext.endsWith('.xlsx') || ext.endsWith('.xls');
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && file.name.endsWith('.csv')) {
+    if (file && isValidFileType(file.name)) {
       setCsvFile(file);
     } else if (file) {
-      toast.error('Por favor, selecione um arquivo .csv');
+      toast.error('Por favor, selecione um arquivo .csv, .xlsx ou .xls');
     }
   };
 
@@ -240,52 +246,81 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
     setIsDragging(false);
     
     const file = e.dataTransfer.files?.[0];
-    if (file && file.name.endsWith('.csv')) {
+    if (file && isValidFileType(file.name)) {
       setCsvFile(file);
     } else if (file) {
-      toast.error('Por favor, arraste um arquivo .csv');
+      toast.error('Por favor, arraste um arquivo .csv, .xlsx ou .xls');
     }
   };
 
-  const processCsvFile = async () => {
+  const processExcelFile = async (file: File): Promise<string[][]> => {
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+    const data = XLSX.utils.sheet_to_json<string[]>(firstSheet, { header: 1, defval: '' });
+    return data.filter(row => row.some(cell => cell?.toString().trim()));
+  };
+
+  const processFile = async () => {
     if (!csvFile) return;
     
     setIsProcessingCsv(true);
     
     try {
-      const text = await csvFile.text();
-      const lines = text.split(/\r?\n/).filter(line => line.trim());
+      const isExcel = csvFile.name.toLowerCase().endsWith('.xlsx') || csvFile.name.toLowerCase().endsWith('.xls');
+      let dataRows: string[][];
       
-      if (lines.length === 0) {
+      if (isExcel) {
+        // Process Excel file
+        dataRows = await processExcelFile(csvFile);
+      } else {
+        // Process CSV file
+        const text = await csvFile.text();
+        const lines = text.split(/\r?\n/).filter(line => line.trim());
+        
+        if (lines.length === 0) {
+          toast.error('Arquivo vazio');
+          setIsProcessingCsv(false);
+          return;
+        }
+        
+        const delimiter = detectDelimiter(lines[0]);
+        dataRows = lines.map(line => parseCsvLine(line, delimiter));
+      }
+      
+      if (dataRows.length === 0) {
         toast.error('Arquivo vazio');
+        setIsProcessingCsv(false);
         return;
       }
       
-      const delimiter = detectDelimiter(lines[0]);
-      const hasHeader = detectHeader(lines[0], delimiter);
-      const dataLines = hasHeader ? lines.slice(1) : lines;
+      // Check for header
+      const firstRowStr = dataRows[0].map(v => v?.toString().toLowerCase() || '').join(' ');
+      const hasHeader = detectHeader(firstRowStr, ',');
+      const dataLines = hasHeader ? dataRows.slice(1) : dataRows;
       
       if (dataLines.length === 0) {
         toast.error('Nenhum dado encontrado no arquivo');
+        setIsProcessingCsv(false);
         return;
       }
       
       // Detect column positions from first data line
-      const firstLineValues = parseCsvLine(dataLines[0], delimiter);
+      const firstLineValues = dataLines[0].map(v => v?.toString() || '');
       const { phoneIndex, nameIndex } = findPhoneAndNameColumns(firstLineValues);
       
       if (phoneIndex === -1) {
         toast.error('Não foi possível identificar a coluna de telefone');
+        setIsProcessingCsv(false);
         return;
       }
       
       const leads: Lead[] = [];
       const errors: string[] = [];
       
-      dataLines.forEach((line, index) => {
-        const values = parseCsvLine(line, delimiter);
-        const phoneValue = values[phoneIndex] || '';
-        const nameValue = nameIndex >= 0 ? values[nameIndex] : undefined;
+      dataLines.forEach((row, index) => {
+        const phoneValue = row[phoneIndex]?.toString() || '';
+        const nameValue = nameIndex >= 0 ? row[nameIndex]?.toString() : undefined;
         
         const jid = parsePhoneToJid(phoneValue);
         if (jid) {
@@ -294,18 +329,20 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
             phone: formatPhoneDisplay(phoneValue),
             name: nameValue?.trim() || undefined,
             jid,
-            source: 'paste', // Using 'paste' as source type for CSV imports
+            source: 'paste',
           });
         } else if (phoneValue.trim()) {
           errors.push(`Linha ${index + 1 + (hasHeader ? 1 : 0)}: "${phoneValue}" - número inválido`);
         }
       });
       
+      const fileType = isExcel ? 'Excel' : 'CSV';
+      
       if (leads.length > 0) {
         onLeadsImported(leads);
         setCsvFile(null);
         if (csvInputRef.current) csvInputRef.current.value = '';
-        toast.success(`${leads.length} contato${leads.length !== 1 ? 's' : ''} importado${leads.length !== 1 ? 's' : ''} do CSV`);
+        toast.success(`${leads.length} contato${leads.length !== 1 ? 's' : ''} importado${leads.length !== 1 ? 's' : ''} do ${fileType}`);
       } else {
         toast.error('Nenhum contato válido encontrado no arquivo');
       }
@@ -316,8 +353,8 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
         toast.error(`${errors.length} números inválidos não foram importados`);
       }
     } catch (error) {
-      console.error('Error processing CSV:', error);
-      toast.error('Erro ao processar o arquivo CSV');
+      console.error('Error processing file:', error);
+      toast.error('Erro ao processar o arquivo');
     } finally {
       setIsProcessingCsv(false);
     }
@@ -517,10 +554,9 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
 
       <TabsContent value="csv" className="space-y-4">
         <div>
-          <Label>Arquivo CSV</Label>
+          <Label>Arquivo CSV ou Excel</Label>
           <p className="text-xs text-muted-foreground mb-2">
             O arquivo deve conter uma coluna com números de telefone. Opcionalmente pode ter uma coluna com nomes.
-            Delimitadores suportados: vírgula, ponto-e-vírgula ou tab.
           </p>
         </div>
         
@@ -536,14 +572,14 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
           <input
             ref={csvInputRef}
             type="file"
-            accept=".csv"
-            onChange={handleCsvUpload}
+            accept=".csv,.xlsx,.xls"
+            onChange={handleFileUpload}
             className="hidden"
           />
           <Upload className="w-10 h-10 mx-auto mb-3 text-muted-foreground" />
           <p className="font-medium">Clique para selecionar</p>
           <p className="text-xs text-muted-foreground mt-1">ou arraste o arquivo aqui</p>
-          <p className="text-xs text-muted-foreground mt-3">Formatos: .csv</p>
+          <p className="text-xs text-muted-foreground mt-3">Formatos: .csv, .xlsx, .xls</p>
         </div>
         
         {csvFile && (
@@ -570,7 +606,7 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
                 >
                   <X className="w-4 h-4" />
                 </Button>
-                <Button onClick={processCsvFile} disabled={isProcessingCsv}>
+                <Button onClick={processFile} disabled={isProcessingCsv}>
                   {isProcessingCsv ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                   ) : (
