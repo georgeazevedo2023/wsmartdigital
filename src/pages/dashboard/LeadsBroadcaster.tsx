@@ -4,13 +4,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
+import BroadcasterHeader from '@/components/broadcast/BroadcasterHeader';
 import LeadImporter from '@/components/broadcast/LeadImporter';
 import LeadList from '@/components/broadcast/LeadList';
 import LeadMessageForm from '@/components/broadcast/LeadMessageForm';
-import LeadDatabaseSelector from '@/components/broadcast/LeadDatabaseSelector';
+import EditDatabaseDialog from '@/components/broadcast/EditDatabaseDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -21,7 +23,6 @@ export interface Lead {
   jid: string;
   source: 'manual' | 'paste' | 'group';
   groupName?: string;
-  // Verification fields
   isVerified?: boolean;
   verifiedName?: string;
   verificationStatus?: 'pending' | 'valid' | 'invalid' | 'error';
@@ -38,9 +39,12 @@ interface LeadDatabase {
 
 const LeadsBroadcaster = () => {
   const { user } = useAuth();
-  const [step, setStep] = useState<'instance' | 'database' | 'import' | 'message'>('instance');
+  // Optimized: 3 steps instead of 4
+  const [step, setStep] = useState<'instance' | 'contacts' | 'message'>('instance');
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [selectedDatabase, setSelectedDatabase] = useState<LeadDatabase | null>(null);
+  const [databases, setDatabases] = useState<LeadDatabase[]>([]);
+  const [isLoadingDatabases, setIsLoadingDatabases] = useState(false);
   const [isCreatingNewDatabase, setIsCreatingNewDatabase] = useState(false);
   const [newDatabaseName, setNewDatabaseName] = useState('');
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -49,23 +53,55 @@ const LeadsBroadcaster = () => {
   const [verificationProgress, setVerificationProgress] = useState(0);
   const [isSavingDatabase, setIsSavingDatabase] = useState(false);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
+  const [editTarget, setEditTarget] = useState<LeadDatabase | null>(null);
+
+  // Fetch databases when instance is selected
+  useEffect(() => {
+    if (selectedInstance && step === 'contacts') {
+      fetchDatabases();
+    }
+  }, [selectedInstance, step]);
+
+  const fetchDatabases = async () => {
+    setIsLoadingDatabases(true);
+    try {
+      const { data, error } = await supabase
+        .from('lead_databases')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (error) throw error;
+      setDatabases(data || []);
+    } catch (error) {
+      console.error('Error fetching databases:', error);
+    } finally {
+      setIsLoadingDatabases(false);
+    }
+  };
 
   const handleInstanceSelect = (instance: Instance) => {
     setSelectedInstance(instance);
-    setStep('database');
+    setStep('contacts');
   };
 
-  const handleDatabaseSelect = async (database: LeadDatabase | null) => {
-    if (!database) {
+  const handleDatabaseChange = async (value: string) => {
+    if (value === 'new') {
       setSelectedDatabase(null);
+      setIsCreatingNewDatabase(true);
+      setLeads([]);
+      setSelectedLeads(new Set());
+      setNewDatabaseName('');
       return;
     }
 
+    const database = databases.find(d => d.id === value);
+    if (!database) return;
+
     setSelectedDatabase(database);
+    setIsCreatingNewDatabase(false);
     setIsLoadingLeads(true);
 
     try {
-      // Load leads from database
       const { data, error } = await supabase
         .from('lead_database_entries')
         .select('*')
@@ -73,7 +109,6 @@ const LeadsBroadcaster = () => {
 
       if (error) throw error;
 
-      // Map database entries to Lead format
       const loadedLeads: Lead[] = (data || []).map((entry) => ({
         id: entry.id,
         phone: entry.phone,
@@ -88,23 +123,12 @@ const LeadsBroadcaster = () => {
 
       setLeads(loadedLeads);
       setSelectedLeads(new Set(loadedLeads.map(l => l.id)));
-      setIsCreatingNewDatabase(false);
-      setStep('import');
     } catch (error) {
       console.error('Error loading leads:', error);
       toast.error('Erro ao carregar contatos da base');
     } finally {
       setIsLoadingLeads(false);
     }
-  };
-
-  const handleCreateNewDatabase = () => {
-    setIsCreatingNewDatabase(true);
-    setSelectedDatabase(null);
-    setLeads([]);
-    setSelectedLeads(new Set());
-    setNewDatabaseName('');
-    setStep('import');
   };
 
   const handleSaveDatabase = async () => {
@@ -126,7 +150,6 @@ const LeadsBroadcaster = () => {
     setIsSavingDatabase(true);
 
     try {
-      // Create database
       const { data: db, error: dbError } = await supabase
         .from('lead_databases')
         .insert({
@@ -139,7 +162,6 @@ const LeadsBroadcaster = () => {
 
       if (dbError) throw dbError;
 
-      // Insert leads
       const entries = leads.map((l) => ({
         database_id: db.id,
         phone: l.phone,
@@ -158,14 +180,17 @@ const LeadsBroadcaster = () => {
 
       if (entriesError) throw entriesError;
 
-      setSelectedDatabase({
+      const newDb: LeadDatabase = {
         id: db.id,
         name: db.name,
         description: db.description,
         leads_count: db.leads_count,
         created_at: db.created_at,
         updated_at: db.updated_at,
-      });
+      };
+
+      setSelectedDatabase(newDb);
+      setDatabases(prev => [newDb, ...prev]);
       setIsCreatingNewDatabase(false);
       toast.success(`Base "${db.name}" salva com ${leads.length} contatos`);
     } catch (error) {
@@ -182,13 +207,11 @@ const LeadsBroadcaster = () => {
     setIsSavingDatabase(true);
 
     try {
-      // Delete existing entries
       await supabase
         .from('lead_database_entries')
         .delete()
         .eq('database_id', selectedDatabase.id);
 
-      // Insert updated leads
       const entries = leads.map((l) => ({
         database_id: selectedDatabase.id,
         phone: l.phone,
@@ -209,7 +232,6 @@ const LeadsBroadcaster = () => {
         if (entriesError) throw entriesError;
       }
 
-      // Update leads count
       const { error: updateError } = await supabase
         .from('lead_databases')
         .update({ leads_count: leads.length })
@@ -218,6 +240,9 @@ const LeadsBroadcaster = () => {
       if (updateError) throw updateError;
 
       setSelectedDatabase(prev => prev ? { ...prev, leads_count: leads.length } : null);
+      setDatabases(prev => prev.map(d => 
+        d.id === selectedDatabase.id ? { ...d, leads_count: leads.length } : d
+      ));
       toast.success('Base atualizada');
     } catch (error) {
       console.error('Error updating database:', error);
@@ -228,14 +253,12 @@ const LeadsBroadcaster = () => {
   };
 
   const handleLeadsImported = (importedLeads: Lead[]) => {
-    // Deduplicate by phone number
     const existingPhones = new Set(leads.map(l => l.phone));
     const newLeads = importedLeads.filter(l => !existingPhones.has(l.phone));
     
     const allLeads = [...leads, ...newLeads];
     setLeads(allLeads);
     
-    // Auto-select all new leads
     const allIds = new Set([...selectedLeads, ...newLeads.map(l => l.id)]);
     setSelectedLeads(allIds);
   };
@@ -247,10 +270,7 @@ const LeadsBroadcaster = () => {
     setVerificationProgress(0);
     
     try {
-      // Extract phone numbers (without @s.whatsapp.net)
       const phones = leads.map(l => l.jid.replace('@s.whatsapp.net', ''));
-      
-      // Verify in batches of 50 to avoid timeouts
       const BATCH_SIZE = 50;
       const results = new Map<string, { isValid: boolean; verifiedName?: string }>();
       
@@ -284,7 +304,6 @@ const LeadsBroadcaster = () => {
         setVerificationProgress(Math.min(100, ((i + batch.length) / phones.length) * 100));
       }
       
-      // Update leads with verification status
       setLeads(prevLeads => prevLeads.map(lead => {
         const phone = lead.jid.replace('@s.whatsapp.net', '');
         const result = results.get(phone);
@@ -313,10 +332,8 @@ const LeadsBroadcaster = () => {
     const validLeads = leads.filter(l => l.verificationStatus !== 'invalid');
     const removedCount = leads.length - validLeads.length;
     
-    // Update leads
     setLeads(validLeads);
     
-    // Update selection to remove invalid leads
     const validIds = new Set(validLeads.map(l => l.id));
     const newSelection = new Set([...selectedLeads].filter(id => validIds.has(id)));
     setSelectedLeads(newSelection);
@@ -354,17 +371,24 @@ const LeadsBroadcaster = () => {
 
   const handleBack = () => {
     if (step === 'message') {
-      setStep('import');
-    } else if (step === 'import') {
-      setStep('database');
-      setLeads([]);
-      setSelectedLeads(new Set());
-      setSelectedDatabase(null);
-      setIsCreatingNewDatabase(false);
-    } else if (step === 'database') {
+      setStep('contacts');
+    } else if (step === 'contacts') {
       setStep('instance');
       setSelectedInstance(null);
+      setSelectedDatabase(null);
+      setLeads([]);
+      setSelectedLeads(new Set());
+      setIsCreatingNewDatabase(false);
     }
+  };
+
+  const handleChangeInstance = () => {
+    setStep('instance');
+    setSelectedInstance(null);
+    setSelectedDatabase(null);
+    setLeads([]);
+    setSelectedLeads(new Set());
+    setIsCreatingNewDatabase(false);
   };
 
   const handleClearLeads = () => {
@@ -372,8 +396,14 @@ const LeadsBroadcaster = () => {
     setSelectedLeads(new Set());
   };
 
-  const selectedLeadsList = leads.filter(l => selectedLeads.has(l.id));
+  const handleDatabaseUpdated = (updated: LeadDatabase) => {
+    setDatabases(prev => prev.map(d => d.id === updated.id ? updated : d));
+    if (selectedDatabase?.id === updated.id) {
+      setSelectedDatabase(updated);
+    }
+  };
 
+  const selectedLeadsList = leads.filter(l => selectedLeads.has(l.id));
   const hasUnsavedChanges = isCreatingNewDatabase && leads.length > 0 && !selectedDatabase;
   const canSaveDatabase = isCreatingNewDatabase && leads.length > 0 && newDatabaseName.trim();
 
@@ -396,7 +426,7 @@ const LeadsBroadcaster = () => {
         )}
       </div>
 
-      {/* Progress Steps */}
+      {/* Progress Steps - Optimized: 3 steps */}
       <div className="flex items-center gap-2 text-sm">
         <div className={`flex items-center gap-2 ${selectedInstance ? 'text-primary' : 'text-muted-foreground'}`}>
           {selectedInstance ? (
@@ -411,28 +441,15 @@ const LeadsBroadcaster = () => {
         
         <ChevronRight className="w-4 h-4 text-muted-foreground" />
         
-        <div className={`flex items-center gap-2 ${step === 'import' || step === 'message' ? 'text-primary' : step === 'database' ? 'text-foreground' : 'text-muted-foreground'}`}>
-          {step === 'import' || step === 'message' ? (
-            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-              <Check className="w-4 h-4 text-primary-foreground" />
-            </div>
-          ) : (
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'database' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
-          )}
-          <span className="font-medium">Base de Leads</span>
-        </div>
-        
-        <ChevronRight className="w-4 h-4 text-muted-foreground" />
-        
-        <div className={`flex items-center gap-2 ${step === 'message' ? 'text-primary' : step === 'import' ? 'text-foreground' : 'text-muted-foreground'}`}>
+        <div className={`flex items-center gap-2 ${step === 'message' ? 'text-primary' : step === 'contacts' ? 'text-foreground' : 'text-muted-foreground'}`}>
           {step === 'message' ? (
             <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
               <Check className="w-4 h-4 text-primary-foreground" />
             </div>
           ) : (
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'import' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'contacts' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
           )}
-          <span className="font-medium">Contatos</span>
+          <span className="font-medium">Base + Contatos</span>
           {leads.length > 0 && (
             <Badge variant="secondary" className="text-xs">{leads.length}</Badge>
           )}
@@ -441,7 +458,7 @@ const LeadsBroadcaster = () => {
         <ChevronRight className="w-4 h-4 text-muted-foreground" />
         
         <div className={`flex items-center gap-2 ${step === 'message' ? 'text-foreground' : 'text-muted-foreground'}`}>
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'message' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>4</div>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'message' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
           <span className="font-medium">Mensagem</span>
         </div>
       </div>
@@ -464,71 +481,80 @@ const LeadsBroadcaster = () => {
         </Card>
       )}
 
-      {/* Selected Instance Badge */}
-      {step !== 'instance' && selectedInstance && (
-        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <Server className="w-5 h-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <p className="font-medium">{selectedInstance.name}</p>
-            <p className="text-xs text-muted-foreground">Instância selecionada</p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => { setSelectedInstance(null); setStep('instance'); setLeads([]); setSelectedLeads(new Set()); setSelectedDatabase(null); }}>
-            Trocar
-          </Button>
-        </div>
-      )}
-
-      {/* Step 2: Database Selection */}
-      {step === 'database' && selectedInstance && (
-        <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Database className="w-5 h-5" />
-              Selecionar Base de Leads
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoadingLeads ? (
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-                <span className="ml-2 text-muted-foreground">Carregando contatos...</span>
-              </div>
-            ) : (
-              <LeadDatabaseSelector
-                selectedDatabase={selectedDatabase}
-                onSelectDatabase={handleDatabaseSelect}
-                onCreateNew={handleCreateNewDatabase}
-              />
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Step 3: Import Contacts */}
-      {step === 'import' && selectedInstance && (
+      {/* Step 2: Combined Base + Contacts */}
+      {step === 'contacts' && selectedInstance && (
         <div className="space-y-4">
-          {/* Database Name Input (for new databases) */}
-          {isCreatingNewDatabase && (
-            <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-4">
+          {/* Compact Header with Instance */}
+          <BroadcasterHeader
+            instance={selectedInstance}
+            database={selectedDatabase}
+            onChangeInstance={handleChangeInstance}
+            showDatabase={false}
+          />
+
+          {/* Database Selector - Compact Dropdown */}
+          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-4">
+                <div className="flex-1">
+                  <Label className="text-sm font-medium mb-2 block">Base de Leads</Label>
+                  <Select
+                    value={isCreatingNewDatabase ? 'new' : (selectedDatabase?.id || '')}
+                    onValueChange={handleDatabaseChange}
+                    disabled={isLoadingDatabases || isLoadingLeads}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder={isLoadingDatabases ? "Carregando..." : "Selecione ou crie uma base"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">
+                        <div className="flex items-center gap-2">
+                          <Plus className="w-4 h-4" />
+                          Criar Nova Base
+                        </div>
+                      </SelectItem>
+                      {databases.map(db => (
+                        <SelectItem key={db.id} value={db.id}>
+                          {db.name} ({db.leads_count} contatos)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* New Database Name Input */}
+                {isCreatingNewDatabase && (
                   <div className="flex-1">
-                    <Label htmlFor="database-name" className="text-sm font-medium">
-                      Nome da Base de Leads
-                    </Label>
-                    <Input
-                      id="database-name"
-                      placeholder="Ex: Clientes VIP, Leads Janeiro..."
-                      value={newDatabaseName}
-                      onChange={(e) => setNewDatabaseName(e.target.value)}
-                      className="mt-1.5"
-                    />
+                    <Label className="text-sm font-medium mb-2 block">Nome da Nova Base</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        placeholder="Ex: Clientes VIP..."
+                        value={newDatabaseName}
+                        onChange={(e) => setNewDatabaseName(e.target.value)}
+                      />
+                      <Button
+                        onClick={handleSaveDatabase}
+                        disabled={!canSaveDatabase || isSavingDatabase}
+                        size="sm"
+                        className="shrink-0"
+                      >
+                        {isSavingDatabase ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
+                )}
+
+                {/* Update Existing Database Button */}
+                {selectedDatabase && !isCreatingNewDatabase && (
                   <Button
-                    onClick={handleSaveDatabase}
-                    disabled={!canSaveDatabase || isSavingDatabase}
+                    variant="outline"
+                    size="sm"
+                    onClick={handleUpdateDatabase}
+                    disabled={isSavingDatabase}
                     className="shrink-0 mt-6"
                   >
                     {isSavingDatabase ? (
@@ -536,61 +562,46 @@ const LeadsBroadcaster = () => {
                     ) : (
                       <Save className="w-4 h-4 mr-2" />
                     )}
-                    Salvar Base
+                    Salvar
                   </Button>
-                </div>
-                {hasUnsavedChanges && !newDatabaseName.trim() && (
-                  <p className="text-xs text-amber-600 mt-2">
-                    Digite um nome para salvar a base de leads
-                  </p>
                 )}
+              </div>
+
+              {hasUnsavedChanges && !newDatabaseName.trim() && (
+                <p className="text-xs text-amber-600 mt-2">
+                  Digite um nome para salvar a base de leads
+                </p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Loading Leads */}
+          {isLoadingLeads && (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">Carregando contatos...</span>
+            </div>
+          )}
+
+          {/* Import Section */}
+          {!isLoadingLeads && (selectedDatabase || isCreatingNewDatabase) && (
+            <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Importar Contatos
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <LeadImporter
+                  instance={selectedInstance}
+                  onLeadsImported={handleLeadsImported}
+                />
               </CardContent>
             </Card>
           )}
 
-          {/* Selected Database Badge */}
-          {selectedDatabase && !isCreatingNewDatabase && (
-            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
-              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                <Database className="w-5 h-5 text-primary" />
-              </div>
-              <div className="flex-1">
-                <p className="font-medium">{selectedDatabase.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {selectedDatabase.leads_count} contatos na base
-                </p>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleUpdateDatabase}
-                disabled={isSavingDatabase}
-              >
-                {isSavingDatabase ? (
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                ) : (
-                  <Save className="w-4 h-4 mr-2" />
-                )}
-                Salvar Alterações
-              </Button>
-            </div>
-          )}
-
-          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="w-5 h-5" />
-                Importar Contatos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <LeadImporter
-                instance={selectedInstance}
-                onLeadsImported={handleLeadsImported}
-              />
-            </CardContent>
-          </Card>
-
+          {/* Leads List */}
           {leads.length > 0 && (
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
               <CardHeader className="pb-3">
@@ -625,7 +636,6 @@ const LeadsBroadcaster = () => {
                   </div>
                 </div>
                 
-                {/* Verification summary */}
                 {hasVerifiedLeads && (
                   <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t">
                     <Badge variant="default" className="bg-green-500/20 text-green-600 border-green-500/30 hover:bg-green-500/20">
@@ -670,9 +680,17 @@ const LeadsBroadcaster = () => {
         </div>
       )}
 
-      {/* Step 4: Message Composition */}
+      {/* Step 3: Message Composition */}
       {step === 'message' && selectedInstance && selectedLeadsList.length > 0 && (
         <div className="space-y-4">
+          {/* Compact Header */}
+          <BroadcasterHeader
+            instance={selectedInstance}
+            database={selectedDatabase}
+            onChangeInstance={handleChangeInstance}
+            onChangeDatabase={() => setStep('contacts')}
+          />
+
           {/* Selected Leads Summary */}
           <Card className="border-border/50 bg-muted/30">
             <CardContent className="p-4">
@@ -684,16 +702,15 @@ const LeadsBroadcaster = () => {
                       {selectedLeadsList.length} contato{selectedLeadsList.length !== 1 ? 's' : ''} selecionado{selectedLeadsList.length !== 1 ? 's' : ''}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      {selectedDatabase ? `Base: ${selectedDatabase.name}` : 'Envio individual para cada número'}
+                      Envio individual para cada número
                     </p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setStep('import')}>
+                <Button variant="outline" size="sm" onClick={() => setStep('contacts')}>
                   Alterar seleção
                 </Button>
               </div>
               
-              {/* Lead names preview */}
               <div className="mt-3 flex flex-wrap gap-1.5">
                 {selectedLeadsList.slice(0, 5).map((lead) => (
                   <Badge key={lead.id} variant="secondary" className="text-xs">
@@ -717,6 +734,14 @@ const LeadsBroadcaster = () => {
           />
         </div>
       )}
+
+      {/* Edit Database Dialog */}
+      <EditDatabaseDialog
+        open={!!editTarget}
+        onOpenChange={(open) => !open && setEditTarget(null)}
+        database={editTarget}
+        onSave={handleDatabaseUpdated}
+      />
     </div>
   );
 };
