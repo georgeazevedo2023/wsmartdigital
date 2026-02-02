@@ -191,7 +191,7 @@ const LeadImporter = ({ instance, onLeadsImported }: LeadImporterProps) => {
             Authorization: `Bearer ${session.data.session.access_token}`,
           },
           body: JSON.stringify({
-            action: 'list-groups',
+            action: 'groups',
             token: instance.token,
           }),
         }
