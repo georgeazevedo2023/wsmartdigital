@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import StatsCard from '@/components/dashboard/StatsCard';
 import InstanceCard from '@/components/dashboard/InstanceCard';
+import DashboardCharts from '@/components/dashboard/DashboardCharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Server, Users, Wifi, WifiOff, MessageSquare, UsersRound, RefreshCw } from 'lucide-react';
@@ -251,6 +252,14 @@ const DashboardHome = () => {
           />
         )}
       </div>
+
+      {/* Charts Section */}
+      <DashboardCharts
+        instanceStats={instanceStats}
+        connectedCount={connectedInstances.length}
+        disconnectedCount={disconnectedInstances.length}
+        loading={loadingStats}
+      />
 
       {/* Instance Groups Breakdown */}
       <div className="space-y-4 animate-fade-in" style={{ animationDelay: '200ms' }}>
