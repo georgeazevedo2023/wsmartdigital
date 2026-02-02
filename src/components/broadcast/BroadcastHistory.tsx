@@ -258,6 +258,8 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [logToDelete, setLogToDelete] = useState<BroadcastLog | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -295,6 +297,26 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
     },
   });
 
+  const batchDeleteMutation = useMutation({
+    mutationFn: async (logIds: string[]) => {
+      const { error } = await supabase
+        .from('broadcast_logs')
+        .delete()
+        .in('id', logIds);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['broadcast-logs'] });
+      toast.success(`${selectedIds.size} registros excluídos com sucesso`);
+      setBatchDeleteDialogOpen(false);
+      setSelectedIds(new Set());
+    },
+    onError: (error) => {
+      toast.error('Erro ao excluir registros: ' + (error as Error).message);
+    },
+  });
+
   const handleDeleteClick = (log: BroadcastLog, e: React.MouseEvent) => {
     e.stopPropagation();
     setLogToDelete(log);
@@ -305,6 +327,37 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
     if (logToDelete) {
       deleteMutation.mutate(logToDelete.id);
     }
+  };
+
+  const confirmBatchDelete = () => {
+    if (selectedIds.size > 0) {
+      batchDeleteMutation.mutate(Array.from(selectedIds));
+    }
+  };
+
+  const toggleSelection = (logId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(logId)) {
+        newSet.delete(logId);
+      } else {
+        newSet.add(logId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === filteredLogs.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(filteredLogs.map(log => log.id)));
+    }
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
   };
 
   const filteredLogs = useMemo(() => {
@@ -572,6 +625,49 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
               Mostrando {filteredLogs.length} de {logs?.length || 0} registros
             </div>
           )}
+
+          {/* Batch Selection Controls */}
+          {filteredLogs.length > 0 && (
+            <div className="flex items-center justify-between pt-2 border-t border-border/30">
+              <div className="flex items-center gap-3">
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.size === filteredLogs.length && filteredLogs.length > 0}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-border"
+                  />
+                  <span className="text-muted-foreground">
+                    {selectedIds.size === filteredLogs.length ? 'Desmarcar todos' : 'Selecionar todos'}
+                  </span>
+                </label>
+                {selectedIds.size > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    {selectedIds.size} selecionado(s)
+                  </span>
+                )}
+              </div>
+              {selectedIds.size > 0 && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={clearSelection}
+                  >
+                    Limpar seleção
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={() => setBatchDeleteDialogOpen(true)}
+                  >
+                    <Trash2 className="w-4 h-4 mr-1" />
+                    Excluir {selectedIds.size}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -604,13 +700,26 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                 return (
                   <div
                     key={log.id}
-                    className="border rounded-lg p-3 bg-background/50 hover:bg-background/80 transition-colors"
+                    className={`border rounded-lg p-3 bg-background/50 hover:bg-background/80 transition-colors ${
+                      selectedIds.has(log.id) ? 'ring-2 ring-primary/50 border-primary/50' : ''
+                    }`}
                   >
                     <div 
                       className="flex items-center justify-between cursor-pointer"
                       onClick={() => setExpandedId(isExpanded ? null : log.id)}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
+                        {/* Checkbox for selection */}
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(log.id)}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelection(log.id, e as unknown as React.MouseEvent);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-4 h-4 rounded border-border shrink-0"
+                        />
                         <div className="p-2 rounded-full bg-primary/10">
                           {getMessageTypeIcon(log.message_type)}
                         </div>
@@ -785,6 +894,29 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Batch Delete Confirmation Dialog */}
+      <AlertDialog open={batchDeleteDialogOpen} onOpenChange={setBatchDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir {selectedIds.size} registros</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir <strong>{selectedIds.size} registros</strong> do histórico? 
+              Esta ação não pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmBatchDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={batchDeleteMutation.isPending}
+            >
+              {batchDeleteMutation.isPending ? 'Excluindo...' : `Excluir ${selectedIds.size} registros`}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
