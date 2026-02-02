@@ -1,231 +1,197 @@
 
-# Plano: Bases de Dados de Leads
+
+# Plano: Editar e Compartilhar Bases de Leads
 
 ## Objetivo
-Criar um sistema que permite:
-1. Nomear e salvar listas de leads importadas como "bases de dados"
-2. Persistir essas bases no banco de dados
-3. Ao disparar mensagens, selecionar qual base de leads usar
+1. Permitir editar o nome e descricao de bases de leads existentes
+2. Compartilhar bases de leads com todas as instancias do usuario para disparo
 
-## Arquitetura
+## Arquitetura Atual
 
-### 1. Nova Tabela no Banco de Dados
+A tabela `lead_databases` ja possui campos `name` e `description`, e esta vinculada ao `user_id`. As instancias sao acessadas via tabela `user_instance_access` que vincula usuarios a instancias.
 
-Criar tabela `lead_databases` para armazenar as bases:
+Como cada usuario ja tem acesso a multiplas instancias (via `user_instance_access`), as bases de leads ja sao "compartilhadas" implicitamente - o usuario pode selecionar qualquer instancia que tem acesso para disparar. O fluxo atual permite isso:
+1. Selecionar instancia
+2. Selecionar base de leads (qualquer base do usuario)
+3. Disparar
 
-```sql
-CREATE TABLE lead_databases (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-  name text NOT NULL,
-  description text,
-  leads_count integer DEFAULT 0,
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
-
--- RLS: usuarios so veem suas proprias bases
-ALTER TABLE lead_databases ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage own lead databases" ON lead_databases
-  FOR ALL USING (auth.uid() = user_id);
-```
-
-Criar tabela `lead_database_entries` para armazenar os contatos:
-
-```sql
-CREATE TABLE lead_database_entries (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  database_id uuid NOT NULL REFERENCES lead_databases(id) ON DELETE CASCADE,
-  phone text NOT NULL,
-  name text,
-  jid text NOT NULL,
-  is_verified boolean DEFAULT false,
-  verified_name text,
-  verification_status text, -- 'valid', 'invalid', 'error', null
-  source text DEFAULT 'paste', -- 'paste', 'manual', 'group', 'csv'
-  group_name text,
-  created_at timestamptz DEFAULT now()
-);
-
--- Index para buscas
-CREATE INDEX idx_lead_entries_database ON lead_database_entries(database_id);
-
--- RLS via join com lead_databases
-ALTER TABLE lead_database_entries ENABLE ROW LEVEL SECURITY;
-CREATE POLICY "Users can manage entries via database ownership" ON lead_database_entries
-  FOR ALL USING (
-    EXISTS (
-      SELECT 1 FROM lead_databases 
-      WHERE lead_databases.id = lead_database_entries.database_id 
-      AND lead_databases.user_id = auth.uid()
-    )
-  );
-```
-
-### 2. Novo Fluxo do Usuario
-
-```text
-DISPARADOR DE LEADS
-     |
-     v
-Etapa 1: Selecionar Instancia
-     |
-     v
-Etapa 2: Escolher Base de Leads  <-- NOVA ETAPA
-     |
-     +---> [Criar Nova Base] --> Importar Contatos --> Dar Nome --> Salvar
-     |
-     +---> [Usar Base Existente] --> Carregar do Banco
-     |
-     v
-Etapa 3: Ver/Editar Leads + Verificar
-     |
-     v
-Etapa 4: Compor Mensagem e Enviar
-```
-
-### 3. Componentes a Criar/Modificar
-
-**Novo: `LeadDatabaseSelector.tsx`**
-- Lista bases existentes com nome, quantidade e data
-- Opcao de criar nova base
-- Opcao de deletar bases
-- Preview rapido dos primeiros contatos
-
-**Modificar: `LeadsBroadcaster.tsx`**
-- Adicionar nova etapa "database" entre "instance" e "import"
-- Adicionar estado `selectedDatabase` e `databaseName`
-- Ao importar leads, solicitar nome da base antes de salvar
-- Ao continuar para mensagem, salvar automaticamente a base
-
-**Modificar: `LeadImporter.tsx`**
-- Adicionar callback `onSaveDatabase` 
-- Apos importacao, permitir dar nome e salvar
-
-### 4. Estrutura de Dados Atualizada
-
-```typescript
-// Interface para base de dados
-interface LeadDatabase {
-  id: string;
-  name: string;
-  description?: string;
-  leads_count: number;
-  created_at: string;
-  updated_at: string;
-}
-
-// Interface Lead (existente) - sem mudancas
-interface Lead {
-  id: string;
-  phone: string;
-  name?: string;
-  jid: string;
-  source: 'manual' | 'paste' | 'group';
-  groupName?: string;
-  isVerified?: boolean;
-  verifiedName?: string;
-  verificationStatus?: 'pending' | 'valid' | 'invalid' | 'error';
-}
-```
-
-### 5. Mudancas Detalhadas por Arquivo
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/migrations/` | Criar tabelas lead_databases e lead_database_entries |
-| `src/components/broadcast/LeadDatabaseSelector.tsx` | **NOVO** - Componente para listar/criar/deletar bases |
-| `src/pages/dashboard/LeadsBroadcaster.tsx` | Adicionar etapa de selecao de base, logica de salvamento |
-| `src/components/broadcast/LeadImporter.tsx` | Input para nome da base ao salvar |
-| `src/integrations/supabase/types.ts` | Auto-gerado apos migration |
-
-### 6. UI do Seletor de Bases
-
-```text
-+--------------------------------------------------+
-| Bases de Leads                                   |
-+--------------------------------------------------+
-| [+ Criar Nova Base]                              |
-|                                                  |
-| +----------------------------------------------+ |
-| | Clientes VIP                    150 contatos | |
-| | Criada em 01/02/2026                    [...] | |
-| +----------------------------------------------+ |
-| | Leads Janeiro                    89 contatos | |
-| | Criada em 15/01/2026                    [...] | |
-| +----------------------------------------------+ |
-| | Promocao Verao                  320 contatos | |
-| | Criada em 10/01/2026                    [...] | |
-| +----------------------------------------------+ |
-+--------------------------------------------------+
-```
-
-### 7. Fluxo de Salvamento
-
-1. Usuario importa contatos (qualquer metodo)
-2. Sistema mostra modal/input pedindo nome da base
-3. Ao confirmar:
-   - Insere registro em `lead_databases`
-   - Insere todos os leads em `lead_database_entries`
-   - Atualiza `leads_count` na base
-4. Usuario pode continuar para envio ou voltar
-
-### 8. Funcionalidades Adicionais
-
-- **Editar base**: Adicionar/remover contatos de uma base existente
-- **Duplicar base**: Copiar base existente com novo nome
-- **Exportar base**: Download CSV dos contatos
-- **Historico**: Saber de qual base foi enviada cada campanha (opcional)
+Portanto, o "compartilhamento" ja funciona - o que precisamos e apenas adicionar a UI para editar nome/descricao.
 
 ---
 
-## Secao Tecnica
+## Mudancas Necessarias
 
-### Queries Principais
+### 1. Novo Componente: EditDatabaseDialog.tsx
 
-**Listar bases do usuario:**
+Criar dialog para editar nome e descricao de uma base existente:
+
 ```typescript
-const { data } = await supabase
-  .from('lead_databases')
-  .select('*')
-  .order('updated_at', { ascending: false });
+// src/components/broadcast/EditDatabaseDialog.tsx
+interface EditDatabaseDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  database: LeadDatabase | null;
+  onSave: (updated: LeadDatabase) => void;
+}
+
+const EditDatabaseDialog = ({ open, onOpenChange, database, onSave }) => {
+  const [name, setName] = useState(database?.name || '');
+  const [description, setDescription] = useState(database?.description || '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (database) {
+      setName(database.name);
+      setDescription(database.description || '');
+    }
+  }, [database]);
+
+  const handleSave = async () => {
+    if (!database || !name.trim()) return;
+    
+    setIsSaving(true);
+    const { data, error } = await supabase
+      .from('lead_databases')
+      .update({ name: name.trim(), description: description.trim() || null })
+      .eq('id', database.id)
+      .select()
+      .single();
+    
+    if (!error && data) {
+      onSave(data);
+      toast.success('Base atualizada');
+      onOpenChange(false);
+    }
+    setIsSaving(false);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Editar Base de Leads</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div>
+            <Label>Nome</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div>
+            <Label>Descricao (opcional)</Label>
+            <Textarea 
+              value={description} 
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Adicione uma descricao para esta base..."
+            />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancelar
+          </Button>
+          <Button onClick={handleSave} disabled={!name.trim() || isSaving}>
+            {isSaving ? <Loader2 className="animate-spin" /> : 'Salvar'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
 ```
 
-**Carregar leads de uma base:**
+### 2. Atualizar LeadDatabaseSelector.tsx
+
+Adicionar botao de edicao ao lado do botao de delete:
+
 ```typescript
-const { data } = await supabase
-  .from('lead_database_entries')
-  .select('*')
-  .eq('database_id', selectedDatabase.id);
+// Adicionar estado
+const [editTarget, setEditTarget] = useState<LeadDatabase | null>(null);
+
+// Adicionar botao de edicao na UI
+<Button
+  variant="ghost"
+  size="icon"
+  className="h-8 w-8 text-muted-foreground hover:text-primary"
+  onClick={(e) => {
+    e.stopPropagation();
+    setEditTarget(db);
+  }}
+>
+  <Pencil className="w-4 h-4" />
+</Button>
+
+// Adicionar handler de atualizacao
+const handleDatabaseUpdated = (updated: LeadDatabase) => {
+  setDatabases(prev => prev.map(d => d.id === updated.id ? updated : d));
+};
+
+// Renderizar dialog
+<EditDatabaseDialog
+  open={!!editTarget}
+  onOpenChange={(open) => !open && setEditTarget(null)}
+  database={editTarget}
+  onSave={handleDatabaseUpdated}
+/>
 ```
 
-**Salvar nova base com leads:**
-```typescript
-// 1. Criar base
-const { data: db } = await supabase
-  .from('lead_databases')
-  .insert({ name: databaseName, user_id: userId, leads_count: leads.length })
-  .select()
-  .single();
+### 3. UI Final do Card da Base
 
-// 2. Inserir leads
-const entries = leads.map(l => ({
-  database_id: db.id,
-  phone: l.phone,
-  name: l.name,
-  jid: l.jid,
-  source: l.source,
-  group_name: l.groupName,
-  is_verified: l.isVerified,
-  verified_name: l.verifiedName,
-  verification_status: l.verificationStatus,
-}));
-
-await supabase.from('lead_database_entries').insert(entries);
+```text
++----------------------------------------------+
+| [DB Icon] Clientes VIP           [Edit][Del] |
+|           150 contatos | 01 de fev, 2026     |
+|           Meus melhores clientes para...     |
++----------------------------------------------+
 ```
 
-### Consideracoes de Performance
+---
 
-- Para bases grandes (10k+ leads), usar paginacao na carga
-- Indices no database_id para queries rapidas
-- Considerar limite maximo de leads por base (ex: 50.000)
+## Resumo dos Arquivos
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/broadcast/EditDatabaseDialog.tsx` | **NOVO** - Dialog para editar nome e descricao |
+| `src/components/broadcast/LeadDatabaseSelector.tsx` | Adicionar botao de edicao e integrar dialog |
+
+---
+
+## Fluxo do Usuario
+
+```text
+1. Acessar Disparador de Leads
+         |
+         v
+2. Selecionar Instancia
+         |
+         v
+3. Ver lista de Bases de Leads
+         |
+         +---> Clicar no icone de edicao
+         |           |
+         |           v
+         |     Dialog abre com nome e descricao
+         |           |
+         |           v
+         |     Editar e salvar
+         |
+         v
+4. Selecionar base e continuar disparo
+   (pode usar qualquer instancia com acesso)
+```
+
+---
+
+## Nota sobre Compartilhamento
+
+O sistema ja permite que o usuario use qualquer uma de suas instancias com qualquer base de leads que criou. O fluxo atual:
+
+1. Usuario seleciona uma instancia (de todas que tem acesso)
+2. Usuario seleciona uma base de leads (de todas que criou)
+3. Usuario dispara usando a instancia escolhida
+
+Nao e necessaria nenhuma mudanca de banco de dados para "compartilhar" bases entre instancias, pois a arquitetura ja separa:
+- `lead_databases` vinculado ao `user_id` (nao a instancia)
+- O envio usa a instancia selecionada na etapa 1
+
+Se futuramente desejar compartilhar bases entre usuarios diferentes (nao apenas instancias do mesmo usuario), seria necessario criar uma tabela de permissoes como `lead_database_access`.
+
