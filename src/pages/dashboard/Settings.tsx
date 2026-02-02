@@ -21,7 +21,7 @@ const Settings = () => {
       </div>
 
       {/* System Info */}
-      <Card className="glass border-border/50">
+      <Card className="glass-card-hover">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="w-5 h-5" />
@@ -52,7 +52,7 @@ const Settings = () => {
       </Card>
 
       {/* Security */}
-      <Card className="glass border-border/50">
+      <Card className="glass-card-hover">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Shield className="w-5 h-5" />
@@ -80,7 +80,7 @@ const Settings = () => {
       </Card>
 
       {/* Database */}
-      <Card className="glass border-border/50">
+      <Card className="glass-card-hover">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Database className="w-5 h-5" />

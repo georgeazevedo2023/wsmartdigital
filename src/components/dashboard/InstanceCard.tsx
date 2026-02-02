@@ -60,7 +60,7 @@ const InstanceCard = ({
   const phoneNumber = instance.owner_jid?.split('@')[0];
 
   return (
-    <Card className="glass-card hover:border-primary/30 transition-all group">
+    <Card className="glass-card-hover group">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-center gap-3">
