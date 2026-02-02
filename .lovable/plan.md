@@ -1,145 +1,157 @@
 
 
-# Plano: Criar Seção "Leads" no Disparador
+# Plano: Adicionar Upload de Arquivo CSV
 
 ## Visao Geral
-Criar um novo subitem "Leads" dentro do menu "Disparador" que permite importar contatos de múltiplas formas e enviar mensagens diretamente para números individuais (não grupos).
+Adicionar uma nova aba "Arquivo CSV" ao componente `LeadImporter` para permitir que usuarios importem contatos diretamente de arquivos `.csv`.
 
-## Fluxo Proposto
-```text
-Instância > Importar Contatos > Mensagem
-    [1]          [2]             [3]
-```
+## Mudancas no Componente
 
-**Etapa 1 - Instância:** Selecionar a instância WhatsApp (reutilizar componente existente)
+### Arquivo: `src/components/broadcast/LeadImporter.tsx`
 
-**Etapa 2 - Importar Contatos:** Opções para:
-- Importar de CSV/Excel (colar lista de numeros)
-- Importar de grupos existentes (extrair membros)
-- Adicionar manualmente
+**1. Adicionar nova aba no TabsList**
 
-**Etapa 3 - Mensagem:** Compor e enviar (adaptar formulario existente para envio individual)
-
----
-
-## Estrutura de Arquivos
-
-### Novos Arquivos
-
-| Arquivo | Descricao |
-|---------|-----------|
-| `src/pages/dashboard/LeadsBroadcaster.tsx` | Pagina principal do fluxo de Leads |
-| `src/components/broadcast/LeadImporter.tsx` | Componente para importar/adicionar contatos |
-| `src/components/broadcast/LeadList.tsx` | Lista de contatos importados com selecao |
-| `src/components/broadcast/LeadMessageForm.tsx` | Formulario de mensagem adaptado para leads |
-
-### Arquivos a Modificar
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `src/components/dashboard/Sidebar.tsx` | Adicionar link "Leads" no submenu Disparador |
-| `src/App.tsx` | Adicionar rota `/dashboard/broadcast/leads` |
-
----
-
-## Detalhes Tecnicos
-
-### 1. Sidebar.tsx - Adicionar Link
-
-Adicionar dentro do `CollapsibleContent` do Disparador:
+Alterar de 3 para 4 colunas e adicionar a aba "Arquivo CSV":
 
 ```tsx
-<Link
-  to="/dashboard/broadcast/leads"
-  className={cn(
-    'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
-    isActive('/dashboard/broadcast/leads')
-      ? 'bg-primary/10 text-primary'
-      : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+<TabsList className="grid w-full grid-cols-4">
+  <TabsTrigger value="paste">...</TabsTrigger>
+  <TabsTrigger value="csv">
+    <FileSpreadsheet className="w-4 h-4" />
+    Arquivo CSV
+  </TabsTrigger>
+  <TabsTrigger value="groups">...</TabsTrigger>
+  <TabsTrigger value="manual">...</TabsTrigger>
+</TabsList>
+```
+
+**2. Adicionar estado para upload CSV**
+
+```tsx
+const [csvFile, setCsvFile] = useState<File | null>(null);
+const [isProcessingCsv, setIsProcessingCsv] = useState(false);
+```
+
+**3. Criar funcao de processamento CSV**
+
+```tsx
+const handleCsvUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  setCsvFile(file);
+};
+
+const processCsvFile = async () => {
+  if (!csvFile) return;
+  setIsProcessingCsv(true);
+
+  const text = await csvFile.text();
+  const lines = text.split(/\r?\n/).filter(line => line.trim());
+  
+  // Detectar delimitador (virgula, ponto-e-virgula, tab)
+  const delimiter = detectDelimiter(lines[0]);
+  
+  // Pular cabecalho se existir
+  const hasHeader = detectHeader(lines[0], delimiter);
+  const dataLines = hasHeader ? lines.slice(1) : lines;
+  
+  // Processar cada linha
+  const leads = parseCSVLines(dataLines, delimiter);
+  
+  onLeadsImported(leads);
+  setCsvFile(null);
+  setIsProcessingCsv(false);
+};
+```
+
+**4. Adicionar TabsContent para CSV**
+
+```tsx
+<TabsContent value="csv" className="space-y-4">
+  <div>
+    <Label>Arquivo CSV</Label>
+    <p className="text-xs text-muted-foreground mb-2">
+      O arquivo deve conter uma coluna com numeros de telefone.
+      Opcionalmente pode ter uma coluna com nomes.
+    </p>
+  </div>
+  
+  <div className="border-2 border-dashed rounded-lg p-6 text-center">
+    <input
+      type="file"
+      accept=".csv"
+      onChange={handleCsvUpload}
+      className="hidden"
+      id="csv-input"
+    />
+    <label htmlFor="csv-input" className="cursor-pointer">
+      <Upload className="w-8 h-8 mx-auto mb-2" />
+      <p>Clique para selecionar</p>
+      <p className="text-xs text-muted-foreground">ou arraste o arquivo</p>
+    </label>
+  </div>
+  
+  {csvFile && (
+    <div className="flex items-center justify-between">
+      <span>{csvFile.name}</span>
+      <Button onClick={processCsvFile} disabled={isProcessingCsv}>
+        {isProcessingCsv ? <Loader2 /> : <FileSpreadsheet />}
+        Importar
+      </Button>
+    </div>
   )}
->
-  <span>Leads</span>
-</Link>
+</TabsContent>
 ```
 
-### 2. App.tsx - Adicionar Rota
+## Logica de Parsing CSV
+
+### Deteccao Automatica de Delimitador
+
+O sistema detectara automaticamente o delimitador usado:
+- Virgula (`,`)
+- Ponto-e-virgula (`;`)
+- Tab (`\t`)
+
+### Deteccao de Cabecalho
+
+Verifica se a primeira linha contem palavras como "nome", "telefone", "phone", "name", "numero" para identificar cabecalho.
+
+### Mapeamento de Colunas
+
+O sistema buscara automaticamente:
+1. **Coluna de telefone**: Busca por numeros com 10+ digitos
+2. **Coluna de nome**: Primeira coluna que nao e telefone
+
+### Formatos de CSV Suportados
+
+| Formato | Exemplo |
+|---------|---------|
+| Apenas numeros | `11999998888` |
+| Nome e telefone | `Joao Silva,11999998888` |
+| Telefone e nome | `11999998888,Joao Silva` |
+| Com cabecalho | `nome;telefone\nJoao;11999998888` |
+
+## Novo Icone
+
+Adicionar import do icone `FileSpreadsheet` e `Upload` do lucide-react:
 
 ```tsx
-import LeadsBroadcaster from "./pages/dashboard/LeadsBroadcaster";
-// ...
-<Route path="broadcast/leads" element={<LeadsBroadcaster />} />
+import { FileSpreadsheet, Upload } from 'lucide-react';
 ```
 
-### 3. LeadsBroadcaster.tsx - Pagina Principal
+## Resumo das Mudancas
 
-Estrutura similar ao `Broadcaster.tsx`:
-- State para step: 'instance' | 'import' | 'message'
-- State para leads selecionados
-- Progress bar de 3 etapas
-- Navegacao entre etapas
-
-### 4. LeadImporter.tsx - Importacao de Contatos
-
-Tabs para diferentes metodos de importacao:
-- **Colar Lista**: Textarea para colar numeros (um por linha ou separados por virgula)
-- **De Grupos**: Buscar grupos e extrair membros (reutilizar logica do GroupSelector)
-- **Manual**: Input para adicionar numeros individualmente
-
-Interface do Lead:
-```tsx
-interface Lead {
-  id: string;
-  phone: string;        // Numero formatado
-  name?: string;        // Nome opcional
-  jid: string;          // JID para envio (phone@s.whatsapp.net)
-  source: 'manual' | 'paste' | 'group';
-  groupName?: string;   // Se veio de um grupo
-}
-```
-
-### 5. LeadList.tsx - Lista de Contatos
-
-- Exibir contatos importados com checkbox
-- Busca por nome/numero
-- Selecionar todos/limpar
-- Contador de selecionados
-- Deduplicacao automatica por numero
-
-### 6. LeadMessageForm.tsx - Envio de Mensagens
-
-Adaptar `BroadcastMessageForm.tsx` para:
-- Enviar para numeros individuais (JID `@s.whatsapp.net`)
-- Usar endpoint de mensagem direta (nao grupo)
-- Manter funcionalidades: texto, midia, delay aleatorio
-- Salvar logs no `broadcast_logs` (identificar como envio de leads)
-
----
-
-## Diagrama do Fluxo
-
-```text
-+------------------+     +------------------+     +------------------+
-|   1. Instância   | --> |  2. Importar     | --> |  3. Mensagem     |
-|                  |     |     Contatos     |     |                  |
-| [InstanceSelector]|    | - Colar lista    |     | - Texto          |
-| (reutilizado)    |     | - De grupos      |     | - Mídia          |
-|                  |     | - Manual         |     | - Preview        |
-+------------------+     +------------------+     +------------------+
-```
-
----
-
-## Consideracoes
-
-1. **API UAZAPI**: Verificar se o endpoint de envio para numeros individuais e diferente do envio para grupos. Provavelmente usa `send-message` com JID de numero ao inves de grupo.
-
-2. **Formatacao de Numero**: Converter numeros brasileiros para formato JID:
-   - Input: `11999998888` ou `+55 11 99999-8888`
-   - JID: `5511999998888@s.whatsapp.net`
-
-3. **Deduplicacao**: Ao importar de multiplas fontes, remover numeros duplicados automaticamente.
-
-4. **Anti-Spam**: Manter o delay aleatorio para evitar bloqueios do WhatsApp.
-
-5. **Logs**: Registrar envios de leads separadamente ou com flag especial no `broadcast_logs`.
+1. Adicionar import de icones `FileSpreadsheet` e `Upload`
+2. Adicionar estados `csvFile` e `isProcessingCsv`
+3. Alterar TabsList de 3 para 4 colunas
+4. Adicionar nova TabsTrigger para "csv"
+5. Adicionar nova TabsContent com:
+   - Input de arquivo (drag & drop visual)
+   - Preview do arquivo selecionado
+   - Botao de importacao
+6. Implementar funcoes auxiliares:
+   - `detectDelimiter()` - detecta `,` `;` ou `\t`
+   - `detectHeader()` - verifica se primeira linha e cabecalho
+   - `parseCsvLine()` - processa linha CSV respeitando aspas
+   - `processCsvFile()` - orquestra o processamento
 
