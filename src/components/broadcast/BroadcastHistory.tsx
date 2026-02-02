@@ -33,10 +33,14 @@ import {
   X,
   Calendar,
   Eye,
-  Play
+  Play,
+  LayoutGrid
 } from 'lucide-react';
-import { format, formatDistanceToNow, isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
+import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+import { HistoryCarouselPreview, HistoryCarouselData } from './HistoryCarouselPreview';
+import type { Json } from '@/integrations/supabase/types';
 
 interface BroadcastLog {
   id: string;
@@ -58,6 +62,7 @@ interface BroadcastLog {
   error_message: string | null;
   created_at: string;
   group_names: string[] | null;
+  carousel_data: Json | null;
 }
 
 interface BroadcastHistoryProps {
@@ -65,7 +70,7 @@ interface BroadcastHistoryProps {
 }
 
 type StatusFilter = 'all' | 'completed' | 'cancelled' | 'error';
-type MessageTypeFilter = 'all' | 'text' | 'image' | 'video' | 'audio' | 'document';
+type MessageTypeFilter = 'all' | 'text' | 'image' | 'video' | 'audio' | 'document' | 'carousel';
 
 // WhatsApp formatting parser (same logic as MessagePreview)
 const formatWhatsAppText = (text: string): React.ReactNode => {
@@ -145,17 +150,24 @@ const formatWhatsAppText = (text: string): React.ReactNode => {
 const HistoryMessagePreview = ({ 
   type, 
   content, 
-  mediaUrl 
+  mediaUrl,
+  carouselData
 }: { 
   type: string; 
   content: string | null; 
   mediaUrl: string | null;
+  carouselData?: HistoryCarouselData | null;
 }) => {
   const isImage = type === 'image';
   const isVideo = type === 'video';
   const isAudio = type === 'audio' || type === 'ptt';
   const isDocument = type === 'document' || type === 'file';
-  const hasMedia = isImage || isVideo || isAudio || isDocument;
+  const isCarousel = type === 'carousel';
+
+  // Render carousel preview
+  if (isCarousel && carouselData) {
+    return <HistoryCarouselPreview data={carouselData} />;
+  }
 
   return (
     <div className="bg-muted/30 rounded-lg p-3">
@@ -363,6 +375,8 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
         return <Mic className="w-4 h-4" />;
       case 'document':
         return <FileIcon className="w-4 h-4" />;
+      case 'carousel':
+        return <LayoutGrid className="w-4 h-4" />;
       default:
         return <MessageSquare className="w-4 h-4" />;
     }
@@ -379,6 +393,8 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
         return 'Áudio';
       case 'document':
         return 'Documento';
+      case 'carousel':
+        return 'Carrossel';
       default:
         return 'Texto';
     }
@@ -457,6 +473,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                 <SelectItem value="video">Vídeo</SelectItem>
                 <SelectItem value="audio">Áudio</SelectItem>
                 <SelectItem value="document">Documento</SelectItem>
+                <SelectItem value="carousel">Carrossel</SelectItem>
               </SelectContent>
             </Select>
 
@@ -604,25 +621,31 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                         )}
 
                         {/* Message Preview */}
-                        {(log.content || log.media_url) && (
+                        {(log.content || log.media_url || log.carousel_data) && (
                           <HistoryMessagePreview 
                             type={log.message_type}
                             content={log.content}
                             mediaUrl={log.media_url}
+                            carouselData={log.carousel_data as unknown as HistoryCarouselData | null}
                           />
                         )}
 
-                        {/* Stats Grid */}
-                        <div className="grid grid-cols-2 gap-4 text-sm">
+                        {/* Stats Grid - Dates */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <Clock className="w-4 h-4" />
+                            <Play className="w-4 h-4 text-green-500" />
                             <span>
-                              {formatDistanceToNow(new Date(log.created_at), { 
-                                addSuffix: true, 
-                                locale: ptBR 
-                              })}
+                              Início: {format(new Date(log.started_at), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
                             </span>
                           </div>
+                          {log.completed_at && (
+                            <div className="flex items-center gap-2 text-muted-foreground">
+                              <CheckCircle2 className="w-4 h-4 text-primary" />
+                              <span>
+                                Fim: {format(new Date(log.completed_at), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 text-muted-foreground">
                             <Timer className="w-4 h-4" />
                             <span>Duração: {formatDuration(log.duration_seconds)}</span>
@@ -633,17 +656,20 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                               {log.exclude_admins ? 'Excluindo admins' : 'Todos os membros'}
                             </span>
                           </div>
+                        </div>
+
+                        {/* Recipients Stats */}
+                        <div className="flex items-center gap-3 text-sm">
                           <div className="flex items-center gap-2">
                             <CheckCircle2 className="w-4 h-4 text-green-500" />
                             <span className="text-green-600">{log.recipients_success} sucesso</span>
-                            {log.recipients_failed > 0 && (
-                              <>
-                                <span className="text-muted-foreground mx-1">•</span>
-                                <XCircle className="w-4 h-4 text-red-500" />
-                                <span className="text-red-600">{log.recipients_failed} falha</span>
-                              </>
-                            )}
                           </div>
+                          {log.recipients_failed > 0 && (
+                            <div className="flex items-center gap-2">
+                              <XCircle className="w-4 h-4 text-red-500" />
+                              <span className="text-red-600">{log.recipients_failed} falha</span>
+                            </div>
+                          )}
                         </div>
 
                         {log.error_message && (
@@ -652,10 +678,6 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                             <p>{log.error_message}</p>
                           </div>
                         )}
-
-                        <div className="text-xs text-muted-foreground">
-                          {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
-                        </div>
 
                         {/* Resend Button */}
                         {onResend && (

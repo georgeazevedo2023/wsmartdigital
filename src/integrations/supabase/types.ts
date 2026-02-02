@@ -16,6 +16,7 @@ export type Database = {
     Tables: {
       broadcast_logs: {
         Row: {
+          carousel_data: Json | null
           completed_at: string | null
           content: string | null
           created_at: string
@@ -38,6 +39,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          carousel_data?: Json | null
           completed_at?: string | null
           content?: string | null
           created_at?: string
@@ -60,6 +62,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          carousel_data?: Json | null
           completed_at?: string | null
           content?: string | null
           created_at?: string

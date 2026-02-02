@@ -249,6 +249,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
     startedAt: number;
     errorMessage?: string;
     groupNames?: string[];
+    carouselData?: CarouselData | null;
   }) => {
     try {
       const session = await supabase.auth.getSession();
@@ -256,6 +257,25 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
 
       const completedAt = Date.now();
       const durationSeconds = Math.floor((completedAt - params.startedAt) / 1000);
+
+      // Prepare carousel data for storage (remove File objects)
+      let storedCarouselData = null;
+      if (params.carouselData) {
+        storedCarouselData = {
+          message: params.carouselData.message,
+          cards: params.carouselData.cards.map(card => ({
+            id: card.id,
+            text: card.text,
+            image: card.image || '', // Only store URL, not File
+            buttons: card.buttons.map(btn => ({
+              id: btn.id,
+              type: btn.type,
+              label: btn.label,
+              value: btn.url || btn.phone || '',
+            })),
+          })),
+        };
+      }
 
       await supabase.from('broadcast_logs').insert({
         user_id: session.data.session.user.id,
@@ -276,6 +296,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
         duration_seconds: durationSeconds,
         error_message: params.errorMessage || null,
         group_names: params.groupNames || selectedGroups.map(g => g.name),
+        carousel_data: storedCarouselData,
       });
     } catch (err) {
       console.error('Error saving broadcast log:', err);
@@ -1112,6 +1133,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsFailed: failedCount,
               status: 'cancelled',
               startedAt: progress.startedAt || Date.now(),
+              carouselData: carouselData,
             });
             return;
           }
@@ -1134,6 +1156,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsFailed: failedCount,
               status: 'cancelled',
               startedAt: progress.startedAt || Date.now(),
+              carouselData: carouselData,
             });
             return;
           }
@@ -1178,6 +1201,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           recipientsFailed: failCount,
           status: 'completed',
           startedAt: progress.startedAt || Date.now(),
+          carouselData: carouselData,
         });
 
         if (failCount > 0) {
@@ -1215,6 +1239,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsFailed: failedCount,
               status: 'cancelled',
               startedAt: progress.startedAt || Date.now(),
+              carouselData: carouselData,
             });
             return;
           }
@@ -1237,6 +1262,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsFailed: failedCount,
               status: 'cancelled',
               startedAt: progress.startedAt || Date.now(),
+              carouselData: carouselData,
             });
             return;
           }
@@ -1285,6 +1311,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           recipientsFailed: failCount,
           status: 'completed',
           startedAt: progress.startedAt || Date.now(),
+          carouselData: carouselData,
         });
 
         if (failCount > 0) {
