@@ -4,14 +4,19 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
-import { Users, Search, CheckCircle2, XCircle } from 'lucide-react';
-import type { Group } from './GroupSelector';
+import { Badge } from '@/components/ui/badge';
+import { Users, Search, CheckCircle2, XCircle, AlertTriangle, Loader2, Phone } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
+import type { Group, Participant } from './GroupSelector';
+import type { Instance } from './InstanceSelector';
 
 interface ParticipantInfo {
   jid: string;
   displayName: string;
   pushName?: string;
   groupName: string;
+  isLidOnly: boolean;  // Indica se só tem LID (sem PhoneNumber real)
 }
 
 interface ParticipantSelectorProps {
@@ -19,27 +24,33 @@ interface ParticipantSelectorProps {
   selectedParticipants: Set<string>;
   onSelectionChange: (selected: Set<string>) => void;
   disabled?: boolean;
+  instance?: Instance;  // Para buscar números de LIDs
+  onParticipantsUpdated?: (groups: Group[]) => void;  // Callback para atualizar grupos com novos dados
 }
 
 // Formata para DDI + DDD + NUMERO (ex: 55 11 999999999)
-// Números brasileiros (55) têm formato específico, outros mantêm formato genérico
+// Só formata se vier com 55 (Brasil), outros mantêm apenas dígitos
 const formatPhoneNumber = (value: string): string => {
+  // Limpa tudo exceto dígitos
   const number = value.split('@')[0].replace(/\D/g, '');
-  if (!number || number.length < 10) return value;
+  if (!number || number.length < 10) return number || value;
   
-  // Verifica se é número brasileiro (começa com 55 e tem 12-13 dígitos)
-  const isBrazilian = number.startsWith('55') && number.length >= 12 && number.length <= 13;
-  
-  if (isBrazilian) {
-    // Formato brasileiro: 55 XX XXXXXXXXX
+  // Só formata se começar com 55 (Brasil) e tiver tamanho correto
+  if (number.startsWith('55') && number.length >= 12 && number.length <= 13) {
     const ddi = number.slice(0, 2); // 55
     const ddd = number.slice(2, 4); // DDD
     const numero = number.slice(4); // Número
     return `${ddi} ${ddd} ${numero}`;
   }
   
-  // Para números internacionais, exibe o número completo sem formatação específica
+  // Para outros números, retorna apenas os dígitos (sem formatação)
   return number;
+};
+
+// Verifica se o participante só tem LID (sem PhoneNumber real)
+const isLidOnlyJid = (jid: string, phoneNumber?: string): boolean => {
+  if (phoneNumber) return false;
+  return jid.includes('@lid') || (!jid.includes('@s.whatsapp.net') && !jid.includes('@g.us'));
 };
 
 const ParticipantSelector = ({
@@ -47,8 +58,11 @@ const ParticipantSelector = ({
   selectedParticipants,
   onSelectionChange,
   disabled = false,
+  instance,
+  onParticipantsUpdated,
 }: ParticipantSelectorProps) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [resolvingLids, setResolvingLids] = useState(false);
 
   // Obtém membros únicos (não-admin, não-superadmin) com metadados
   const uniqueParticipants = useMemo((): ParticipantInfo[] => {
@@ -63,15 +77,17 @@ const ParticipantSelector = ({
         if (!seenJids.has(member.jid)) {
           seenJids.add(member.jid);
           
-          // Usa jid como fonte principal (sempre limpo), phoneNumber como fallback
-          // O jid está no formato "5581999999999@s.whatsapp.net" - mais confiável
-          const rawNumber = member.jid || member.phoneNumber || '';
+          // Prioriza phoneNumber quando disponível, senão usa jid
+          const hasPhoneNumber = !!member.phoneNumber;
+          const rawNumber = member.phoneNumber || member.jid || '';
+          const isLid = isLidOnlyJid(member.jid, member.phoneNumber);
           
           participants.push({
             jid: member.jid,
-            displayName: formatPhoneNumber(rawNumber),
+            displayName: hasPhoneNumber ? formatPhoneNumber(rawNumber) : (isLid ? '[Sem número]' : formatPhoneNumber(rawNumber)),
             pushName: member.name,
             groupName: group.name,
+            isLidOnly: isLid,
           });
         }
       }
@@ -122,6 +138,92 @@ const ParticipantSelector = ({
     uniqueParticipants.every((p) => selectedParticipants.has(p.jid));
   const noneSelected = selectedParticipants.size === 0;
 
+  // Conta quantos participantes são LID-only
+  const lidOnlyCount = useMemo(() => 
+    uniqueParticipants.filter(p => p.isLidOnly).length, 
+    [uniqueParticipants]
+  );
+
+  // Função para buscar PhoneNumbers de LIDs
+  const handleResolveLids = async () => {
+    if (!instance || !onParticipantsUpdated) {
+      toast.error('Instância não configurada');
+      return;
+    }
+
+    const lids = uniqueParticipants
+      .filter(p => p.isLidOnly)
+      .map(p => p.jid);
+
+    if (lids.length === 0) {
+      toast.info('Nenhum LID para resolver');
+      return;
+    }
+
+    setResolvingLids(true);
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) {
+        toast.error('Sessão expirada');
+        return;
+      }
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session.data.session.access_token}`,
+          },
+          body: JSON.stringify({
+            action: 'resolve-lids',
+            token: instance.token,
+            lids: lids,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Erro ao buscar números');
+      }
+
+      const data = await response.json();
+      const resolved = data.resolved || {};
+
+      // Atualiza os grupos com os números resolvidos
+      const updatedGroups = selectedGroups.map(group => ({
+        ...group,
+        participants: group.participants.map(p => {
+          const lidKey = p.jid.split('@')[0];
+          const resolvedData = resolved[lidKey];
+          if (resolvedData && resolvedData.phone) {
+            return {
+              ...p,
+              jid: `${resolvedData.phone}@s.whatsapp.net`,
+              phoneNumber: `${resolvedData.phone}@s.whatsapp.net`,
+              name: resolvedData.name || p.name,
+            };
+          }
+          return p;
+        }),
+      }));
+
+      const resolvedCount = Object.keys(resolved).length;
+      if (resolvedCount > 0) {
+        toast.success(`${resolvedCount} número(s) encontrado(s)`);
+        onParticipantsUpdated(updatedGroups);
+      } else {
+        toast.info('Nenhum número encontrado para os LIDs');
+      }
+    } catch (error) {
+      console.error('Error resolving LIDs:', error);
+      toast.error('Erro ao buscar números');
+    } finally {
+      setResolvingLids(false);
+    }
+  };
+
   if (uniqueParticipants.length === 0) {
     return (
       <div className="p-4 bg-muted/50 rounded-lg border border-border/50 text-center text-muted-foreground">
@@ -134,15 +236,53 @@ const ParticipantSelector = ({
   return (
     <div className="space-y-3 p-4 bg-muted/50 rounded-lg border border-border/50">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Users className="w-4 h-4 text-muted-foreground" />
           <Label className="text-sm font-medium">Participantes para envio</Label>
         </div>
-        <span className="text-xs text-muted-foreground">
-          {selectedParticipants.size} de {uniqueParticipants.length} selecionado(s)
-        </span>
+        <div className="flex items-center gap-2">
+          {lidOnlyCount > 0 && (
+            <Badge variant="outline" className="text-warning border-warning/50 gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              {lidOnlyCount} sem número
+            </Badge>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {selectedParticipants.size} de {uniqueParticipants.length} selecionado(s)
+          </span>
+        </div>
       </div>
+
+      {/* LID Warning Banner */}
+      {lidOnlyCount > 0 && instance && onParticipantsUpdated && (
+        <div className="flex items-center justify-between p-2 bg-warning/10 border border-warning/20 rounded-md">
+          <div className="flex items-center gap-2 text-sm text-warning-foreground">
+            <AlertTriangle className="w-4 h-4 text-warning" />
+            <span>{lidOnlyCount} participante(s) sem número identificado</span>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleResolveLids}
+            disabled={disabled || resolvingLids}
+            className="shrink-0"
+          >
+            {resolvingLids ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                Buscando...
+              </>
+            ) : (
+              <>
+                <Phone className="w-3.5 h-3.5 mr-1" />
+                Buscar números
+              </>
+            )}
+          </Button>
+        </div>
+      )}
 
       {/* Search and Actions */}
       <div className="flex gap-2">
@@ -205,14 +345,30 @@ const ParticipantSelector = ({
                 <div className="flex-1 min-w-0">
                   {participant.pushName ? (
                     <>
-                      <p className="text-sm font-medium truncate">{participant.pushName}</p>
-                      <p className="text-xs text-muted-foreground truncate">
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium truncate">{participant.pushName}</p>
+                        {participant.isLidOnly && (
+                          <Badge variant="outline" className="text-warning border-warning/50 text-[10px] px-1 py-0">
+                            LID
+                          </Badge>
+                        )}
+                      </div>
+                      <p className={`text-xs truncate ${participant.isLidOnly ? 'text-warning/70' : 'text-muted-foreground'}`}>
                         {participant.displayName} • {participant.groupName}
                       </p>
                     </>
                   ) : (
                     <>
-                      <p className="text-sm font-medium truncate">{participant.displayName}</p>
+                      <div className="flex items-center gap-2">
+                        <p className={`text-sm font-medium truncate ${participant.isLidOnly ? 'text-warning' : ''}`}>
+                          {participant.displayName}
+                        </p>
+                        {participant.isLidOnly && (
+                          <Badge variant="outline" className="text-warning border-warning/50 text-[10px] px-1 py-0">
+                            LID
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-muted-foreground truncate">
                         {participant.groupName}
                       </p>

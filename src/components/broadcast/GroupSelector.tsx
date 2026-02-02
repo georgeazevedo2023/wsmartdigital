@@ -92,13 +92,22 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
           name: g.Name || g.name || g.Subject || g.Topic || g.subject || 'Grupo sem nome',
           size: rawParticipants.length || g.ParticipantCount || 0,
           pictureUrl: g.profilePicUrl || g.pictureUrl || g.PictureUrl,
-          participants: rawParticipants.map((p: any) => ({
-            jid: p.JID || p.jid || p.id || '',
-            isAdmin: p.IsAdmin || p.isAdmin || false,
-            isSuperAdmin: p.IsSuperAdmin || p.isSuperAdmin || false,
-            name: p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined,
-            phoneNumber: p.PhoneNumber || p.phoneNumber || undefined,
-          })),
+          participants: rawParticipants.map((p: any) => {
+            // PhoneNumber é o número real, JID pode ser LID interno do WhatsApp
+            const phoneNumber = p.PhoneNumber || p.phoneNumber || '';
+            const jid = p.JID || p.jid || p.id || '';
+            
+            return {
+              // Prioriza PhoneNumber como identificador principal (quando disponível)
+              jid: phoneNumber || jid,
+              phoneNumber: phoneNumber || undefined,
+              isAdmin: p.IsAdmin || p.isAdmin || false,
+              isSuperAdmin: p.IsSuperAdmin || p.isSuperAdmin || false,
+              name: p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined,
+              // Guarda o JID original para casos onde só temos LID
+              originalJid: jid,
+            };
+          }),
         };
       });
 
