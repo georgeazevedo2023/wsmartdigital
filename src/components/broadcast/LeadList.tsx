@@ -5,7 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Search, CheckSquare, Square, User, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
+import { Search, CheckSquare, Square, User, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
 
 interface LeadListProps {
@@ -14,9 +14,12 @@ interface LeadListProps {
   onSelectionChange: (selected: Set<string>) => void;
 }
 
+const ITEMS_PER_PAGE = 50;
+
 const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'invalid' | 'pending'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const filteredLeads = useMemo(() => {
     let result = leads;
@@ -44,6 +47,18 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
     return result;
   }, [leads, search, statusFilter]);
 
+  // Pagination
+  const totalPages = Math.ceil(filteredLeads.length / ITEMS_PER_PAGE);
+  const paginatedLeads = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE;
+    return filteredLeads.slice(start, start + ITEMS_PER_PAGE);
+  }, [filteredLeads, currentPage]);
+
+  // Reset to page 1 when filters change
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
   const handleToggle = (leadId: string) => {
     const newSelection = new Set(selectedLeads);
     if (newSelection.has(leadId)) {
@@ -65,6 +80,7 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
 
   const allSelected = filteredLeads.length > 0 && filteredLeads.every(l => selectedLeads.has(l.id));
   const hasVerifiedLeads = leads.some(l => l.verificationStatus);
+  const showPagination = filteredLeads.length > ITEMS_PER_PAGE;
 
   const getVerificationBadge = (lead: Lead) => {
     switch (lead.verificationStatus) {
@@ -172,7 +188,7 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
       {/* Lead list */}
       <ScrollArea className="h-64 border rounded-lg">
         <div className="p-2 space-y-1">
-          {filteredLeads.map(lead => (
+          {paginatedLeads.map(lead => (
             <div
               key={lead.id}
               className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors ${
@@ -217,6 +233,60 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
           )}
         </div>
       </ScrollArea>
+
+      {/* Pagination */}
+      {showPagination && (
+        <div className="flex items-center justify-between pt-2 border-t">
+          <p className="text-xs text-muted-foreground">
+            Mostrando {((currentPage - 1) * ITEMS_PER_PAGE) + 1}-{Math.min(currentPage * ITEMS_PER_PAGE, filteredLeads.length)} de {filteredLeads.length}
+          </p>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+            >
+              <ChevronLeft className="w-4 h-4" />
+            </Button>
+            <div className="flex items-center gap-1 px-2">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5) {
+                  pageNum = i + 1;
+                } else if (currentPage <= 3) {
+                  pageNum = i + 1;
+                } else if (currentPage >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = currentPage - 2 + i;
+                }
+                return (
+                  <Button
+                    key={pageNum}
+                    variant={currentPage === pageNum ? "default" : "ghost"}
+                    size="sm"
+                    className="h-8 w-8 p-0"
+                    onClick={() => setCurrentPage(pageNum)}
+                  >
+                    {pageNum}
+                  </Button>
+                );
+              })}
+            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+            >
+              <ChevronRight className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
