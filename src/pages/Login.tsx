@@ -4,9 +4,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { MessageSquare, Loader2 } from 'lucide-react';
+import { Phone, Mail, Lock, User, ArrowRight, Loader2, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Login = () => {
@@ -59,39 +58,39 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-primary/5 rounded-full blur-3xl" />
-      </div>
-
+    <div className="min-h-screen flex items-center justify-center bg-aurora p-4">
       <div className="w-full max-w-md relative animate-fade-in">
         {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 mb-4">
-            <MessageSquare className="w-8 h-8 text-primary" />
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary to-emerald-600 mb-4 shadow-lg shadow-primary/25">
+            <Phone className="w-8 h-8 text-primary-foreground" />
           </div>
           <h1 className="text-3xl font-display font-bold text-gradient">WsmartQR</h1>
-          <p className="text-muted-foreground mt-2">Plataforma Multi-Tenant de Gestão WhatsApp</p>
+          <p className="text-muted-foreground mt-2">Conecte-se ao futuro da comunicação</p>
         </div>
 
-        <Card className="glass border-border/50">
-          <CardHeader className="text-center pb-4">
-            <CardTitle className="text-xl">Bem-vindo</CardTitle>
-            <CardDescription>Entre ou crie sua conta para continuar</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Tabs defaultValue="login" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 mb-6">
-                <TabsTrigger value="login">Entrar</TabsTrigger>
-                <TabsTrigger value="signup">Criar Conta</TabsTrigger>
-              </TabsList>
+        <div className="glass-card p-6">
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-semibold text-foreground">Bem-vindo</h2>
+            <p className="text-sm text-muted-foreground mt-1">Entre ou crie sua conta para continuar</p>
+          </div>
 
-              <TabsContent value="login">
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="login-email">Email</Label>
+          <Tabs defaultValue="login" className="w-full">
+            <TabsList className="grid w-full grid-cols-2 mb-6 bg-slate-800/50">
+              <TabsTrigger value="login" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                Entrar
+              </TabsTrigger>
+              <TabsTrigger value="signup" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                Criar Conta
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="login">
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="login-email" className="text-foreground">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="login-email"
                       type="email"
@@ -100,10 +99,14 @@ const Login = () => {
                       onChange={(e) => setLoginEmail(e.target.value)}
                       required
                       disabled={isLoading}
+                      className="input-with-icon"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="login-password">Senha</Label>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="login-password" className="text-foreground">Senha</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="login-password"
                       type="password"
@@ -112,25 +115,32 @@ const Login = () => {
                       onChange={(e) => setLoginPassword(e.target.value)}
                       required
                       disabled={isLoading}
+                      className="input-with-icon"
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Entrando...
-                      </>
-                    ) : (
-                      'Entrar'
-                    )}
-                  </Button>
-                </form>
-              </TabsContent>
+                </div>
+                <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Entrando...
+                    </>
+                  ) : (
+                    <>
+                      Entrar
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
 
-              <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-name">Nome completo</Label>
+            <TabsContent value="signup">
+              <form onSubmit={handleSignup} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="signup-name" className="text-foreground">Nome completo</Label>
+                  <div className="relative">
+                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="signup-name"
                       type="text"
@@ -139,10 +149,14 @@ const Login = () => {
                       onChange={(e) => setSignupName(e.target.value)}
                       required
                       disabled={isLoading}
+                      className="input-with-icon"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-email" className="text-foreground">Email</Label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="signup-email"
                       type="email"
@@ -151,10 +165,14 @@ const Login = () => {
                       onChange={(e) => setSignupEmail(e.target.value)}
                       required
                       disabled={isLoading}
+                      className="input-with-icon"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Senha</Label>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="signup-password" className="text-foreground">Senha</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                     <Input
                       id="signup-password"
                       type="password"
@@ -164,23 +182,33 @@ const Login = () => {
                       required
                       minLength={6}
                       disabled={isLoading}
+                      className="input-with-icon"
                     />
                   </div>
-                  <Button type="submit" className="w-full" disabled={isLoading}>
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Criando conta...
-                      </>
-                    ) : (
-                      'Criar Conta'
-                    )}
-                  </Button>
-                </form>
-              </TabsContent>
-            </Tabs>
-          </CardContent>
-        </Card>
+                </div>
+                <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Criando conta...
+                    </>
+                  ) : (
+                    <>
+                      Criar Conta
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </>
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+          </Tabs>
+
+          {/* Security badge */}
+          <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-slate-700/50">
+            <Shield className="w-4 h-4 text-primary" />
+            <span className="text-sm text-muted-foreground">Conexão segura</span>
+          </div>
+        </div>
 
         <p className="text-center text-sm text-muted-foreground mt-6">
           Ao continuar, você concorda com nossos Termos de Serviço
