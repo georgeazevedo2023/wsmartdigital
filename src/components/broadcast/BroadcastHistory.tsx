@@ -253,6 +253,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<MessageTypeFilter>('all');
+  const [instanceFilter, setInstanceFilter] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -360,6 +361,18 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
     setSelectedIds(new Set());
   };
 
+  // Get unique instances for the filter dropdown
+  const uniqueInstances = useMemo(() => {
+    if (!logs) return [];
+    const instanceMap = new Map<string, string>();
+    logs.forEach(log => {
+      if (log.instance_id && !instanceMap.has(log.instance_id)) {
+        instanceMap.set(log.instance_id, log.instance_name || log.instance_id);
+      }
+    });
+    return Array.from(instanceMap.entries()).map(([id, name]) => ({ id, name }));
+  }, [logs]);
+
   const filteredLogs = useMemo(() => {
     if (!logs) return [];
 
@@ -371,6 +384,11 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
       // Message type filter
       if (typeFilter !== 'all' && log.message_type !== typeFilter) {
+        return false;
+      }
+
+      // Instance filter
+      if (instanceFilter !== 'all' && log.instance_id !== instanceFilter) {
         return false;
       }
 
@@ -407,13 +425,14 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
       return true;
     });
-  }, [logs, statusFilter, typeFilter, dateFrom, dateTo, searchQuery]);
+  }, [logs, statusFilter, typeFilter, instanceFilter, dateFrom, dateTo, searchQuery]);
 
-  const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || dateFrom || dateTo || searchQuery;
+  const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || instanceFilter !== 'all' || dateFrom || dateTo || searchQuery;
 
   const clearFilters = () => {
     setStatusFilter('all');
     setTypeFilter('all');
+    setInstanceFilter('all');
     setDateFrom('');
     setDateTo('');
     setSearchQuery('');
@@ -575,6 +594,20 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                 <SelectItem value="audio">Áudio</SelectItem>
                 <SelectItem value="document">Documento</SelectItem>
                 <SelectItem value="carousel">Carrossel</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={instanceFilter} onValueChange={(v) => setInstanceFilter(v)}>
+              <SelectTrigger className="w-[180px] h-8 text-sm">
+                <SelectValue placeholder="Instância" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todas instâncias</SelectItem>
+                {uniqueInstances.map((instance) => (
+                  <SelectItem key={instance.id} value={instance.id}>
+                    {instance.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
 
