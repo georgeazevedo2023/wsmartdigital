@@ -138,7 +138,7 @@ const InstanceDetails = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-10" />
           <Skeleton className="h-8 w-48" />
@@ -170,7 +170,7 @@ const InstanceDetails = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
       {/* Header com botão voltar */}
       <Button
         variant="ghost"

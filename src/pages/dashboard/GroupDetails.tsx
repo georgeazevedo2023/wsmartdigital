@@ -178,7 +178,7 @@ const GroupDetails = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
         <div className="flex items-center gap-4">
           <Skeleton className="h-10 w-24" />
           <Skeleton className="h-8 w-64" />
@@ -208,7 +208,7 @@ const GroupDetails = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="outline" size="sm" onClick={handleBack}>

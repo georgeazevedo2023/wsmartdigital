@@ -13,10 +13,10 @@ const Settings = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 max-w-3xl mx-auto animate-fade-in">
       {/* Header */}
       <div>
-        <h1 className="text-2xl font-display font-bold">Configurações</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Configurações</h1>
         <p className="text-muted-foreground">Configurações do sistema WsmartQR</p>
       </div>
 
