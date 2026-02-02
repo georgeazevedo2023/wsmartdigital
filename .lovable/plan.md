@@ -1,63 +1,63 @@
 
-# Plano: Mover Histórico de Envios para Submenu do Disparador
+# Plano: Melhorar Layout do Disparador - UI Mais Fluida e Moderna
 
-## Objetivo
-Remover o componente de Histórico de Envios da página principal do Disparador e transformá-lo em uma página separada acessível através de um submenu colapsável no sidebar, similar ao funcionamento do menu "Instâncias".
+## Problemas Identificados
 
----
+1. **Scrollbars aninhadas**: O `GroupSelector` usa `ScrollArea` com altura fixa de 400px, e o `CarouselEditor` também tem `max-h-[400px] overflow-y-auto` nos cards. Isso cria múltiplas barras de rolagem dentro do conteúdo principal.
 
-## Situação Atual
+2. **Espaçamento com sidebar**: A página não tem padding consistente em relação ao menu lateral, causando sensação de "colagem".
 
-1. **Sidebar**: O menu "Disparador" é um link simples sem submenu
-2. **Broadcaster.tsx**: A página contém tanto o formulário de disparo quanto o `<BroadcastHistory />` no final
-3. **Rotas**: Apenas `/dashboard/broadcast` existe para o disparador
+3. **Layout rígido**: Uso de alturas fixas limita a fluidez do conteúdo.
 
 ---
 
-## Mudanças Necessárias
+## Mudanças Propostas
 
-### 1. Criar Nova Página para o Histórico
+### 1. DashboardLayout - Melhorar Espaçamento Global
 
-Criar `src/pages/dashboard/BroadcastHistoryPage.tsx` que:
-- Renderiza o componente `BroadcastHistory` como página principal
-- Mantém funcionalidade de "Reenviar" que redireciona para `/dashboard/broadcast` com os dados
-
-### 2. Adicionar Rota no App.tsx
+Adicionar padding interno consistente no container principal para criar respiro entre sidebar e conteúdo.
 
 ```
-/dashboard/broadcast          → Broadcaster (sem histórico)
-/dashboard/broadcast/history  → BroadcastHistoryPage
+Antes:
+┌──────────┬─────────────────────┐
+│ Sidebar  │Conteúdo sem padding │
+│          │colado na borda      │
+└──────────┴─────────────────────┘
+
+Depois:
+┌──────────┬─────────────────────┐
+│ Sidebar  │  ┌───────────────┐  │
+│          │  │ Conteúdo com  │  │
+│          │  │ padding 6     │  │
+│          │  └───────────────┘  │
+└──────────┴─────────────────────┘
 ```
 
-### 3. Modificar Sidebar
+### 2. Broadcaster.tsx - Padding e Estrutura
 
-Transformar o link "Disparador" em um menu colapsável com submenu:
-- **Novo disparo** → `/dashboard/broadcast`
-- **Histórico** → `/dashboard/broadcast/history`
+- Adicionar `p-6` ao container principal para espaçamento uniforme
+- Remover elementos redundantes de `Card` quando desnecessários
+- Simplificar estrutura visual
 
-### 4. Remover Histórico do Broadcaster.tsx
+### 3. GroupSelector - Eliminar ScrollArea Interna
 
-Remover a linha `<BroadcastHistory onResend={handleResend} />` da página principal do disparador.
+- Remover `ScrollArea` com altura fixa
+- Usar altura máxima com `max-h-[60vh]` que se adapta à tela
+- Deixar scroll nativo do container pai funcionar
+- Adicionar `scroll-smooth` para transições suaves
 
----
+### 4. CarouselEditor - Remover Scroll Aninhado
 
-## Layout da Sidebar (Novo)
+- Remover `max-h-[400px] overflow-y-auto` dos cards
+- Deixar cards fluírem naturalmente
+- O scroll principal da página cuida da navegação
 
-```
-┌─────────────────────────────────┐
-│ 🏠 Dashboard                    │
-├─────────────────────────────────┤
-│ 📤 Disparador              ▼    │
-│    ├─ Novo disparo              │
-│    └─ Histórico                 │
-├─────────────────────────────────┤
-│ 📅 Agendamentos                 │
-├─────────────────────────────────┤
-│ 🖥️ Instâncias               ▼    │
-│    ├─ Todas as instâncias       │
-│    └─ ...                       │
-└─────────────────────────────────┘
-```
+### 5. Melhorias Visuais Modernas
+
+- Adicionar transições mais suaves nos cards
+- Bordas mais sutis (border-border/30 em vez de border-border/50)
+- Usar backdrop-blur mais sutil
+- Espaçamentos mais generosos (gap-4 em vez de gap-3)
 
 ---
 
@@ -65,94 +65,97 @@ Remover a linha `<BroadcastHistory onResend={handleResend} />` da página princi
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/pages/dashboard/BroadcastHistoryPage.tsx` | **Criar** - Nova página para histórico |
-| `src/App.tsx` | Adicionar rota `/dashboard/broadcast/history` |
-| `src/components/dashboard/Sidebar.tsx` | Transformar Disparador em menu colapsável |
-| `src/pages/dashboard/Broadcaster.tsx` | Remover `<BroadcastHistory />` e ajustar "Reenviar" |
+| `src/components/dashboard/DashboardLayout.tsx` | Adicionar padding interno ao main |
+| `src/pages/dashboard/Broadcaster.tsx` | Melhorar padding e estrutura |
+| `src/components/broadcast/GroupSelector.tsx` | Remover ScrollArea fixa |
+| `src/components/broadcast/CarouselEditor.tsx` | Remover overflow interno |
 
 ---
 
 ## Detalhes Técnicos
 
-### Nova Página: BroadcastHistoryPage.tsx
+### DashboardLayout.tsx
 
 ```typescript
-import BroadcastHistory from '@/components/broadcast/BroadcastHistory';
-import { useNavigate } from 'react-router-dom';
-
-const BroadcastHistoryPage = () => {
-  const navigate = useNavigate();
-
-  const handleResend = (log) => {
-    // Salvar dados no sessionStorage e navegar
-    sessionStorage.setItem('resendData', JSON.stringify({
-      messageType: log.message_type,
-      content: log.content,
-      mediaUrl: log.media_url,
-      instanceId: log.instance_id,
-      instanceName: log.instance_name,
-    }));
-    navigate('/dashboard/broadcast');
-  };
-
-  return (
-    <div className="p-6 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Histórico de Envios</h1>
-        <p className="text-muted-foreground">
-          Visualize e gerencie o histórico de mensagens enviadas
-        </p>
-      </div>
-      <BroadcastHistory onResend={handleResend} />
-    </div>
-  );
-};
+<main className="flex-1 overflow-y-auto">
+  <div className="min-h-full p-6">
+    <Outlet />
+  </div>
+</main>
 ```
 
-### Sidebar com Submenu Disparador
+Adicionar um wrapper interno com padding para que todo o conteúdo tenha espaçamento consistente.
 
-Criar estrutura Collapsible similar ao menu de Instâncias:
+### Broadcaster.tsx
+
+Remover padding duplicado (já vem do layout) e simplificar estrutura:
 
 ```typescript
-// Adicionar state para controlar abertura
-const [broadcastOpen, setBroadcastOpen] = useState(true);
-
-// Detectar se está ativo
-const isBroadcastActive = location.pathname.startsWith('/dashboard/broadcast');
-
-// Submenu items
-const broadcastItems = [
-  { label: 'Novo disparo', path: '/dashboard/broadcast' },
-  { label: 'Histórico', path: '/dashboard/broadcast/history' },
-];
+<div className="space-y-6 max-w-5xl mx-auto">
+  {/* Conteúdo centralizado e com largura máxima */}
+</div>
 ```
 
-### Atualizar Broadcaster.tsx
+### GroupSelector.tsx
 
-1. Remover importação do `BroadcastHistory`
-2. Remover linha `<BroadcastHistory onResend={handleResend} />`
-3. Ler dados de reenvio do `sessionStorage` no `useEffect`
-4. Limpar `sessionStorage` após usar os dados
+Substituir ScrollArea por:
 
----
-
-## Fluxo de Reenvio Atualizado
-
+```typescript
+<div className="max-h-[calc(100vh-400px)] overflow-y-auto scroll-smooth">
+  <div className="space-y-2 pr-1">
+    {filteredGroups.map((group) => (
+      // Cards dos grupos
+    ))}
+  </div>
+</div>
 ```
-1. Usuário está em /dashboard/broadcast/history
-2. Clica em "Reenviar" em uma mensagem
-3. Dados são salvos no sessionStorage
-4. Navega para /dashboard/broadcast
-5. Broadcaster lê dados do sessionStorage
-6. Exibe banner de reenvio e pré-carrega dados
-7. Limpa sessionStorage
+
+Isso permite que a lista se adapte à altura disponível da viewport, eliminando scroll aninhado.
+
+### CarouselEditor.tsx
+
+De:
+```typescript
+<div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
 ```
+
+Para:
+```typescript
+<div className="space-y-4">
+```
+
+Os cards fluem naturalmente e o scroll é controlado pelo container pai.
 
 ---
 
 ## Benefícios
 
-- **Organização**: Histórico separado da área de disparo
-- **Performance**: Página de disparo carrega mais rápido sem histórico
-- **UX**: Menu colapsável consistente com o padrão de Instâncias
-- **Navegação**: Acesso direto ao histórico pelo sidebar
+- **Sem scroll aninhado**: Uma única área de rolagem por página
+- **Responsivo**: Altura se adapta à viewport
+- **Mais espaçado**: Padding consistente entre sidebar e conteúdo
+- **Visual moderno**: Transições suaves e bordas mais sutis
+- **Performance**: Menos camadas de scroll = melhor performance
+
+---
+
+## Resultado Visual Esperado
+
+```
+┌──────────────────────────────────────────────────────┐
+│ ┌────────┐  ┌──────────────────────────────────────┐ │
+│ │Sidebar │  │                                      │ │
+│ │        │  │   Header com breadcrumb              │ │
+│ │        │  │                                      │ │
+│ │        │  │   ┌────────────────────────────────┐ │ │
+│ │        │  │   │ Lista de Grupos (scroll único) │ │ │
+│ │        │  │   │                                │ │ │
+│ │        │  │   │                                │ │ │
+│ │        │  │   │                                │ │ │
+│ │        │  │   └────────────────────────────────┘ │ │
+│ │        │  │                                      │ │
+│ │        │  │   Botão Continuar                    │ │
+│ │        │  │                                      │ │
+│ │        │  └──────────────────────────────────────┘ │
+│ └────────┘                                           │
+└──────────────────────────────────────────────────────┘
+```
