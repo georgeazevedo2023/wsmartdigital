@@ -116,13 +116,13 @@ export function CarouselPreview({ message, cards }: CarouselPreviewProps) {
                       className="w-full flex-shrink-0 px-1"
                     >
                       <div className="bg-card border border-border rounded-lg overflow-hidden shadow-sm">
-                        {/* Card image */}
-                        <div className="h-32 bg-muted flex items-center justify-center">
+                        {/* Card image - aspect ratio container */}
+                        <div className="aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden">
                           {card.image || card.imageFile ? (
                             <img 
                               src={card.imageFile ? URL.createObjectURL(card.imageFile) : card.image}
                               alt={`Card ${idx + 1}`}
-                              className="w-full h-full object-cover"
+                              className="absolute inset-0 w-full h-full object-contain bg-muted"
                               onError={(e) => {
                                 (e.target as HTMLImageElement).style.display = 'none';
                               }}
