@@ -1,3 +1,4 @@
+import { Suspense, lazy } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -8,19 +9,28 @@ import Index from "./pages/Index";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import DashboardLayout from "./components/dashboard/DashboardLayout";
-import DashboardHome from "./pages/dashboard/DashboardHome";
-import Instances from "./pages/dashboard/Instances";
-import InstanceDetails from "./pages/dashboard/InstanceDetails";
-import GroupDetails from "./pages/dashboard/GroupDetails";
-import SendToGroup from "./pages/dashboard/SendToGroup";
-import UsersManagement from "./pages/dashboard/UsersManagement";
-import Settings from "./pages/dashboard/Settings";
-import ScheduledMessages from "./pages/dashboard/ScheduledMessages";
-import Broadcaster from "./pages/dashboard/Broadcaster";
-import BroadcastHistoryPage from "./pages/dashboard/BroadcastHistoryPage";
-import LeadsBroadcaster from "./pages/dashboard/LeadsBroadcaster";
+
+// Lazy load dashboard pages for better initial load performance
+const DashboardHome = lazy(() => import("./pages/dashboard/DashboardHome"));
+const Instances = lazy(() => import("./pages/dashboard/Instances"));
+const InstanceDetails = lazy(() => import("./pages/dashboard/InstanceDetails"));
+const GroupDetails = lazy(() => import("./pages/dashboard/GroupDetails"));
+const SendToGroup = lazy(() => import("./pages/dashboard/SendToGroup"));
+const UsersManagement = lazy(() => import("./pages/dashboard/UsersManagement"));
+const Settings = lazy(() => import("./pages/dashboard/Settings"));
+const ScheduledMessages = lazy(() => import("./pages/dashboard/ScheduledMessages"));
+const Broadcaster = lazy(() => import("./pages/dashboard/Broadcaster"));
+const BroadcastHistoryPage = lazy(() => import("./pages/dashboard/BroadcastHistoryPage"));
+const LeadsBroadcaster = lazy(() => import("./pages/dashboard/LeadsBroadcaster"));
 
 const queryClient = new QueryClient();
+
+// Page loading fallback
+const PageLoader = () => (
+  <div className="flex items-center justify-center min-h-[50vh]">
+    <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 // Protected route wrapper
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
@@ -80,17 +90,17 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       >
-        <Route index element={<DashboardHome />} />
-        <Route path="broadcast" element={<Broadcaster />} />
-        <Route path="broadcast/history" element={<BroadcastHistoryPage />} />
-        <Route path="broadcast/leads" element={<LeadsBroadcaster />} />
-        <Route path="instances" element={<Instances />} />
-        <Route path="instances/:id" element={<InstanceDetails />} />
-        <Route path="instances/:instanceId/groups/:groupId" element={<GroupDetails />} />
-        <Route path="instances/:instanceId/groups/:groupId/send" element={<SendToGroup />} />
-        <Route path="users" element={<UsersManagement />} />
-        <Route path="settings" element={<Settings />} />
-        <Route path="scheduled" element={<ScheduledMessages />} />
+        <Route index element={<Suspense fallback={<PageLoader />}><DashboardHome /></Suspense>} />
+        <Route path="broadcast" element={<Suspense fallback={<PageLoader />}><Broadcaster /></Suspense>} />
+        <Route path="broadcast/history" element={<Suspense fallback={<PageLoader />}><BroadcastHistoryPage /></Suspense>} />
+        <Route path="broadcast/leads" element={<Suspense fallback={<PageLoader />}><LeadsBroadcaster /></Suspense>} />
+        <Route path="instances" element={<Suspense fallback={<PageLoader />}><Instances /></Suspense>} />
+        <Route path="instances/:id" element={<Suspense fallback={<PageLoader />}><InstanceDetails /></Suspense>} />
+        <Route path="instances/:instanceId/groups/:groupId" element={<Suspense fallback={<PageLoader />}><GroupDetails /></Suspense>} />
+        <Route path="instances/:instanceId/groups/:groupId/send" element={<Suspense fallback={<PageLoader />}><SendToGroup /></Suspense>} />
+        <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersManagement /></Suspense>} />
+        <Route path="settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
+        <Route path="scheduled" element={<Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense>} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
