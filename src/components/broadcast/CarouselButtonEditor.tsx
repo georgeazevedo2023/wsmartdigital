@@ -129,24 +129,9 @@ export function CarouselButtonEditor({
             </div>
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="URL">
-              <div className="flex items-center gap-2">
-                <Link className="w-3.5 h-3.5" />
-                URL
-              </div>
-            </SelectItem>
-            <SelectItem value="REPLY">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="w-3.5 h-3.5" />
-                Resposta
-              </div>
-            </SelectItem>
-            <SelectItem value="CALL">
-              <div className="flex items-center gap-2">
-                <Phone className="w-3.5 h-3.5" />
-                Ligar
-              </div>
-            </SelectItem>
+            <SelectItem value="URL">URL</SelectItem>
+            <SelectItem value="REPLY">Resposta</SelectItem>
+            <SelectItem value="CALL">Ligar</SelectItem>
           </SelectContent>
         </Select>
 
