@@ -195,6 +195,12 @@
       inset 0 1px 0 0 hsl(0 0% 100% / 0.05);
   }
 
+  /* Sidebar com glassmorphism */
+  .sidebar-glass {
+    @apply bg-slate-900/80 backdrop-blur-xl;
+    border-right: 1px solid hsl(142 70% 45% / 0.1);
+  }
+
   /* Input with icon styling */
   .input-with-icon {
     @apply pl-11 bg-slate-800/50 border-slate-700/50;

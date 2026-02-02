@@ -89,12 +89,12 @@ const Sidebar = () => {
   return (
     <aside
       className={cn(
-        'h-screen flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300',
+        'h-screen flex flex-col sidebar-glass transition-all duration-300',
         collapsed ? 'w-20' : 'w-64'
       )}
     >
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-sidebar-border">
+      <div className="h-16 flex items-center justify-between px-4 border-b border-primary/10">
         {!collapsed && (
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
@@ -321,7 +321,7 @@ const Sidebar = () => {
       </nav>
 
       {/* User section */}
-      <div className="p-3 border-t border-sidebar-border">
+      <div className="p-3 border-t border-primary/10">
         <div
           className={cn(
             'flex items-center gap-3 p-2 rounded-lg',
