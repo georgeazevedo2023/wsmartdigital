@@ -7,8 +7,8 @@ import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import GroupSelector, { Group } from '@/components/broadcast/GroupSelector';
 import BroadcastMessageForm from '@/components/broadcast/BroadcastMessageForm';
+import BroadcasterHeader from '@/components/broadcast/BroadcasterHeader';
 
-// Interface matching the BroadcastLog from history
 interface ResendData {
   messageType: string;
   content: string | null;
@@ -23,7 +23,6 @@ const Broadcaster = () => {
   const [selectedGroups, setSelectedGroups] = useState<Group[]>([]);
   const [resendData, setResendData] = useState<ResendData | null>(null);
 
-  // Check for resend data from history page
   useEffect(() => {
     const storedData = sessionStorage.getItem('resendData');
     if (storedData) {
@@ -65,10 +64,16 @@ const Broadcaster = () => {
     }
   };
 
+  const handleChangeInstance = () => {
+    setStep('instance');
+    setSelectedInstance(null);
+    setSelectedGroups([]);
+    setResendData(null);
+  };
+
   const handleContinueToMessage = () => {
     setStep('message');
   };
-
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -175,53 +180,53 @@ const Broadcaster = () => {
         </Card>
       )}
 
-      {/* Selected Instance Badge */}
-      {step !== 'instance' && selectedInstance && (
-        <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
-          <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-            <Server className="w-5 h-5 text-primary" />
-          </div>
-          <div className="flex-1">
-            <p className="font-medium">{selectedInstance.name}</p>
-            <p className="text-xs text-muted-foreground">Instância selecionada</p>
-          </div>
-          <Button variant="ghost" size="sm" onClick={() => { setSelectedInstance(null); setStep('instance'); setSelectedGroups([]); }}>
-            Trocar
-          </Button>
-        </div>
-      )}
-
       {/* Step 2: Group Selection */}
       {step === 'groups' && selectedInstance && (
-        <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Users className="w-5 h-5" />
-              Selecionar Grupos
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <GroupSelector
-              instance={selectedInstance}
-              selectedGroups={selectedGroups}
-              onSelectionChange={setSelectedGroups}
-            />
-            
-            {selectedGroups.length > 0 && (
-              <div className="flex justify-end pt-2 border-t">
-                <Button onClick={handleContinueToMessage}>
-                  Continuar com {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
-                  <ChevronRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <div className="space-y-4">
+          {/* Compact Header with Instance */}
+          <BroadcasterHeader
+            instance={selectedInstance}
+            onChangeInstance={handleChangeInstance}
+            showDatabase={false}
+          />
+
+          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                Selecionar Grupos
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <GroupSelector
+                instance={selectedInstance}
+                selectedGroups={selectedGroups}
+                onSelectionChange={setSelectedGroups}
+              />
+              
+              {selectedGroups.length > 0 && (
+                <div className="flex justify-end pt-2 border-t">
+                  <Button onClick={handleContinueToMessage}>
+                    Continuar com {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
+                    <ChevronRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Step 3: Message Composition */}
       {step === 'message' && selectedInstance && selectedGroups.length > 0 && (
         <div className="space-y-4">
+          {/* Compact Header */}
+          <BroadcasterHeader
+            instance={selectedInstance}
+            onChangeInstance={handleChangeInstance}
+            showDatabase={false}
+          />
+
           {/* Selected Groups Summary */}
           <Card className="border-border/50 bg-muted/30">
             <CardContent className="p-4">
@@ -271,7 +276,6 @@ const Broadcaster = () => {
           />
         </div>
       )}
-
     </div>
   );
 };
