@@ -4,7 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Search, CheckSquare, Square, User } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Search, CheckSquare, Square, User, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
 
 interface LeadListProps {
@@ -15,17 +16,33 @@ interface LeadListProps {
 
 const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) => {
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'invalid' | 'pending'>('all');
 
   const filteredLeads = useMemo(() => {
-    if (!search.trim()) return leads;
+    let result = leads;
     
-    const searchLower = search.toLowerCase();
-    return leads.filter(lead =>
-      lead.phone.includes(search) ||
-      lead.name?.toLowerCase().includes(searchLower) ||
-      lead.groupName?.toLowerCase().includes(searchLower)
-    );
-  }, [leads, search]);
+    // Text search filter
+    if (search.trim()) {
+      const searchLower = search.toLowerCase();
+      result = result.filter(lead =>
+        lead.phone.includes(search) ||
+        lead.name?.toLowerCase().includes(searchLower) ||
+        lead.groupName?.toLowerCase().includes(searchLower) ||
+        lead.verifiedName?.toLowerCase().includes(searchLower)
+      );
+    }
+    
+    // Status filter
+    if (statusFilter !== 'all') {
+      if (statusFilter === 'pending') {
+        result = result.filter(l => !l.verificationStatus);
+      } else {
+        result = result.filter(l => l.verificationStatus === statusFilter);
+      }
+    }
+    
+    return result;
+  }, [leads, search, statusFilter]);
 
   const handleToggle = (leadId: string) => {
     const newSelection = new Set(selectedLeads);
@@ -47,7 +64,35 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
   };
 
   const allSelected = filteredLeads.length > 0 && filteredLeads.every(l => selectedLeads.has(l.id));
-  const someSelected = filteredLeads.some(l => selectedLeads.has(l.id));
+  const hasVerifiedLeads = leads.some(l => l.verificationStatus);
+
+  const getVerificationBadge = (lead: Lead) => {
+    switch (lead.verificationStatus) {
+      case 'valid':
+        return (
+          <Badge variant="default" className="text-xs bg-green-500/20 text-green-600 border-green-500/30 hover:bg-green-500/20">
+            <CheckCircle className="w-3 h-3 mr-1" />
+            WhatsApp
+          </Badge>
+        );
+      case 'invalid':
+        return (
+          <Badge variant="destructive" className="text-xs bg-red-500/20 text-red-600 border-red-500/30 hover:bg-red-500/20">
+            <XCircle className="w-3 h-3 mr-1" />
+            Inválido
+          </Badge>
+        );
+      case 'error':
+        return (
+          <Badge variant="outline" className="text-xs text-yellow-600 border-yellow-500/30">
+            <AlertCircle className="w-3 h-3 mr-1" />
+            Erro
+          </Badge>
+        );
+      default:
+        return null;
+    }
+  };
 
   const getSourceBadge = (source: Lead['source'], groupName?: string) => {
     switch (source) {
@@ -66,7 +111,7 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
 
   return (
     <div className="space-y-3">
-      {/* Search and actions */}
+      {/* Search and filters */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -78,6 +123,19 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
           />
         </div>
         <div className="flex gap-2">
+          {hasVerifiedLeads && (
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                <SelectItem value="valid">Válidos</SelectItem>
+                <SelectItem value="invalid">Inválidos</SelectItem>
+                <SelectItem value="pending">Não verificados</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           <Button
             variant="outline"
             size="sm"
@@ -104,7 +162,7 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
         <span>
           {selectedLeads.size} de {leads.length} selecionado{selectedLeads.size !== 1 ? 's' : ''}
         </span>
-        {search && filteredLeads.length !== leads.length && (
+        {(search || statusFilter !== 'all') && filteredLeads.length !== leads.length && (
           <Badge variant="secondary" className="text-xs">
             {filteredLeads.length} resultado{filteredLeads.length !== 1 ? 's' : ''}
           </Badge>
@@ -135,14 +193,17 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
               
               <div className="flex-1 min-w-0">
                 <p className="font-medium text-sm truncate">
-                  {lead.name || lead.phone}
+                  {lead.verifiedName || lead.name || lead.phone}
                 </p>
-                {lead.name && (
+                {(lead.verifiedName || lead.name) && (
                   <p className="text-xs text-muted-foreground">{lead.phone}</p>
                 )}
               </div>
               
-              {getSourceBadge(lead.source, lead.groupName)}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {getVerificationBadge(lead)}
+                {getSourceBadge(lead.source, lead.groupName)}
+              </div>
             </div>
           ))}
 
@@ -150,7 +211,7 @@ const LeadList = ({ leads, selectedLeads, onSelectionChange }: LeadListProps) =>
             <div className="text-center py-8 text-muted-foreground">
               <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
               <p className="text-sm">
-                {search ? 'Nenhum contato encontrado' : 'Nenhum contato importado'}
+                {search || statusFilter !== 'all' ? 'Nenhum contato encontrado' : 'Nenhum contato importado'}
               </p>
             </div>
           )}

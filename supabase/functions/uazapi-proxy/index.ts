@@ -466,6 +466,50 @@ Deno.serve(async (req) => {
         )
       }
 
+      case 'check-numbers': {
+        // Verify if phone numbers are registered on WhatsApp
+        if (!instanceToken || !body.phones || !Array.isArray(body.phones)) {
+          return new Response(
+            JSON.stringify({ error: 'Instance token and phones array required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('Checking', body.phones.length, 'numbers for WhatsApp registration')
+        
+        const checkResponse = await fetch(`${uazapiUrl}/chat/check`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify({ phone: body.phones }),
+        })
+        
+        console.log('Check response status:', checkResponse.status)
+        
+        const checkRawText = await checkResponse.text()
+        console.log('Check raw response (first 500 chars):', checkRawText.substring(0, 500))
+        
+        let checkData: unknown
+        try {
+          checkData = JSON.parse(checkRawText)
+        } catch {
+          checkData = { raw: checkRawText }
+        }
+        
+        // Normalize response - UAZAPI may return { Users: [...] } or other variations
+        const users = (checkData as Record<string, unknown>)?.Users || 
+                      (checkData as Record<string, unknown>)?.users || 
+                      (checkData as Record<string, unknown>)?.data || 
+                      []
+        
+        return new Response(
+          JSON.stringify({ users }),
+          { status: checkResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: 'Invalid action' }),

@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft } from 'lucide-react';
+import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import LeadImporter from '@/components/broadcast/LeadImporter';
 import LeadList from '@/components/broadcast/LeadList';
 import LeadMessageForm from '@/components/broadcast/LeadMessageForm';
+import { supabase } from '@/integrations/supabase/client';
 
 export interface Lead {
   id: string;
@@ -15,6 +17,10 @@ export interface Lead {
   jid: string;
   source: 'manual' | 'paste' | 'group';
   groupName?: string;
+  // Verification fields
+  isVerified?: boolean;
+  verifiedName?: string;
+  verificationStatus?: 'pending' | 'valid' | 'invalid' | 'error';
 }
 
 const LeadsBroadcaster = () => {
@@ -22,6 +28,8 @@ const LeadsBroadcaster = () => {
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [verificationProgress, setVerificationProgress] = useState(0);
 
   const handleInstanceSelect = (instance: Instance) => {
     setSelectedInstance(instance);
@@ -40,6 +48,89 @@ const LeadsBroadcaster = () => {
     const allIds = new Set([...selectedLeads, ...newLeads.map(l => l.id)]);
     setSelectedLeads(allIds);
   };
+
+  const handleVerifyNumbers = async () => {
+    if (!selectedInstance || leads.length === 0) return;
+    
+    setIsVerifying(true);
+    setVerificationProgress(0);
+    
+    try {
+      // Extract phone numbers (without @s.whatsapp.net)
+      const phones = leads.map(l => l.jid.replace('@s.whatsapp.net', ''));
+      
+      // Verify in batches of 50 to avoid timeouts
+      const BATCH_SIZE = 50;
+      const results = new Map<string, { isValid: boolean; verifiedName?: string }>();
+      
+      for (let i = 0; i < phones.length; i += BATCH_SIZE) {
+        const batch = phones.slice(i, i + BATCH_SIZE);
+        
+        const response = await supabase.functions.invoke('uazapi-proxy', {
+          body: {
+            action: 'check-numbers',
+            token: selectedInstance.token,
+            phones: batch,
+          },
+        });
+        
+        if (response.error) {
+          console.error('Verification error:', response.error);
+          toast.error('Erro ao verificar números');
+          break;
+        }
+        
+        if (response.data?.users && Array.isArray(response.data.users)) {
+          response.data.users.forEach((u: { Query?: string; query?: string; IsInWhatsapp?: boolean; isInWhatsapp?: boolean; VerifiedName?: string; verifiedName?: string }) => {
+            const query = u.Query || u.query || '';
+            results.set(query, {
+              isValid: u.IsInWhatsapp || u.isInWhatsapp || false,
+              verifiedName: u.VerifiedName || u.verifiedName || '',
+            });
+          });
+        }
+        
+        setVerificationProgress(Math.min(100, ((i + batch.length) / phones.length) * 100));
+      }
+      
+      // Update leads with verification status
+      setLeads(prevLeads => prevLeads.map(lead => {
+        const phone = lead.jid.replace('@s.whatsapp.net', '');
+        const result = results.get(phone);
+        return {
+          ...lead,
+          verificationStatus: result ? (result.isValid ? 'valid' : 'invalid') : 'error',
+          isVerified: result?.isValid ?? false,
+          verifiedName: result?.verifiedName,
+        };
+      }));
+      
+      const validCount = Array.from(results.values()).filter(r => r.isValid).length;
+      const invalidCount = Array.from(results.values()).filter(r => !r.isValid).length;
+      
+      toast.success(`Verificação concluída: ${validCount} válidos, ${invalidCount} inválidos`);
+      
+    } catch (error) {
+      console.error('Verification error:', error);
+      toast.error('Erro ao verificar números');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleSelectOnlyValid = () => {
+    const validIds = new Set(
+      leads
+        .filter(l => l.verificationStatus === 'valid')
+        .map(l => l.id)
+    );
+    setSelectedLeads(validIds);
+    toast.success(`${validIds.size} contatos válidos selecionados`);
+  };
+
+  const hasVerifiedLeads = leads.some(l => l.verificationStatus);
+  const validLeadsCount = leads.filter(l => l.verificationStatus === 'valid').length;
+  const invalidLeadsCount = leads.filter(l => l.verificationStatus === 'invalid').length;
 
   const handleContinueToMessage = () => {
     setStep('message');
@@ -187,10 +278,47 @@ const LeadsBroadcaster = () => {
                     Contatos Importados
                     <Badge variant="secondary">{leads.length}</Badge>
                   </CardTitle>
-                  <Button variant="outline" size="sm" onClick={handleClearLeads}>
-                    Limpar
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      onClick={handleVerifyNumbers}
+                      disabled={isVerifying || leads.length === 0}
+                    >
+                      {isVerifying ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Verificando... {Math.round(verificationProgress)}%
+                        </>
+                      ) : (
+                        <>
+                          <ShieldCheck className="w-4 h-4 mr-2" />
+                          Verificar Números
+                        </>
+                      )}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={handleClearLeads}>
+                      Limpar
+                    </Button>
+                  </div>
                 </div>
+                
+                {/* Verification summary */}
+                {hasVerifiedLeads && (
+                  <div className="flex items-center gap-3 mt-3 pt-3 border-t">
+                    <Badge variant="default" className="bg-green-500/20 text-green-600 border-green-500/30 hover:bg-green-500/20">
+                      {validLeadsCount} válidos
+                    </Badge>
+                    <Badge variant="destructive" className="bg-red-500/20 text-red-600 border-red-500/30 hover:bg-red-500/20">
+                      {invalidLeadsCount} inválidos
+                    </Badge>
+                    {validLeadsCount > 0 && (
+                      <Button variant="ghost" size="sm" onClick={handleSelectOnlyValid} className="text-xs h-7">
+                        Selecionar apenas válidos
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="space-y-4">
                 <LeadList
