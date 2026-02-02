@@ -1,14 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2 } from 'lucide-react';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save } from 'lucide-react';
 import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import LeadImporter from '@/components/broadcast/LeadImporter';
 import LeadList from '@/components/broadcast/LeadList';
 import LeadMessageForm from '@/components/broadcast/LeadMessageForm';
+import LeadDatabaseSelector from '@/components/broadcast/LeadDatabaseSelector';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 
 export interface Lead {
   id: string;
@@ -23,17 +27,204 @@ export interface Lead {
   verificationStatus?: 'pending' | 'valid' | 'invalid' | 'error';
 }
 
+interface LeadDatabase {
+  id: string;
+  name: string;
+  description: string | null;
+  leads_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
 const LeadsBroadcaster = () => {
-  const [step, setStep] = useState<'instance' | 'import' | 'message'>('instance');
+  const { user } = useAuth();
+  const [step, setStep] = useState<'instance' | 'database' | 'import' | 'message'>('instance');
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
+  const [selectedDatabase, setSelectedDatabase] = useState<LeadDatabase | null>(null);
+  const [isCreatingNewDatabase, setIsCreatingNewDatabase] = useState(false);
+  const [newDatabaseName, setNewDatabaseName] = useState('');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<Set<string>>(new Set());
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationProgress, setVerificationProgress] = useState(0);
+  const [isSavingDatabase, setIsSavingDatabase] = useState(false);
+  const [isLoadingLeads, setIsLoadingLeads] = useState(false);
 
   const handleInstanceSelect = (instance: Instance) => {
     setSelectedInstance(instance);
+    setStep('database');
+  };
+
+  const handleDatabaseSelect = async (database: LeadDatabase | null) => {
+    if (!database) {
+      setSelectedDatabase(null);
+      return;
+    }
+
+    setSelectedDatabase(database);
+    setIsLoadingLeads(true);
+
+    try {
+      // Load leads from database
+      const { data, error } = await supabase
+        .from('lead_database_entries')
+        .select('*')
+        .eq('database_id', database.id);
+
+      if (error) throw error;
+
+      // Map database entries to Lead format
+      const loadedLeads: Lead[] = (data || []).map((entry) => ({
+        id: entry.id,
+        phone: entry.phone,
+        name: entry.name || undefined,
+        jid: entry.jid,
+        source: (entry.source as 'manual' | 'paste' | 'group') || 'paste',
+        groupName: entry.group_name || undefined,
+        isVerified: entry.is_verified || false,
+        verifiedName: entry.verified_name || undefined,
+        verificationStatus: entry.verification_status as Lead['verificationStatus'] || undefined,
+      }));
+
+      setLeads(loadedLeads);
+      setSelectedLeads(new Set(loadedLeads.map(l => l.id)));
+      setIsCreatingNewDatabase(false);
+      setStep('import');
+    } catch (error) {
+      console.error('Error loading leads:', error);
+      toast.error('Erro ao carregar contatos da base');
+    } finally {
+      setIsLoadingLeads(false);
+    }
+  };
+
+  const handleCreateNewDatabase = () => {
+    setIsCreatingNewDatabase(true);
+    setSelectedDatabase(null);
+    setLeads([]);
+    setSelectedLeads(new Set());
+    setNewDatabaseName('');
     setStep('import');
+  };
+
+  const handleSaveDatabase = async () => {
+    if (!newDatabaseName.trim()) {
+      toast.error('Digite um nome para a base');
+      return;
+    }
+
+    if (leads.length === 0) {
+      toast.error('Importe pelo menos um contato');
+      return;
+    }
+
+    if (!user) {
+      toast.error('Usuário não autenticado');
+      return;
+    }
+
+    setIsSavingDatabase(true);
+
+    try {
+      // Create database
+      const { data: db, error: dbError } = await supabase
+        .from('lead_databases')
+        .insert({
+          name: newDatabaseName.trim(),
+          user_id: user.id,
+          leads_count: leads.length,
+        })
+        .select()
+        .single();
+
+      if (dbError) throw dbError;
+
+      // Insert leads
+      const entries = leads.map((l) => ({
+        database_id: db.id,
+        phone: l.phone,
+        name: l.name || null,
+        jid: l.jid,
+        source: l.source,
+        group_name: l.groupName || null,
+        is_verified: l.isVerified || false,
+        verified_name: l.verifiedName || null,
+        verification_status: l.verificationStatus || null,
+      }));
+
+      const { error: entriesError } = await supabase
+        .from('lead_database_entries')
+        .insert(entries);
+
+      if (entriesError) throw entriesError;
+
+      setSelectedDatabase({
+        id: db.id,
+        name: db.name,
+        description: db.description,
+        leads_count: db.leads_count,
+        created_at: db.created_at,
+        updated_at: db.updated_at,
+      });
+      setIsCreatingNewDatabase(false);
+      toast.success(`Base "${db.name}" salva com ${leads.length} contatos`);
+    } catch (error) {
+      console.error('Error saving database:', error);
+      toast.error('Erro ao salvar base de leads');
+    } finally {
+      setIsSavingDatabase(false);
+    }
+  };
+
+  const handleUpdateDatabase = async () => {
+    if (!selectedDatabase || !user) return;
+
+    setIsSavingDatabase(true);
+
+    try {
+      // Delete existing entries
+      await supabase
+        .from('lead_database_entries')
+        .delete()
+        .eq('database_id', selectedDatabase.id);
+
+      // Insert updated leads
+      const entries = leads.map((l) => ({
+        database_id: selectedDatabase.id,
+        phone: l.phone,
+        name: l.name || null,
+        jid: l.jid,
+        source: l.source,
+        group_name: l.groupName || null,
+        is_verified: l.isVerified || false,
+        verified_name: l.verifiedName || null,
+        verification_status: l.verificationStatus || null,
+      }));
+
+      if (entries.length > 0) {
+        const { error: entriesError } = await supabase
+          .from('lead_database_entries')
+          .insert(entries);
+
+        if (entriesError) throw entriesError;
+      }
+
+      // Update leads count
+      const { error: updateError } = await supabase
+        .from('lead_databases')
+        .update({ leads_count: leads.length })
+        .eq('id', selectedDatabase.id);
+
+      if (updateError) throw updateError;
+
+      setSelectedDatabase(prev => prev ? { ...prev, leads_count: leads.length } : null);
+      toast.success('Base atualizada');
+    } catch (error) {
+      console.error('Error updating database:', error);
+      toast.error('Erro ao atualizar base');
+    } finally {
+      setIsSavingDatabase(false);
+    }
   };
 
   const handleLeadsImported = (importedLeads: Lead[]) => {
@@ -143,15 +334,6 @@ const LeadsBroadcaster = () => {
     toast.success(`${validIds.size} contatos válidos selecionados`);
   };
 
-  const handleRemoveInvalidAndSelect = () => {
-    handleRemoveInvalid();
-    // After removing, select all remaining (which are valid or not verified)
-    setTimeout(() => {
-      const remainingIds = new Set(leads.filter(l => l.verificationStatus !== 'invalid').map(l => l.id));
-      setSelectedLeads(remainingIds);
-    }, 0);
-  };
-
   const hasVerifiedLeads = leads.some(l => l.verificationStatus);
   const validLeadsCount = leads.filter(l => l.verificationStatus === 'valid').length;
   const invalidLeadsCount = leads.filter(l => l.verificationStatus === 'invalid').length;
@@ -165,16 +347,23 @@ const LeadsBroadcaster = () => {
     setSelectedLeads(new Set());
     setStep('instance');
     setSelectedInstance(null);
+    setSelectedDatabase(null);
+    setIsCreatingNewDatabase(false);
+    setNewDatabaseName('');
   };
 
   const handleBack = () => {
     if (step === 'message') {
       setStep('import');
     } else if (step === 'import') {
-      setStep('instance');
-      setSelectedInstance(null);
+      setStep('database');
       setLeads([]);
       setSelectedLeads(new Set());
+      setSelectedDatabase(null);
+      setIsCreatingNewDatabase(false);
+    } else if (step === 'database') {
+      setStep('instance');
+      setSelectedInstance(null);
     }
   };
 
@@ -184,6 +373,9 @@ const LeadsBroadcaster = () => {
   };
 
   const selectedLeadsList = leads.filter(l => selectedLeads.has(l.id));
+
+  const hasUnsavedChanges = isCreatingNewDatabase && leads.length > 0 && !selectedDatabase;
+  const canSaveDatabase = isCreatingNewDatabase && leads.length > 0 && newDatabaseName.trim();
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -219,15 +411,28 @@ const LeadsBroadcaster = () => {
         
         <ChevronRight className="w-4 h-4 text-muted-foreground" />
         
+        <div className={`flex items-center gap-2 ${step === 'import' || step === 'message' ? 'text-primary' : step === 'database' ? 'text-foreground' : 'text-muted-foreground'}`}>
+          {step === 'import' || step === 'message' ? (
+            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+              <Check className="w-4 h-4 text-primary-foreground" />
+            </div>
+          ) : (
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'database' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
+          )}
+          <span className="font-medium">Base de Leads</span>
+        </div>
+        
+        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        
         <div className={`flex items-center gap-2 ${step === 'message' ? 'text-primary' : step === 'import' ? 'text-foreground' : 'text-muted-foreground'}`}>
           {step === 'message' ? (
             <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
               <Check className="w-4 h-4 text-primary-foreground" />
             </div>
           ) : (
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'import' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'import' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
           )}
-          <span className="font-medium">Importar Contatos</span>
+          <span className="font-medium">Contatos</span>
           {leads.length > 0 && (
             <Badge variant="secondary" className="text-xs">{leads.length}</Badge>
           )}
@@ -236,7 +441,7 @@ const LeadsBroadcaster = () => {
         <ChevronRight className="w-4 h-4 text-muted-foreground" />
         
         <div className={`flex items-center gap-2 ${step === 'message' ? 'text-foreground' : 'text-muted-foreground'}`}>
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'message' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
+          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'message' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>4</div>
           <span className="font-medium">Mensagem</span>
         </div>
       </div>
@@ -269,15 +474,108 @@ const LeadsBroadcaster = () => {
             <p className="font-medium">{selectedInstance.name}</p>
             <p className="text-xs text-muted-foreground">Instância selecionada</p>
           </div>
-          <Button variant="ghost" size="sm" onClick={() => { setSelectedInstance(null); setStep('instance'); setLeads([]); setSelectedLeads(new Set()); }}>
+          <Button variant="ghost" size="sm" onClick={() => { setSelectedInstance(null); setStep('instance'); setLeads([]); setSelectedLeads(new Set()); setSelectedDatabase(null); }}>
             Trocar
           </Button>
         </div>
       )}
 
-      {/* Step 2: Import Contacts */}
+      {/* Step 2: Database Selection */}
+      {step === 'database' && selectedInstance && (
+        <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Database className="w-5 h-5" />
+              Selecionar Base de Leads
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoadingLeads ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                <span className="ml-2 text-muted-foreground">Carregando contatos...</span>
+              </div>
+            ) : (
+              <LeadDatabaseSelector
+                selectedDatabase={selectedDatabase}
+                onSelectDatabase={handleDatabaseSelect}
+                onCreateNew={handleCreateNewDatabase}
+              />
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Step 3: Import Contacts */}
       {step === 'import' && selectedInstance && (
         <div className="space-y-4">
+          {/* Database Name Input (for new databases) */}
+          {isCreatingNewDatabase && (
+            <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-4">
+                  <div className="flex-1">
+                    <Label htmlFor="database-name" className="text-sm font-medium">
+                      Nome da Base de Leads
+                    </Label>
+                    <Input
+                      id="database-name"
+                      placeholder="Ex: Clientes VIP, Leads Janeiro..."
+                      value={newDatabaseName}
+                      onChange={(e) => setNewDatabaseName(e.target.value)}
+                      className="mt-1.5"
+                    />
+                  </div>
+                  <Button
+                    onClick={handleSaveDatabase}
+                    disabled={!canSaveDatabase || isSavingDatabase}
+                    className="shrink-0 mt-6"
+                  >
+                    {isSavingDatabase ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Save className="w-4 h-4 mr-2" />
+                    )}
+                    Salvar Base
+                  </Button>
+                </div>
+                {hasUnsavedChanges && !newDatabaseName.trim() && (
+                  <p className="text-xs text-amber-600 mt-2">
+                    Digite um nome para salvar a base de leads
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Selected Database Badge */}
+          {selectedDatabase && !isCreatingNewDatabase && (
+            <div className="flex items-center gap-3 p-3 bg-muted/50 rounded-lg border">
+              <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
+                <Database className="w-5 h-5 text-primary" />
+              </div>
+              <div className="flex-1">
+                <p className="font-medium">{selectedDatabase.name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {selectedDatabase.leads_count} contatos na base
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleUpdateDatabase}
+                disabled={isSavingDatabase}
+              >
+                {isSavingDatabase ? (
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4 mr-2" />
+                )}
+                Salvar Alterações
+              </Button>
+            </div>
+          )}
+
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
@@ -372,7 +670,7 @@ const LeadsBroadcaster = () => {
         </div>
       )}
 
-      {/* Step 3: Message Composition */}
+      {/* Step 4: Message Composition */}
       {step === 'message' && selectedInstance && selectedLeadsList.length > 0 && (
         <div className="space-y-4">
           {/* Selected Leads Summary */}
@@ -386,7 +684,7 @@ const LeadsBroadcaster = () => {
                       {selectedLeadsList.length} contato{selectedLeadsList.length !== 1 ? 's' : ''} selecionado{selectedLeadsList.length !== 1 ? 's' : ''}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Envio individual para cada número
+                      {selectedDatabase ? `Base: ${selectedDatabase.name}` : 'Envio individual para cada número'}
                     </p>
                   </div>
                 </div>
