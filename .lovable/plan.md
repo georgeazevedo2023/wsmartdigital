@@ -1,8 +1,8 @@
 
-# Aplicar Visual Aurora ao Dashboard
+# Aplicar Visual Aurora e Glass ao Dashboard Completo
 
 ## Visao Geral
-Aplicar o mesmo estilo visual moderno (background aurora, glassmorphism aprimorado) da tela de login a todo o dashboard, incluindo a sidebar e a area de conteudo principal.
+Aplicar o visual moderno com glassmorphism a todas as paginas do dashboard (Instancias, Usuarios, Configuracoes, Agendamentos, Disparador, Historico) e adicionar efeito de hover com glow verde nos cards.
 
 ---
 
@@ -10,9 +10,15 @@ Aplicar o mesmo estilo visual moderno (background aurora, glassmorphism aprimora
 
 | Arquivo | Descricao |
 |---------|-----------|
-| `src/components/dashboard/DashboardLayout.tsx` | Aplicar background aurora na area principal |
-| `src/components/dashboard/Sidebar.tsx` | Estilizar sidebar com glassmorphism |
-| `src/index.css` | Adicionar classes utilitarias para sidebar glass |
+| `src/index.css` | Adicionar classe `glass-card-hover` com efeito glow verde |
+| `src/pages/dashboard/Instances.tsx` | Aplicar glass-card aos cards e dialogs |
+| `src/pages/dashboard/UsersManagement.tsx` | Aplicar glass-card aos cards de usuario |
+| `src/pages/dashboard/Settings.tsx` | Substituir `.glass` por `.glass-card` |
+| `src/pages/dashboard/ScheduledMessages.tsx` | Aplicar glass-card aos cards de mensagens |
+| `src/pages/dashboard/Broadcaster.tsx` | Aplicar glass-card aos cards de selecao |
+| `src/components/dashboard/StatsCard.tsx` | Adicionar efeito hover glow |
+| `src/components/dashboard/InstanceCard.tsx` | Adicionar efeito hover glow |
+| `src/components/dashboard/DashboardCharts.tsx` | Adicionar efeito hover glow |
 
 ---
 
@@ -20,100 +26,200 @@ Aplicar o mesmo estilo visual moderno (background aurora, glassmorphism aprimora
 
 ### 1. src/index.css
 
-Adicionar nova classe para sidebar com glassmorphism:
+Adicionar nova classe para hover com glow verde:
 
 ```css
-/* Sidebar com glassmorphism */
-.sidebar-glass {
-  @apply bg-slate-900/80 backdrop-blur-xl;
-  border-right: 1px solid hsl(142 70% 45% / 0.1);
+/* Glass card com hover glow */
+.glass-card-hover {
+  @apply glass-card transition-all duration-300;
+}
+
+.glass-card-hover:hover {
+  border-color: hsl(142 70% 45% / 0.3);
+  box-shadow: 
+    0 0 30px -5px hsl(142 70% 45% / 0.25),
+    0 0 60px -10px hsl(142 70% 45% / 0.15),
+    inset 0 1px 0 0 hsl(0 0% 100% / 0.08);
 }
 ```
 
-### 2. src/components/dashboard/DashboardLayout.tsx
+### 2. src/components/dashboard/StatsCard.tsx
 
-Aplicar o background aurora ao container principal:
+Atualizar para usar a nova classe com hover:
 
 **Antes:**
 ```tsx
-<div className="flex h-screen bg-background">
+<Card className={cn('glass-card', className)}>
 ```
 
 **Depois:**
 ```tsx
-<div className="flex h-screen bg-aurora">
+<Card className={cn('glass-card-hover', className)}>
 ```
 
-A area de conteudo mantera o scroll com fundo transparente, permitindo que o gradiente aurora apareca por tras dos cards.
+### 3. src/components/dashboard/InstanceCard.tsx
 
-### 3. src/components/dashboard/Sidebar.tsx
-
-Substituir o fundo solido por glassmorphism:
+Atualizar para usar a nova classe com hover:
 
 **Antes:**
 ```tsx
-<aside className={cn(
-  'h-screen flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300',
-  collapsed ? 'w-20' : 'w-64'
-)}>
+<Card className="glass-card hover:border-primary/30 transition-all group">
 ```
 
 **Depois:**
 ```tsx
-<aside className={cn(
-  'h-screen flex flex-col sidebar-glass transition-all duration-300',
-  collapsed ? 'w-20' : 'w-64'
-)}>
+<Card className="glass-card-hover group">
 ```
 
-Tambem ajustar:
-- Header da sidebar (borda mais sutil)
-- Bordas internas para usar transparencia verde
+### 4. src/components/dashboard/DashboardCharts.tsx
+
+Atualizar todos os cards de graficos:
+
+**Antes:**
+```tsx
+<Card className="glass-card">
+```
+
+**Depois:**
+```tsx
+<Card className="glass-card-hover">
+```
+
+### 5. src/pages/dashboard/Settings.tsx
+
+Substituir a classe `.glass` por `.glass-card-hover`:
+
+**Antes:**
+```tsx
+<Card className="glass border-border/50">
+```
+
+**Depois:**
+```tsx
+<Card className="glass-card-hover">
+```
+
+Aplicar a todos os 3 cards da pagina (System Info, Security, Database).
+
+### 6. src/pages/dashboard/UsersManagement.tsx
+
+Atualizar os cards de usuario:
+
+**Antes (linha 414):**
+```tsx
+className="relative p-5 rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/30 transition-all"
+```
+
+**Depois:**
+```tsx
+className="relative p-5 glass-card-hover"
+```
+
+### 7. src/pages/dashboard/Instances.tsx
+
+Atualizar o dialog de QR Code para usar glass-card:
+
+**Antes (DialogContent):**
+```tsx
+<DialogContent>
+```
+
+**Depois:**
+```tsx
+<DialogContent className="glass-card border-none">
+```
+
+### 8. src/pages/dashboard/ScheduledMessages.tsx
+
+Atualizar o card de mensagem agendada:
+
+**Antes (linha 141):**
+```tsx
+<Card>
+```
+
+**Depois:**
+```tsx
+<Card className="glass-card-hover">
+```
+
+Atualizar tambem o card de estado vazio:
+
+**Antes (linha 396):**
+```tsx
+<Card>
+```
+
+**Depois:**
+```tsx
+<Card className="glass-card">
+```
+
+### 9. src/pages/dashboard/Broadcaster.tsx
+
+Atualizar os cards de selecao:
+
+**Antes (linhas 169, 195, 233):**
+```tsx
+<Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+```
+
+**Depois:**
+```tsx
+<Card className="glass-card-hover">
+```
+
+E o card de resumo de grupos selecionados:
+
+**Antes (linha 233):**
+```tsx
+<Card className="border-border/50 bg-muted/30">
+```
+
+**Depois:**
+```tsx
+<Card className="glass-card">
+```
 
 ---
 
 ## Resultado Visual Esperado
 
 ```
-+------------------+------------------------------------------+
-|                  |                                          |
-|    SIDEBAR       |           CONTEUDO                       |
-|    (glassmorphism|           (fundo aurora visivel)         |
-|    com blur)     |                                          |
-|                  |    +-------------+  +-------------+      |
-|  [Logo]          |    | StatsCard   |  | StatsCard   |      |
-|                  |    | (glass)     |  | (glass)     |      |
-|  Dashboard       |    +-------------+  +-------------+      |
-|  Agendamentos    |                                          |
-|  Disparador >    |    +--------------------------------+    |
-|  Instancias >    |    | Chart Card (glass backdrop)    |    |
-|                  |    +--------------------------------+    |
-|  Admin           |                                          |
-|  Usuarios        |                                          |
-|  Config          |                                          |
-|                  |                                          |
-|  [Avatar]        |                                          |
-|  [Sair]          |                                          |
-+------------------+------------------------------------------+
++--------------------------------------------------+
+|  CARD (estado normal)                            |
+|  - Fundo: slate-900/60                           |
+|  - Borda: verde/15 sutil                         |
+|  - Blur: backdrop-blur-2xl                       |
++--------------------------------------------------+
+
++--------------------------------------------------+
+|  CARD (hover)                                    |
+|  - Borda: verde/30 mais visivel                  |
+|  - Glow: sombra verde radiante                   |
+|  - Efeito suave de destaque                      |
++--------------------------------------------------+
 ```
 
 ---
 
 ## O Que NAO Sera Alterado
 
-- Funcionalidades da sidebar (navegacao, collapse, submenus)
-- Logica de autenticacao
-- Componentes de conteudo (StatsCard, DashboardCharts, InstanceCard)
+- Funcionalidades de todas as paginas
+- Logica de autenticacao e permissoes
 - Rotas e navegacao
+- Componentes internos dos cards
 
 ---
 
 ## Checklist de Validacao
 
-1. Abrir o dashboard apos login
-2. Verificar que o fundo aurora aparece atras de todo o layout
-3. Verificar que a sidebar tem efeito de vidro (blur)
-4. Verificar que os cards internos mantem o estilo glass
-5. Verificar que a navegacao funciona normalmente
-6. Verificar que o collapse da sidebar funciona
-7. Testar em mobile para garantir responsividade
+1. Verificar que todos os cards tem o visual glass
+2. Passar o mouse sobre os cards e verificar o efeito glow verde
+3. Navegar entre todas as paginas do dashboard
+4. Testar na pagina de Instancias
+5. Testar na pagina de Usuarios
+6. Testar na pagina de Configuracoes
+7. Testar na pagina de Agendamentos
+8. Testar na pagina do Disparador
+9. Verificar responsividade em mobile
