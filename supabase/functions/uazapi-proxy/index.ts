@@ -510,6 +510,77 @@ Deno.serve(async (req) => {
         )
       }
 
+      case 'resolve-lids': {
+        // Resolve LIDs (Linked Device IDs) to real phone numbers
+        // Uses /chat/check endpoint to find the PhoneNumber for each LID
+        if (!instanceToken || !body.lids || !Array.isArray(body.lids)) {
+          return new Response(
+            JSON.stringify({ error: 'Instance token and lids array required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+        
+        console.log('Resolving', body.lids.length, 'LIDs to phone numbers')
+        
+        // Extract just the numeric part from LIDs (remove @lid suffix)
+        const cleanLids = body.lids.map((lid: string) => lid.split('@')[0])
+        
+        const resolveResponse = await fetch(`${uazapiUrl}/chat/check`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify({ phone: cleanLids }),
+        })
+        
+        console.log('Resolve LIDs response status:', resolveResponse.status)
+        
+        const resolveRawText = await resolveResponse.text()
+        console.log('Resolve LIDs raw response (first 500 chars):', resolveRawText.substring(0, 500))
+        
+        let resolveData: unknown
+        try {
+          resolveData = JSON.parse(resolveRawText)
+        } catch {
+          resolveData = { raw: resolveRawText }
+        }
+        
+        // Normalize response - UAZAPI may return { Users: [...] } or other variations
+        const resolvedUsers = (resolveData as Record<string, unknown>)?.Users || 
+                              (resolveData as Record<string, unknown>)?.users || 
+                              (resolveData as Record<string, unknown>)?.data || 
+                              []
+        
+        // Map LIDs to their resolved phone numbers
+        const lidToPhone: Record<string, { phone: string; name?: string; isValid: boolean }> = {}
+        
+        if (Array.isArray(resolvedUsers)) {
+          for (const user of resolvedUsers as Array<Record<string, unknown>>) {
+            const originalLid = String(user.Phone || user.phone || user.Number || user.number || '')
+            const jid = String(user.JID || user.jid || '')
+            const name = String(user.VerifiedName || user.verifiedName || user.Name || user.name || '')
+            const isRegistered = user.IsRegistered ?? user.isRegistered ?? true
+            
+            // Extract phone from JID (format: 5581999999999@s.whatsapp.net)
+            const phoneFromJid = jid.split('@')[0]
+            
+            if (originalLid) {
+              lidToPhone[originalLid] = {
+                phone: phoneFromJid || originalLid,
+                name: name || undefined,
+                isValid: !!isRegistered,
+              }
+            }
+          }
+        }
+        
+        return new Response(
+          JSON.stringify({ resolved: lidToPhone }),
+          { status: resolveResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: 'Invalid action' }),
