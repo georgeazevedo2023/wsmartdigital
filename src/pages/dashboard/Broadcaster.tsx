@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft } from 'lucide-react';
+import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, Database } from 'lucide-react';
 import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import GroupSelector, { Group } from '@/components/broadcast/GroupSelector';
 import BroadcastMessageForm from '@/components/broadcast/BroadcastMessageForm';
 import BroadcasterHeader from '@/components/broadcast/BroadcasterHeader';
+import CreateLeadDatabaseDialog from '@/components/broadcast/CreateLeadDatabaseDialog';
 
 interface ResendData {
   messageType: string;
@@ -23,6 +24,7 @@ const Broadcaster = () => {
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
   const [selectedGroups, setSelectedGroups] = useState<Group[]>([]);
   const [resendData, setResendData] = useState<ResendData | null>(null);
+  const [showCreateDatabaseDialog, setShowCreateDatabaseDialog] = useState(false);
 
   useEffect(() => {
     const storedData = sessionStorage.getItem('resendData');
@@ -207,7 +209,14 @@ const Broadcaster = () => {
               />
               
               {selectedGroups.length > 0 && (
-                <div className="flex justify-end pt-2 border-t">
+                <div className="flex justify-end gap-2 pt-2 border-t">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowCreateDatabaseDialog(true)}
+                  >
+                    <Database className="w-4 h-4 mr-2" />
+                    Criar Base de Leads
+                  </Button>
                   <Button onClick={handleContinueToMessage}>
                     Continuar com {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
                     <ChevronRight className="w-4 h-4 ml-2" />
@@ -279,6 +288,17 @@ const Broadcaster = () => {
           />
         </div>
       )}
+
+      {/* Create Lead Database Dialog */}
+      <CreateLeadDatabaseDialog
+        open={showCreateDatabaseDialog}
+        onOpenChange={setShowCreateDatabaseDialog}
+        groups={selectedGroups}
+        onSuccess={() => {
+          setShowCreateDatabaseDialog(false);
+          toast.success('Base criada! Acesse em Disparador > Leads');
+        }}
+      />
     </div>
   );
 };
