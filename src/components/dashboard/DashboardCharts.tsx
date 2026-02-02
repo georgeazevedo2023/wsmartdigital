@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts';
@@ -47,33 +48,42 @@ const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loa
     );
   }
 
-  // Data for status pie chart
-  const statusData = [
-    { name: 'Online', value: connectedCount, fill: CHART_COLORS.online },
-    { name: 'Offline', value: disconnectedCount, fill: CHART_COLORS.offline },
-  ].filter(item => item.value > 0);
+  // Memoized data for status pie chart
+  const statusData = useMemo(() => 
+    [
+      { name: 'Online', value: connectedCount, fill: CHART_COLORS.online },
+      { name: 'Offline', value: disconnectedCount, fill: CHART_COLORS.offline },
+    ].filter(item => item.value > 0),
+    [connectedCount, disconnectedCount]
+  );
 
-  // Data for groups bar chart (sorted by groups count)
-  const groupsData = [...instanceStats]
-    .sort((a, b) => b.groupsCount - a.groupsCount)
-    .slice(0, 6)
-    .map((stat, index) => ({
-      name: stat.instanceName.length > 12 ? stat.instanceName.slice(0, 12) + '...' : stat.instanceName,
-      fullName: stat.instanceName,
-      grupos: stat.groupsCount,
-      fill: CHART_COLORS.bars[index % CHART_COLORS.bars.length],
-    }));
+  // Memoized data for groups bar chart (sorted by groups count)
+  const groupsData = useMemo(() => 
+    [...instanceStats]
+      .sort((a, b) => b.groupsCount - a.groupsCount)
+      .slice(0, 6)
+      .map((stat, index) => ({
+        name: stat.instanceName.length > 12 ? stat.instanceName.slice(0, 12) + '...' : stat.instanceName,
+        fullName: stat.instanceName,
+        grupos: stat.groupsCount,
+        fill: CHART_COLORS.bars[index % CHART_COLORS.bars.length],
+      })),
+    [instanceStats]
+  );
 
-  // Data for participants horizontal bar chart (sorted by participants count)
-  const participantsData = [...instanceStats]
-    .sort((a, b) => b.participantsCount - a.participantsCount)
-    .slice(0, 6)
-    .map((stat, index) => ({
-      name: stat.instanceName.length > 15 ? stat.instanceName.slice(0, 15) + '...' : stat.instanceName,
-      fullName: stat.instanceName,
-      participantes: stat.participantsCount,
-      fill: CHART_COLORS.bars[index % CHART_COLORS.bars.length],
-    }));
+  // Memoized data for participants horizontal bar chart (sorted by participants count)
+  const participantsData = useMemo(() => 
+    [...instanceStats]
+      .sort((a, b) => b.participantsCount - a.participantsCount)
+      .slice(0, 6)
+      .map((stat, index) => ({
+        name: stat.instanceName.length > 15 ? stat.instanceName.slice(0, 15) + '...' : stat.instanceName,
+        fullName: stat.instanceName,
+        participantes: stat.participantsCount,
+        fill: CHART_COLORS.bars[index % CHART_COLORS.bars.length],
+      })),
+    [instanceStats]
+  );
 
   const hasData = instanceStats.length > 0;
   const hasStatusData = statusData.length > 0;
@@ -222,4 +232,4 @@ const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loa
   );
 };
 
-export default DashboardCharts;
+export default memo(DashboardCharts);

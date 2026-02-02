@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -166,4 +167,4 @@ const InstanceCard = ({
   );
 };
 
-export default InstanceCard;
+export default memo(InstanceCard);
