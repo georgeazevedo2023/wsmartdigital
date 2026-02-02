@@ -218,6 +218,11 @@
   .input-with-icon {
     @apply pl-11 bg-slate-800/50 border-slate-700/50;
   }
+
+  /* Input icon container */
+  .input-icon {
+    @apply absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground pointer-events-none z-10;
+  }
 }
 
 @keyframes float {

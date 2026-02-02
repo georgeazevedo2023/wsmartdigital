@@ -90,7 +90,7 @@ const Login = () => {
                 <div className="space-y-2">
                   <Label htmlFor="login-email" className="text-foreground">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <Mail className="input-icon" />
                     <Input
                       id="login-email"
                       type="email"
@@ -106,7 +106,7 @@ const Login = () => {
                 <div className="space-y-2">
                   <Label htmlFor="login-password" className="text-foreground">Senha</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <Lock className="input-icon" />
                     <Input
                       id="login-password"
                       type="password"
@@ -140,7 +140,7 @@ const Login = () => {
                 <div className="space-y-2">
                   <Label htmlFor="signup-name" className="text-foreground">Nome completo</Label>
                   <div className="relative">
-                    <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <User className="input-icon" />
                     <Input
                       id="signup-name"
                       type="text"
@@ -156,7 +156,7 @@ const Login = () => {
                 <div className="space-y-2">
                   <Label htmlFor="signup-email" className="text-foreground">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <Mail className="input-icon" />
                     <Input
                       id="signup-email"
                       type="email"
@@ -172,7 +172,7 @@ const Login = () => {
                 <div className="space-y-2">
                   <Label htmlFor="signup-password" className="text-foreground">Senha</Label>
                   <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                    <Lock className="input-icon" />
                     <Input
                       id="signup-password"
                       type="password"
