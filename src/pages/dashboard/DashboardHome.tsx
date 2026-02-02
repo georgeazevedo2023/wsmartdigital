@@ -82,7 +82,7 @@ const DashboardHome = () => {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6">
+      <div className="space-y-6 max-w-7xl mx-auto animate-fade-in">
         <div className="space-y-2">
           <Skeleton className="h-8 w-48" />
           <Skeleton className="h-4 w-64" />
@@ -97,7 +97,7 @@ const DashboardHome = () => {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="animate-fade-in">
         <h1 className="text-2xl font-display font-bold">

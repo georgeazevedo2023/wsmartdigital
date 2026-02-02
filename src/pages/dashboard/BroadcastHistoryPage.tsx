@@ -23,9 +23,9 @@ const BroadcastHistoryPage = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-6xl mx-auto animate-fade-in">
       <div>
-        <h1 className="text-2xl font-bold">Histórico de Envios</h1>
+        <h1 className="text-2xl font-bold tracking-tight">Histórico de Envios</h1>
         <p className="text-muted-foreground">
           Visualize e gerencie o histórico de mensagens enviadas
         </p>

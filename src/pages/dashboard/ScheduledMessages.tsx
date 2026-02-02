@@ -363,7 +363,7 @@ export default function ScheduledMessages() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
       <div>
         <h1 className="text-2xl font-bold tracking-tight">Mensagens Agendadas</h1>
         <p className="text-muted-foreground">

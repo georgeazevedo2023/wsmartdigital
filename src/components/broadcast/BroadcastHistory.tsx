@@ -4,7 +4,6 @@ import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -532,9 +531,8 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
             </Button>
           </div>
         ) : (
-          <ScrollArea className="h-[500px] pr-4">
-            <div className="space-y-3">
-              {filteredLogs.map((log) => {
+          <div className="space-y-4">
+            {filteredLogs.map((log) => {
                 const isExpanded = expandedId === log.id;
                 const deliveryRate = getDeliveryRate(log.recipients_success, log.recipients_targeted);
                 
@@ -679,8 +677,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                   </div>
                 );
               })}
-            </div>
-          </ScrollArea>
+          </div>
         )}
       </CardContent>
     </Card>
