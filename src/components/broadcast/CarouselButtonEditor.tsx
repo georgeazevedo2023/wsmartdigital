@@ -35,6 +35,50 @@ const getButtonIcon = (type: CarouselButton['type']) => {
   }
 };
 
+// Format phone number as +55 (11) 99999-9999
+const formatPhoneNumber = (value: string): string => {
+  // Remove all non-digit characters
+  const digits = value.replace(/\D/g, '');
+  
+  // Limit to 13 digits (country code + area + number)
+  const limited = digits.slice(0, 13);
+  
+  if (limited.length === 0) return '';
+  
+  let formatted = '+';
+  
+  // Country code (up to 2 digits)
+  if (limited.length >= 1) {
+    formatted += limited.slice(0, 2);
+  }
+  
+  // Area code
+  if (limited.length >= 3) {
+    formatted += ' (' + limited.slice(2, 4);
+  }
+  
+  if (limited.length >= 5) {
+    formatted += ') ';
+  }
+  
+  // First part of number (5 digits for mobile, 4 for landline)
+  if (limited.length >= 5) {
+    const remaining = limited.slice(4);
+    if (remaining.length <= 5) {
+      formatted += remaining;
+    } else {
+      formatted += remaining.slice(0, 5) + '-' + remaining.slice(5);
+    }
+  }
+  
+  return formatted;
+};
+
+// Extract only digits for storage
+const extractPhoneDigits = (formatted: string): string => {
+  return formatted.replace(/\D/g, '');
+};
+
 export function CarouselButtonEditor({ 
   button, 
   onChange, 
@@ -58,9 +102,16 @@ export function CarouselButtonEditor({
     onChange({ ...button, url });
   };
 
-  const handlePhoneChange = (phone: string) => {
-    onChange({ ...button, phone });
+  const handlePhoneChange = (input: string) => {
+    // Format and store
+    const formatted = formatPhoneNumber(input);
+    // Store only digits for API compatibility
+    const digits = extractPhoneDigits(formatted);
+    onChange({ ...button, phone: digits });
   };
+
+  // Get formatted display value
+  const formattedPhone = button.phone ? formatPhoneNumber(button.phone) : '';
 
   return (
     <div className="p-3 bg-muted/30 rounded-lg border border-border/40 space-y-2">
@@ -138,8 +189,8 @@ export function CarouselButtonEditor({
         <div className="flex items-center gap-2">
           <Phone className="w-4 h-4 text-muted-foreground shrink-0 ml-1" />
           <Input
-            placeholder="+55 11 99999-9999"
-            value={button.phone || ''}
+            placeholder="+55 (11) 99999-9999"
+            value={formattedPhone}
             onChange={(e) => handlePhoneChange(e.target.value)}
             disabled={disabled}
             className="h-9 flex-1 bg-background border-border/50"
