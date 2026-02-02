@@ -24,6 +24,20 @@ interface InitialData {
   messageType: string;
   content: string | null;
   mediaUrl: string | null;
+  carouselData?: {
+    message?: string;
+    cards?: Array<{
+      id?: string;
+      text?: string;
+      image?: string;
+      buttons?: Array<{
+        id?: string;
+        type: 'URL' | 'REPLY' | 'CALL';
+        label: string;
+        value?: string;
+      }>;
+    }>;
+  };
 }
 
 interface BroadcastMessageFormProps {
@@ -113,10 +127,29 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
   const [filename, setFilename] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Carousel state
-  const [carouselData, setCarouselData] = useState<CarouselData>({
-    message: '',
-    cards: [createEmptyCard(), createEmptyCard()],
+  // Carousel state - initialize from history if available
+  const [carouselData, setCarouselData] = useState<CarouselData>(() => {
+    if (initialData?.carouselData && initialData.carouselData.cards) {
+      return {
+        message: initialData.carouselData.message || '',
+        cards: initialData.carouselData.cards.map((card) => ({
+          id: card.id || crypto.randomUUID(),
+          text: card.text || '',
+          image: card.image || '',
+          buttons: card.buttons?.map((btn) => ({
+            id: btn.id || crypto.randomUUID(),
+            type: btn.type,
+            label: btn.label,
+            url: btn.type === 'URL' ? (btn.value || '') : '',
+            phone: btn.type === 'CALL' ? (btn.value || '') : '',
+          })) || [],
+        })),
+      };
+    }
+    return {
+      message: '',
+      cards: [createEmptyCard(), createEmptyCard()],
+    };
   });
 
   const totalMembers = selectedGroups.reduce((acc, g) => acc + g.size, 0);
