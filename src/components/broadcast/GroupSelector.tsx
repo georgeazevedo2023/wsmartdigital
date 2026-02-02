@@ -5,7 +5,6 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Search, Users, CheckSquare, Square, MessageSquare } from 'lucide-react';
@@ -203,57 +202,55 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
           <p>{searchTerm ? 'Nenhum grupo encontrado' : 'Nenhum grupo disponível'}</p>
         </div>
       ) : (
-        <ScrollArea className="h-[400px] pr-4">
-          <div className="space-y-2">
-            {filteredGroups.map((group) => {
-              const selected = isSelected(group.id);
-              const regularCount = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin).length;
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {filteredGroups.map((group) => {
+            const selected = isSelected(group.id);
+            const regularCount = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin).length;
 
-              return (
-                <Card
-                  key={group.id}
-                  className={`cursor-pointer transition-all hover:shadow-sm ${
-                    selected ? 'ring-2 ring-primary bg-primary/5' : ''
-                  }`}
-                  onClick={() => toggleGroup(group)}
-                >
-                  <CardContent className="p-3 flex items-center gap-3">
-                    <Checkbox
-                      checked={selected}
-                      onCheckedChange={() => toggleGroup(group)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    
-                    <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
-                      {group.pictureUrl ? (
-                        <img
-                          src={group.pictureUrl}
-                          alt={group.name}
-                          className="w-10 h-10 rounded-full object-cover"
-                        />
-                      ) : (
-                        <Users className="w-5 h-5 text-muted-foreground" />
-                      )}
+            return (
+              <Card
+                key={group.id}
+                className={`cursor-pointer transition-all duration-200 hover:shadow-md border-border/40 ${
+                  selected ? 'ring-2 ring-primary bg-primary/5 border-primary/30' : 'hover:border-border/60'
+                }`}
+                onClick={() => toggleGroup(group)}
+              >
+                <CardContent className="p-3 flex items-center gap-3">
+                  <Checkbox
+                    checked={selected}
+                    onCheckedChange={() => toggleGroup(group)}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  
+                  <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center shrink-0">
+                    {group.pictureUrl ? (
+                      <img
+                        src={group.pictureUrl}
+                        alt={group.name}
+                        className="w-10 h-10 rounded-full object-cover"
+                      />
+                    ) : (
+                      <Users className="w-5 h-5 text-muted-foreground" />
+                    )}
+                  </div>
+                  
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{group.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-xs text-muted-foreground">
+                        {group.size} membro{group.size !== 1 ? 's' : ''}
+                      </span>
+                      <span className="text-xs text-muted-foreground">•</span>
+                      <span className="text-xs text-muted-foreground">
+                        {regularCount} não-admin{regularCount !== 1 ? 's' : ''}
+                      </span>
                     </div>
-                    
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate">{group.name}</p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-muted-foreground">
-                          {group.size} membro{group.size !== 1 ? 's' : ''}
-                        </span>
-                        <span className="text-xs text-muted-foreground">•</span>
-                        <span className="text-xs text-muted-foreground">
-                          {regularCount} não-admin{regularCount !== 1 ? 's' : ''}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </ScrollArea>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       )}
     </div>
   );
