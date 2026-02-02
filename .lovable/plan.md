@@ -1,119 +1,104 @@
 
+# Corrigir Formatação de Números Internacionais
 
-# Adicionar Gráficos ao Dashboard
+## Problema Identificado
 
-## Visao Geral
+O número "29 57 0900168819" está sendo exibido incorretamente. Analisando o código atual:
 
-Adicionar visualizacoes graficas interativas para as metricas do Dashboard, usando o Recharts (ja instalado) e os componentes de Chart da UI do projeto.
+```typescript
+// Lógica atual (linhas 26-43)
+const formatPhoneNumber = (value: string): string => {
+  const number = value.split('@')[0].replace(/\D/g, '');
+  if (!number || number.length < 10) return value;
+  
+  const isBrazilian = number.startsWith('55') && number.length >= 12 && number.length <= 13;
+  
+  if (isBrazilian) {
+    return `${ddi} ${ddd} ${numero}`;
+  }
+  
+  return number; // Deveria retornar sem espaços
+};
+```
+
+O código diz que deveria retornar apenas `2957...` sem espaços, mas está exibindo `29 57 0900168819`.
+
+**Causa provável:** O dado (`member.phoneNumber` ou `member.jid`) já está vindo pré-formatado da API com espaços, e a função está recebendo esse valor com espaços já incluídos.
+
+O `replace(/\D/g, '')` remove caracteres não numéricos incluindo espaços, então o número deveria ser limpo. Isso indica que:
+
+1. O valor original pode conter algo antes do "@" que já tem espaços
+2. Ou há uma inconsistência na lógica de fallback
 
 ---
 
-## Graficos a Implementar
+## Solução
 
-### 1. Grafico de Pizza - Distribuicao de Instancias
+Modificar a lógica para garantir que números não-brasileiros também sejam exibidos de forma mais legível, aplicando um formato genérico:
 
-Visualizacao da distribuicao entre instancias online e offline.
+### Código Corrigido
 
-```text
-+------------------------+
-|  Distribuicao Status   |
-|     +----------+       |
-|    /   Online  \       |
-|   |   (verde)   |      |
-|   |   Offline   |      |
-|    \  (cinza)  /       |
-|     +----------+       |
-|  [legenda colorida]    |
-+------------------------+
+```typescript
+const formatPhoneNumber = (value: string): string => {
+  const number = value.split('@')[0].replace(/\D/g, '');
+  if (!number || number.length < 10) return value;
+  
+  // Verifica se é número brasileiro (começa com 55 e tem 12-13 dígitos)
+  const isBrazilian = number.startsWith('55') && number.length >= 12 && number.length <= 13;
+  
+  if (isBrazilian) {
+    // Formato brasileiro: 55 XX XXXXXXXXX
+    const ddi = number.slice(0, 2); // 55
+    const ddd = number.slice(2, 4); // DDD
+    const numero = number.slice(4); // Número
+    return `${ddi} ${ddd} ${numero}`;
+  }
+  
+  // Para outros números, exibe apenas os dígitos limpos (sem formatação)
+  // Isso garante consistência visual e evita formatação incorreta
+  return number;
+};
 ```
 
-### 2. Grafico de Barras - Grupos por Instancia
+**Porém**, olhando a imagem novamente, o número está com espaços, então o problema pode estar no **dado de entrada**. O `member.phoneNumber` pode estar vindo com espaços da API.
 
-Visualizacao comparativa do numero de grupos em cada instancia.
+### Solução Adicional - Garantir Limpeza do Dado
 
-```text
-+----------------------------------+
-|     Grupos por Instancia         |
-|                                  |
-|  Inst A  ████████████  45        |
-|  Inst B  ████████  32            |
-|  Inst C  ██████  24              |
-|  Inst D  ████  15                |
-|                                  |
-+----------------------------------+
-```
+Se o dado já vem formatado incorretamente, precisamos garantir que a limpeza ocorra corretamente e que retornemos apenas dígitos para números internacionais:
 
-### 3. Grafico de Barras Horizontal - Participantes por Instancia
-
-Visualizacao dos participantes totais agrupados por instancia.
-
-```text
-+----------------------------------+
-|   Participantes por Instancia    |
-|                                  |
-|  Inst A  ██████████████  2.450   |
-|  Inst B  ████████████  1.890     |
-|  Inst C  █████████  1.200        |
-|  Inst D  ██████  850             |
-|                                  |
-+----------------------------------+
-```
-
----
-
-## Layout Proposto
-
-Os graficos serao adicionados logo apos os KPIs principais e antes da secao "Grupos por Instancia":
-
-```text
-[Header - Ola, Usuario!]
-
-[KPIs Grid: Instancias | Online | Grupos | Participantes]
-
-[KPIs Secundarios: Offline | Usuarios]
-
-[NOVA SECAO: Graficos]
-+---------------------------------------+
-|  [Pizza: Status]  |  [Barras: Grupos] |
-+---------------------------------------+
-|      [Barras Horizontais: Participantes]       |
-+---------------------------------------+
-
-[Grupos por Instancia - cards existentes]
-
-[Instancias Recentes]
+```typescript
+const formatPhoneNumber = (value: string): string => {
+  // Remove tudo exceto dígitos
+  const number = value.split('@')[0].replace(/\D/g, '');
+  if (!number || number.length < 10) return number || value;
+  
+  // Verifica se é número brasileiro (começa com 55 e tem 12-13 dígitos)
+  const isBrazilian = number.startsWith('55') && number.length >= 12 && number.length <= 13;
+  
+  if (isBrazilian) {
+    // Formato brasileiro: 55 XX XXXXXXXXX
+    const ddi = number.slice(0, 2);
+    const ddd = number.slice(2, 4);
+    const numero = number.slice(4);
+    return `${ddi} ${ddd} ${numero}`;
+  }
+  
+  // Números internacionais: retorna apenas os dígitos sem formatação
+  return number;
+};
 ```
 
 ---
 
-## Alteracoes Tecnicas
+## Arquivo a Modificar
 
-### Arquivo a Modificar
-
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/pages/dashboard/DashboardHome.tsx` | Adicionar secao de graficos com 3 visualizacoes |
-
-### Componentes Recharts a Usar
-
-- `PieChart` + `Pie` + `Cell` para distribuicao de status
-- `BarChart` + `Bar` para grupos por instancia
-- `BarChart` (horizontal) + `Bar` para participantes
-- `ChartContainer`, `ChartTooltip`, `ChartTooltipContent` do projeto
-
-### Configuracao de Cores
-
-Usando as variaveis CSS do tema:
-- **Primary (verde)**: `hsl(142 70% 45%)` - para online/grupos
-- **Muted (cinza)**: `hsl(220 16% 14%)` - para offline
-- **Cores de destaque**: Tons de verde/teal para diferentes instancias
+| Arquivo | Linha | Alteracao |
+|---------|-------|-----------|
+| `src/components/broadcast/ParticipantSelector.tsx` | 26-43 | Garantir que números não-brasileiros retornem apenas dígitos limpos |
 
 ---
 
-## Comportamento
+## Resultado Esperado
 
-- Graficos usam os mesmos dados de `instanceStats` ja carregados
-- Exibem skeleton durante carregamento (`loadingStats`)
-- Respondem ao botao "Atualizar" existente
-- Layout responsivo: 2 colunas em desktop, 1 em mobile
-
+- Número brasileiro: `55 81 93856099` (formatado corretamente)
+- Número internacional: `29570900168819` (apenas dígitos, sem formatação incorreta)
