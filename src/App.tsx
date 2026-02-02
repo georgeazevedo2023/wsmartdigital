@@ -18,6 +18,7 @@ import Settings from "./pages/dashboard/Settings";
 import ScheduledMessages from "./pages/dashboard/ScheduledMessages";
 import Broadcaster from "./pages/dashboard/Broadcaster";
 import BroadcastHistoryPage from "./pages/dashboard/BroadcastHistoryPage";
+import LeadsBroadcaster from "./pages/dashboard/LeadsBroadcaster";
 
 const queryClient = new QueryClient();
 
@@ -82,6 +83,7 @@ const AppRoutes = () => {
         <Route index element={<DashboardHome />} />
         <Route path="broadcast" element={<Broadcaster />} />
         <Route path="broadcast/history" element={<BroadcastHistoryPage />} />
+        <Route path="broadcast/leads" element={<LeadsBroadcaster />} />
         <Route path="instances" element={<Instances />} />
         <Route path="instances/:id" element={<InstanceDetails />} />
         <Route path="instances/:instanceId/groups/:groupId" element={<GroupDetails />} />
