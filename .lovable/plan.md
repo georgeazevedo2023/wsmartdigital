@@ -1,317 +1,231 @@
 
+# Plano: Bases de Dados de Leads
 
-# Plano: Verificar Numeros no WhatsApp
+## Objetivo
+Criar um sistema que permite:
+1. Nomear e salvar listas de leads importadas como "bases de dados"
+2. Persistir essas bases no banco de dados
+3. Ao disparar mensagens, selecionar qual base de leads usar
 
-## Visao Geral
-Adicionar funcionalidade para verificar se os numeros importados estao registrados no WhatsApp utilizando o endpoint `/chat/check` da UAZAPI. Isso permitira filtrar contatos invalidos antes do envio.
+## Arquitetura
 
-## Estrutura da API UAZAPI
+### 1. Nova Tabela no Banco de Dados
 
-Baseado na documentacao e padroes similares, o endpoint `/chat/check` funciona assim:
+Criar tabela `lead_databases` para armazenar as bases:
+
+```sql
+CREATE TABLE lead_databases (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  description text,
+  leads_count integer DEFAULT 0,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+
+-- RLS: usuarios so veem suas proprias bases
+ALTER TABLE lead_databases ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage own lead databases" ON lead_databases
+  FOR ALL USING (auth.uid() = user_id);
+```
+
+Criar tabela `lead_database_entries` para armazenar os contatos:
+
+```sql
+CREATE TABLE lead_database_entries (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  database_id uuid NOT NULL REFERENCES lead_databases(id) ON DELETE CASCADE,
+  phone text NOT NULL,
+  name text,
+  jid text NOT NULL,
+  is_verified boolean DEFAULT false,
+  verified_name text,
+  verification_status text, -- 'valid', 'invalid', 'error', null
+  source text DEFAULT 'paste', -- 'paste', 'manual', 'group', 'csv'
+  group_name text,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Index para buscas
+CREATE INDEX idx_lead_entries_database ON lead_database_entries(database_id);
+
+-- RLS via join com lead_databases
+ALTER TABLE lead_database_entries ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Users can manage entries via database ownership" ON lead_database_entries
+  FOR ALL USING (
+    EXISTS (
+      SELECT 1 FROM lead_databases 
+      WHERE lead_databases.id = lead_database_entries.database_id 
+      AND lead_databases.user_id = auth.uid()
+    )
+  );
+```
+
+### 2. Novo Fluxo do Usuario
 
 ```text
-POST /chat/check
-Headers: { token: instanceToken }
-Body: { phone: ["5511999998888", "5521988887777", ...] }
-
-Response:
-{
-  "Users": [
-    {
-      "IsInWhatsapp": true,
-      "JID": "5511999998888@s.whatsapp.net",
-      "Query": "5511999998888",
-      "VerifiedName": "Nome Comercial"
-    },
-    {
-      "IsInWhatsapp": false,
-      "JID": "5521988887777@s.whatsapp.net",
-      "Query": "5521988887777",
-      "VerifiedName": ""
-    }
-  ]
-}
+DISPARADOR DE LEADS
+     |
+     v
+Etapa 1: Selecionar Instancia
+     |
+     v
+Etapa 2: Escolher Base de Leads  <-- NOVA ETAPA
+     |
+     +---> [Criar Nova Base] --> Importar Contatos --> Dar Nome --> Salvar
+     |
+     +---> [Usar Base Existente] --> Carregar do Banco
+     |
+     v
+Etapa 3: Ver/Editar Leads + Verificar
+     |
+     v
+Etapa 4: Compor Mensagem e Enviar
 ```
 
----
+### 3. Componentes a Criar/Modificar
 
-## Mudancas Necessarias
+**Novo: `LeadDatabaseSelector.tsx`**
+- Lista bases existentes com nome, quantidade e data
+- Opcao de criar nova base
+- Opcao de deletar bases
+- Preview rapido dos primeiros contatos
 
-### 1. Edge Function: uazapi-proxy/index.ts
+**Modificar: `LeadsBroadcaster.tsx`**
+- Adicionar nova etapa "database" entre "instance" e "import"
+- Adicionar estado `selectedDatabase` e `databaseName`
+- Ao importar leads, solicitar nome da base antes de salvar
+- Ao continuar para mensagem, salvar automaticamente a base
 
-Adicionar novo case `check-numbers`:
+**Modificar: `LeadImporter.tsx`**
+- Adicionar callback `onSaveDatabase` 
+- Apos importacao, permitir dar nome e salvar
+
+### 4. Estrutura de Dados Atualizada
 
 ```typescript
-case 'check-numbers': {
-  if (!instanceToken || !body.phones || !Array.isArray(body.phones)) {
-    return new Response(
-      JSON.stringify({ error: 'Instance token and phones array required' }),
-      { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-  }
-  
-  console.log('Checking', body.phones.length, 'numbers')
-  
-  const checkResponse = await fetch(`${uazapiUrl}/chat/check`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'token': instanceToken,
-    },
-    body: JSON.stringify({ phone: body.phones }),
-  })
-  
-  const checkData = await checkResponse.json()
-  
-  // Normalizar resposta
-  const users = checkData.Users || checkData.users || checkData.data || []
-  
-  return new Response(
-    JSON.stringify({ users }),
-    { status: checkResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  )
+// Interface para base de dados
+interface LeadDatabase {
+  id: string;
+  name: string;
+  description?: string;
+  leads_count: number;
+  created_at: string;
+  updated_at: string;
 }
-```
 
-### 2. Interface Lead: LeadsBroadcaster.tsx
-
-Estender a interface para incluir status de verificacao:
-
-```typescript
-export interface Lead {
+// Interface Lead (existente) - sem mudancas
+interface Lead {
   id: string;
   phone: string;
   name?: string;
   jid: string;
   source: 'manual' | 'paste' | 'group';
   groupName?: string;
-  // Novos campos de verificacao
-  isVerified?: boolean;        // true = verificado no WhatsApp
-  verifiedName?: string;       // Nome comercial (se disponivel)
+  isVerified?: boolean;
+  verifiedName?: string;
   verificationStatus?: 'pending' | 'valid' | 'invalid' | 'error';
 }
 ```
 
-### 3. Componente LeadsBroadcaster.tsx
-
-Adicionar funcao de verificacao e estado:
-
-```typescript
-const [isVerifying, setIsVerifying] = useState(false);
-const [verificationProgress, setVerificationProgress] = useState(0);
-
-const handleVerifyNumbers = async () => {
-  if (!selectedInstance || leads.length === 0) return;
-  
-  setIsVerifying(true);
-  setVerificationProgress(0);
-  
-  // Extrair numeros (sem @s.whatsapp.net)
-  const phones = leads.map(l => l.jid.replace('@s.whatsapp.net', ''));
-  
-  // Verificar em lotes de 50 para evitar timeout
-  const BATCH_SIZE = 50;
-  const results = new Map<string, { isValid: boolean; verifiedName?: string }>();
-  
-  for (let i = 0; i < phones.length; i += BATCH_SIZE) {
-    const batch = phones.slice(i, i + BATCH_SIZE);
-    
-    const response = await supabase.functions.invoke('uazapi-proxy', {
-      body: {
-        action: 'check-numbers',
-        token: selectedInstance.token,
-        phones: batch,
-      },
-    });
-    
-    if (response.data?.users) {
-      response.data.users.forEach((u: any) => {
-        results.set(u.Query || u.query, {
-          isValid: u.IsInWhatsapp || u.isInWhatsapp || false,
-          verifiedName: u.VerifiedName || u.verifiedName || '',
-        });
-      });
-    }
-    
-    setVerificationProgress(Math.min(100, ((i + batch.length) / phones.length) * 100));
-  }
-  
-  // Atualizar leads com status
-  setLeads(prevLeads => prevLeads.map(lead => {
-    const phone = lead.jid.replace('@s.whatsapp.net', '');
-    const result = results.get(phone);
-    return {
-      ...lead,
-      verificationStatus: result ? (result.isValid ? 'valid' : 'invalid') : 'error',
-      isVerified: result?.isValid ?? false,
-      verifiedName: result?.verifiedName,
-    };
-  }));
-  
-  setIsVerifying(false);
-};
-```
-
-Adicionar botao na UI apos importar contatos:
-
-```tsx
-<div className="flex items-center gap-2">
-  <Button 
-    variant="outline" 
-    size="sm" 
-    onClick={handleVerifyNumbers}
-    disabled={isVerifying || leads.length === 0}
-  >
-    {isVerifying ? (
-      <>
-        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-        Verificando... {Math.round(verificationProgress)}%
-      </>
-    ) : (
-      <>
-        <ShieldCheck className="w-4 h-4 mr-2" />
-        Verificar Numeros
-      </>
-    )}
-  </Button>
-</div>
-```
-
-### 4. Componente LeadList.tsx
-
-Exibir status de verificacao ao lado de cada contato:
-
-```tsx
-const getVerificationBadge = (lead: Lead) => {
-  switch (lead.verificationStatus) {
-    case 'valid':
-      return (
-        <Badge variant="default" className="text-xs bg-green-500/20 text-green-600 border-green-500/30">
-          <CheckCircle className="w-3 h-3 mr-1" />
-          WhatsApp
-        </Badge>
-      );
-    case 'invalid':
-      return (
-        <Badge variant="destructive" className="text-xs">
-          <XCircle className="w-3 h-3 mr-1" />
-          Invalido
-        </Badge>
-      );
-    case 'error':
-      return (
-        <Badge variant="outline" className="text-xs text-yellow-600">
-          <AlertCircle className="w-3 h-3 mr-1" />
-          Erro
-        </Badge>
-      );
-    default:
-      return null; // Nao verificado ainda
-  }
-};
-
-// Na renderizacao do lead:
-<div className="flex items-center gap-1.5">
-  {getVerificationBadge(lead)}
-  {getSourceBadge(lead.source, lead.groupName)}
-</div>
-```
-
-### 5. Filtros Adicionais
-
-Adicionar opcao para filtrar por status de verificacao:
-
-```tsx
-// Novo estado
-const [statusFilter, setStatusFilter] = useState<'all' | 'valid' | 'invalid' | 'pending'>('all');
-
-// Filtro atualizado
-const filteredLeads = useMemo(() => {
-  let result = leads;
-  
-  // Filtro de busca
-  if (search.trim()) {
-    const searchLower = search.toLowerCase();
-    result = result.filter(lead =>
-      lead.phone.includes(search) ||
-      lead.name?.toLowerCase().includes(searchLower)
-    );
-  }
-  
-  // Filtro de status
-  if (statusFilter !== 'all') {
-    if (statusFilter === 'pending') {
-      result = result.filter(l => !l.verificationStatus);
-    } else {
-      result = result.filter(l => l.verificationStatus === statusFilter);
-    }
-  }
-  
-  return result;
-}, [leads, search, statusFilter]);
-```
-
-UI de filtro:
-
-```tsx
-<Select value={statusFilter} onValueChange={setStatusFilter}>
-  <SelectTrigger className="w-[140px]">
-    <SelectValue placeholder="Status" />
-  </SelectTrigger>
-  <SelectContent>
-    <SelectItem value="all">Todos</SelectItem>
-    <SelectItem value="valid">Validos</SelectItem>
-    <SelectItem value="invalid">Invalidos</SelectItem>
-    <SelectItem value="pending">Nao verificados</SelectItem>
-  </SelectContent>
-</Select>
-```
-
----
-
-## Resumo dos Arquivos
+### 5. Mudancas Detalhadas por Arquivo
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/uazapi-proxy/index.ts` | Adicionar case `check-numbers` |
-| `src/pages/dashboard/LeadsBroadcaster.tsx` | Estender interface Lead, adicionar funcao de verificacao |
-| `src/components/broadcast/LeadList.tsx` | Exibir badges de verificacao, adicionar filtro por status |
+| `supabase/migrations/` | Criar tabelas lead_databases e lead_database_entries |
+| `src/components/broadcast/LeadDatabaseSelector.tsx` | **NOVO** - Componente para listar/criar/deletar bases |
+| `src/pages/dashboard/LeadsBroadcaster.tsx` | Adicionar etapa de selecao de base, logica de salvamento |
+| `src/components/broadcast/LeadImporter.tsx` | Input para nome da base ao salvar |
+| `src/integrations/supabase/types.ts` | Auto-gerado apos migration |
 
----
-
-## Fluxo do Usuario
+### 6. UI do Seletor de Bases
 
 ```text
-1. Importar contatos (CSV, colar, grupos, manual)
-           |
-           v
-2. Ver lista de contatos importados
-           |
-           v
-3. Clicar em "Verificar Numeros"
-           |
-           v
-4. Aguardar progresso (lotes de 50)
-           |
-           v
-5. Ver badges verde (valido) ou vermelho (invalido)
-           |
-           v
-6. Filtrar apenas validos se desejar
-           |
-           v
-7. Continuar para envio de mensagem
++--------------------------------------------------+
+| Bases de Leads                                   |
++--------------------------------------------------+
+| [+ Criar Nova Base]                              |
+|                                                  |
+| +----------------------------------------------+ |
+| | Clientes VIP                    150 contatos | |
+| | Criada em 01/02/2026                    [...] | |
+| +----------------------------------------------+ |
+| | Leads Janeiro                    89 contatos | |
+| | Criada em 15/01/2026                    [...] | |
+| +----------------------------------------------+ |
+| | Promocao Verao                  320 contatos | |
+| | Criada em 10/01/2026                    [...] | |
+| +----------------------------------------------+ |
++--------------------------------------------------+
 ```
+
+### 7. Fluxo de Salvamento
+
+1. Usuario importa contatos (qualquer metodo)
+2. Sistema mostra modal/input pedindo nome da base
+3. Ao confirmar:
+   - Insere registro em `lead_databases`
+   - Insere todos os leads em `lead_database_entries`
+   - Atualiza `leads_count` na base
+4. Usuario pode continuar para envio ou voltar
+
+### 8. Funcionalidades Adicionais
+
+- **Editar base**: Adicionar/remover contatos de uma base existente
+- **Duplicar base**: Copiar base existente com novo nome
+- **Exportar base**: Download CSV dos contatos
+- **Historico**: Saber de qual base foi enviada cada campanha (opcional)
 
 ---
 
-## Consideracoes Tecnicas
+## Secao Tecnica
 
-1. **Limite de Lote**: Verificar em lotes de 50 numeros para evitar timeouts e limites da API
+### Queries Principais
 
-2. **Cache**: Os resultados sao armazenados no estado local. Se o usuario reimportar, precisara verificar novamente
+**Listar bases do usuario:**
+```typescript
+const { data } = await supabase
+  .from('lead_databases')
+  .select('*')
+  .order('updated_at', { ascending: false });
+```
 
-3. **Custo**: A verificacao pode ter custo na UAZAPI dependendo do plano. Exibir aviso antes de verificar grandes listas
+**Carregar leads de uma base:**
+```typescript
+const { data } = await supabase
+  .from('lead_database_entries')
+  .select('*')
+  .eq('database_id', selectedDatabase.id);
+```
 
-4. **Selecao Inteligente**: Apos verificacao, auto-desmarcar contatos invalidos ou oferecer botao "Selecionar apenas validos"
+**Salvar nova base com leads:**
+```typescript
+// 1. Criar base
+const { data: db } = await supabase
+  .from('lead_databases')
+  .insert({ name: databaseName, user_id: userId, leads_count: leads.length })
+  .select()
+  .single();
 
+// 2. Inserir leads
+const entries = leads.map(l => ({
+  database_id: db.id,
+  phone: l.phone,
+  name: l.name,
+  jid: l.jid,
+  source: l.source,
+  group_name: l.groupName,
+  is_verified: l.isVerified,
+  verified_name: l.verifiedName,
+  verification_status: l.verificationStatus,
+}));
+
+await supabase.from('lead_database_entries').insert(entries);
+```
+
+### Consideracoes de Performance
+
+- Para bases grandes (10k+ leads), usar paginacao na carga
+- Indices no database_id para queries rapidas
+- Considerar limite maximo de leads por base (ex: 50.000)
