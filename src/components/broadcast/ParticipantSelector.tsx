@@ -22,15 +22,24 @@ interface ParticipantSelectorProps {
 }
 
 // Formata para DDI + DDD + NUMERO (ex: 55 11 999999999)
+// Números brasileiros (55) têm formato específico, outros mantêm formato genérico
 const formatPhoneNumber = (value: string): string => {
   const number = value.split('@')[0].replace(/\D/g, '');
   if (!number || number.length < 10) return value;
   
-  const ddi = number.slice(0, 2);
-  const ddd = number.slice(2, 4);
-  const numero = number.slice(4);
+  // Verifica se é número brasileiro (começa com 55 e tem 12-13 dígitos)
+  const isBrazilian = number.startsWith('55') && number.length >= 12 && number.length <= 13;
   
-  return `${ddi} ${ddd} ${numero}`;
+  if (isBrazilian) {
+    // Formato brasileiro: 55 XX XXXXXXXXX
+    const ddi = number.slice(0, 2); // 55
+    const ddd = number.slice(2, 4); // DDD
+    const numero = number.slice(4); // Número
+    return `${ddi} ${ddd} ${numero}`;
+  }
+  
+  // Para números internacionais, exibe o número completo sem formatação específica
+  return number;
 };
 
 const ParticipantSelector = ({
