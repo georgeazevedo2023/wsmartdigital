@@ -23,9 +23,22 @@ const InstanceSelector = ({ selectedInstance, onSelect }: InstanceSelectorProps)
   const [instances, setInstances] = useState<Instance[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const isConnected = (status: string) => 
+    status === 'connected' || status === 'online';
+
   useEffect(() => {
     fetchInstances();
   }, []);
+
+  // Auto-select if only one online instance
+  useEffect(() => {
+    if (loading || selectedInstance) return;
+    
+    const onlineInstances = instances.filter(i => isConnected(i.status));
+    if (onlineInstances.length === 1) {
+      onSelect(onlineInstances[0]);
+    }
+  }, [instances, loading, selectedInstance, onSelect]);
 
   const fetchInstances = async () => {
     try {
@@ -43,8 +56,6 @@ const InstanceSelector = ({ selectedInstance, onSelect }: InstanceSelectorProps)
     }
   };
 
-  const isConnected = (status: string) => 
-    status === 'connected' || status === 'online';
 
   if (loading) {
     return (
