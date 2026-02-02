@@ -104,10 +104,8 @@ const DashboardHome = () => {
         try {
           const { data, error } = await supabase.functions.invoke('uazapi-proxy', {
             body: {
-              endpoint: `/group/fetchAllGroups/${instance.id}`,
-              method: 'GET',
-              instanceToken: instance.token,
-              getParticipants: 'false',
+              action: 'groups',
+              token: instance.token,
             },
           });
 
