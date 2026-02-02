@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +12,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { 
   History, 
   CheckCircle2, 
@@ -34,10 +44,12 @@ import {
   Calendar,
   Eye,
   Play,
-  LayoutGrid
+  LayoutGrid,
+  Trash2
 } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { toast } from 'sonner';
 
 import { HistoryCarouselPreview, HistoryCarouselData } from './HistoryCarouselPreview';
 import type { Json } from '@/integrations/supabase/types';
@@ -244,6 +256,10 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [logToDelete, setLogToDelete] = useState<BroadcastLog | null>(null);
+
+  const queryClient = useQueryClient();
 
   const { data: logs, isLoading, refetch, isRefetching } = useQuery({
     queryKey: ['broadcast-logs'],
@@ -258,6 +274,38 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
       return data as BroadcastLog[];
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (logId: string) => {
+      const { error } = await supabase
+        .from('broadcast_logs')
+        .delete()
+        .eq('id', logId);
+      
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['broadcast-logs'] });
+      toast.success('Registro excluído com sucesso');
+      setDeleteDialogOpen(false);
+      setLogToDelete(null);
+    },
+    onError: (error) => {
+      toast.error('Erro ao excluir registro: ' + (error as Error).message);
+    },
+  });
+
+  const handleDeleteClick = (log: BroadcastLog, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setLogToDelete(log);
+    setDeleteDialogOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (logToDelete) {
+      deleteMutation.mutate(logToDelete.id);
+    }
+  };
 
   const filteredLogs = useMemo(() => {
     if (!logs) return [];
@@ -679,21 +727,31 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                           </div>
                         )}
 
-                        {/* Resend Button */}
-                        {onResend && (
+                        {/* Action Buttons */}
+                        <div className="flex gap-2">
+                          {onResend && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onResend(log);
+                              }}
+                            >
+                              <RefreshCw className="w-4 h-4 mr-2" />
+                              Reenviar
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-full"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onResend(log);
-                            }}
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={(e) => handleDeleteClick(log, e)}
                           >
-                            <RefreshCw className="w-4 h-4 mr-2" />
-                            Reenviar esta mensagem
+                            <Trash2 className="w-4 h-4" />
                           </Button>
-                        )}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -702,6 +760,35 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
           </div>
         )}
       </CardContent>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir registro</AlertDialogTitle>
+            <AlertDialogDescription>
+              Tem certeza que deseja excluir este registro do histórico? Esta ação não pode ser desfeita.
+              {logToDelete && (
+                <span className="block mt-2 text-sm">
+                  <strong>Tipo:</strong> {getMessageTypeLabel(logToDelete.message_type)} • 
+                  <strong> Grupos:</strong> {logToDelete.groups_targeted} • 
+                  <strong> Data:</strong> {format(new Date(logToDelete.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                </span>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmDelete}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Excluindo...' : 'Excluir'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   );
 };
