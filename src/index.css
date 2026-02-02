@@ -195,6 +195,19 @@
       inset 0 1px 0 0 hsl(0 0% 100% / 0.05);
   }
 
+  /* Glass card com hover glow */
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300;
+  }
+
+  .glass-card-hover:hover {
+    border-color: hsl(142 70% 45% / 0.3);
+    box-shadow: 
+      0 0 30px -5px hsl(142 70% 45% / 0.25),
+      0 0 60px -10px hsl(142 70% 45% / 0.15),
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.08);
+  }
+
   /* Sidebar com glassmorphism */
   .sidebar-glass {
     @apply bg-slate-900/80 backdrop-blur-xl;

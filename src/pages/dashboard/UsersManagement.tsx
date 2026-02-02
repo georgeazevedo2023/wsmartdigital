@@ -411,7 +411,7 @@ const UsersManagement = () => {
           {filteredUsers.map((user) => (
             <div
               key={user.id}
-              className="relative p-5 rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/30 transition-all"
+              className="relative p-5 rounded-xl glass-card-hover"
             >
               {/* Header: Avatar + Name + Badge */}
               <div className="flex items-start justify-between mb-4">

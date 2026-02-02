@@ -138,7 +138,7 @@ function ScheduledMessageCard({
   const statusBadge = STATUS_BADGES[message.status] || STATUS_BADGES.pending;
 
   return (
-    <Card>
+    <Card className="glass-card-hover">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="space-y-1">
@@ -393,7 +393,7 @@ export default function ScheduledMessages() {
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : getTabMessages().length === 0 ? (
-            <Card>
+            <Card className="glass-card">
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">
                 <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-lg font-medium mb-1">Nenhum agendamento</h3>

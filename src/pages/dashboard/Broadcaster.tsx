@@ -166,7 +166,7 @@ const Broadcaster = () => {
 
       {/* Step 1: Instance Selection */}
       {step === 'instance' && (
-        <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+        <Card className="glass-card-hover">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg flex items-center gap-2">
               <Server className="w-5 h-5" />
@@ -192,7 +192,7 @@ const Broadcaster = () => {
             showDatabase={false}
           />
 
-          <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
+          <Card className="glass-card-hover">
             <CardHeader className="pb-3">
               <CardTitle className="text-lg flex items-center gap-2">
                 <Users className="w-5 h-5" />
@@ -230,7 +230,7 @@ const Broadcaster = () => {
           />
 
           {/* Selected Groups Summary */}
-          <Card className="border-border/50 bg-muted/30">
+          <Card className="glass-card">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
