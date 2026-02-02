@@ -1098,6 +1098,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
 
       const accessToken = session.data.session.access_token;
       const results: SendProgress['results'] = [];
+      const startedAtTimestamp = Date.now(); // Capture timestamp locally to avoid stale closure
       
       isCancelledRef.current = false;
 
@@ -1113,7 +1114,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           groupName: `${membersToSend.length} participante(s)`,
           status: 'sending',
           results: [],
-          startedAt: Date.now(),
+          startedAt: startedAtTimestamp,
         });
 
         for (let j = 0; j < membersToSend.length; j++) {
@@ -1132,7 +1133,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsSuccess: sentCount,
               recipientsFailed: failedCount,
               status: 'cancelled',
-              startedAt: progress.startedAt || Date.now(),
+              startedAt: startedAtTimestamp,
               carouselData: carouselData,
             });
             return;
@@ -1155,7 +1156,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsSuccess: sentCount,
               recipientsFailed: failedCount,
               status: 'cancelled',
-              startedAt: progress.startedAt || Date.now(),
+              startedAt: startedAtTimestamp,
               carouselData: carouselData,
             });
             return;
@@ -1200,7 +1201,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           recipientsSuccess: successCount,
           recipientsFailed: failCount,
           status: 'completed',
-          startedAt: progress.startedAt || Date.now(),
+          startedAt: startedAtTimestamp,
           carouselData: carouselData,
         });
 
@@ -1219,7 +1220,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           groupName: '',
           status: 'sending',
           results: [],
-          startedAt: Date.now(),
+          startedAt: startedAtTimestamp,
         });
 
         for (let i = 0; i < selectedGroups.length; i++) {
@@ -1238,7 +1239,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsSuccess: sentCount,
               recipientsFailed: failedCount,
               status: 'cancelled',
-              startedAt: progress.startedAt || Date.now(),
+              startedAt: startedAtTimestamp,
               carouselData: carouselData,
             });
             return;
@@ -1261,7 +1262,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               recipientsSuccess: sentCount,
               recipientsFailed: failedCount,
               status: 'cancelled',
-              startedAt: progress.startedAt || Date.now(),
+              startedAt: startedAtTimestamp,
               carouselData: carouselData,
             });
             return;
@@ -1310,7 +1311,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           recipientsSuccess: successCount,
           recipientsFailed: failCount,
           status: 'completed',
-          startedAt: progress.startedAt || Date.now(),
+          startedAt: startedAtTimestamp,
           carouselData: carouselData,
         });
 
