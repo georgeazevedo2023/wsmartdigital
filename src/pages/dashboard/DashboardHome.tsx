@@ -115,8 +115,16 @@ const DashboardHome = () => {
           let totalParticipants = 0;
 
           // Sum participants from each group
-          groups.forEach((group: { size?: number; participants?: unknown[] }) => {
-            totalParticipants += group.size || group.participants?.length || 0;
+          // UAZAPI returns fields in PascalCase, check all possible formats
+          groups.forEach((group: Record<string, unknown>) => {
+            const participantCount = 
+              (group.ParticipantCount as number) ||
+              (group.Size as number) ||
+              (group.size as number) ||
+              (Array.isArray(group.Participants) ? group.Participants.length : 0) ||
+              (Array.isArray(group.participants) ? group.participants.length : 0) ||
+              0;
+            totalParticipants += participantCount;
           });
 
           stats.push({
