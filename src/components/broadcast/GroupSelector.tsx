@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -120,34 +120,42 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
     }
   };
 
-  const filteredGroups = groups.filter((group) =>
-    group.name.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredGroups = useMemo(() => 
+    groups.filter((group) =>
+      group.name.toLowerCase().includes(searchTerm.toLowerCase())
+    ), 
+    [groups, searchTerm]
   );
 
-  const isSelected = (groupId: string) => 
-    selectedGroups.some(g => g.id === groupId);
+  const isSelected = useCallback((groupId: string) => 
+    selectedGroups.some(g => g.id === groupId),
+    [selectedGroups]
+  );
 
-  const toggleGroup = (group: Group) => {
-    if (isSelected(group.id)) {
+  const toggleGroup = useCallback((group: Group) => {
+    if (selectedGroups.some(g => g.id === group.id)) {
       onSelectionChange(selectedGroups.filter(g => g.id !== group.id));
     } else {
       onSelectionChange([...selectedGroups, group]);
     }
-  };
+  }, [selectedGroups, onSelectionChange]);
 
-  const selectAll = () => {
+  const selectAll = useCallback(() => {
     onSelectionChange(filteredGroups);
-  };
+  }, [filteredGroups, onSelectionChange]);
 
-  const clearSelection = () => {
+  const clearSelection = useCallback(() => {
     onSelectionChange([]);
-  };
+  }, [onSelectionChange]);
 
-  const totalMembers = selectedGroups.reduce((acc, g) => acc + g.size, 0);
-  const totalRegularMembers = selectedGroups.reduce((acc, g) => {
-    const regular = g.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
-    return acc + regular.length;
-  }, 0);
+  const { totalMembers, totalRegularMembers } = useMemo(() => {
+    const totalMembers = selectedGroups.reduce((acc, g) => acc + g.size, 0);
+    const totalRegularMembers = selectedGroups.reduce((acc, g) => {
+      const regular = g.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
+      return acc + regular.length;
+    }, 0);
+    return { totalMembers, totalRegularMembers };
+  }, [selectedGroups]);
 
   if (loading) {
     return (
@@ -212,8 +220,8 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filteredGroups.map((group) => {
-            const selected = isSelected(group.id);
+        {filteredGroups.map((group) => {
+            const selected = selectedGroups.some(g => g.id === group.id);
             const regularCount = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin).length;
 
             return (
@@ -265,4 +273,4 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
   );
 };
 
-export default GroupSelector;
+export default memo(GroupSelector);

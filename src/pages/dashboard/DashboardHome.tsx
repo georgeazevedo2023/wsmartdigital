@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import StatsCard from '@/components/dashboard/StatsCard';
@@ -166,22 +166,25 @@ const DashboardHome = () => {
     setLoadingStats(false);
   };
 
-  const handleRefreshStats = async () => {
+  const handleRefreshStats = useCallback(async () => {
     if (instances.length === 0) return;
     toast.info('Atualizando estatísticas...');
     await fetchGroupsStats(instances);
     toast.success('Estatísticas atualizadas!');
-  };
+  }, [instances]);
 
-  const connectedInstances = instances.filter(
-    (i) => i.status === 'connected' || i.status === 'online'
+  const connectedInstances = useMemo(() => 
+    instances.filter((i) => i.status === 'connected' || i.status === 'online'),
+    [instances]
   );
-  const disconnectedInstances = instances.filter(
-    (i) => i.status !== 'connected' && i.status !== 'online'
+  
+  const disconnectedInstances = useMemo(() => 
+    instances.filter((i) => i.status !== 'connected' && i.status !== 'online'),
+    [instances]
   );
 
-  const totalGroups = instanceStats.reduce((acc, s) => acc + s.groupsCount, 0);
-  const totalParticipants = instanceStats.reduce((acc, s) => acc + s.participantsCount, 0);
+  const totalGroups = useMemo(() => instanceStats.reduce((acc, s) => acc + s.groupsCount, 0), [instanceStats]);
+  const totalParticipants = useMemo(() => instanceStats.reduce((acc, s) => acc + s.participantsCount, 0), [instanceStats]);
 
   if (loading) {
     return (
@@ -283,7 +286,7 @@ const DashboardHome = () => {
             ))}
           </div>
         ) : instanceStats.length === 0 ? (
-          <Card className="border-border/50 bg-card/50">
+          <Card className="glass-card">
             <CardContent className="py-8 text-center text-muted-foreground">
               <MessageSquare className="w-10 h-10 mx-auto mb-3 opacity-50" />
               <p>Nenhuma estatística disponível</p>
@@ -295,7 +298,7 @@ const DashboardHome = () => {
             {instanceStats.map((stat) => (
               <Card 
                 key={stat.instanceId} 
-                className="border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80 transition-colors"
+                className="glass-card-hover"
               >
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
