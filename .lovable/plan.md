@@ -1,37 +1,8 @@
 
-# Atualizar Estilo Visual da Tela de Login
+# Aplicar Visual Aurora ao Dashboard
 
 ## Visao Geral
-Aplicar o estilo visual das imagens de referencia ao projeto, mantendo todos os elementos e funcionalidades existentes. As mudancas sao puramente esteticas.
-
-## Elementos Visuais Identificados nas Imagens
-
-### 1. Fundo com Gradiente Multi-Cor
-- Gradiente diagonal com azul escuro, roxo/magenta e verde-agua
-- Efeito de "aurora" ou "nebulosa" suave
-
-### 2. Card Glassmorphism Aprimorado
-- Fundo semi-transparente com blur forte
-- Borda com brilho sutil verde-agua/azulado
-- Cantos bem arredondados
-
-### 3. Logo/Icone
-- Fundo com gradiente verde-agua (nao apenas bg-primary/10)
-- Icone de telefone (Phone) em vez de MessageSquare
-- Bordas arredondadas (rounded-2xl)
-
-### 4. Inputs Estilizados
-- Fundo escuro semi-transparente
-- Icones integrados a esquerda do input (Mail, Lock)
-- Bordas sutis
-
-### 5. Botao Principal
-- Verde vibrante
-- Seta (ArrowRight) a direita do texto
-
-### 6. Badge de Seguranca
-- Badge verde outline com icone de escudo
-- Texto "Conexao segura"
+Aplicar o mesmo estilo visual moderno (background aurora, glassmorphism aprimorado) da tela de login a todo o dashboard, incluindo a sidebar e a area de conteudo principal.
 
 ---
 
@@ -39,8 +10,9 @@ Aplicar o estilo visual das imagens de referencia ao projeto, mantendo todos os 
 
 | Arquivo | Descricao |
 |---------|-----------|
-| `src/index.css` | Adicionar classes utilitarias para gradiente aurora e glassmorphism aprimorado |
-| `src/pages/Login.tsx` | Atualizar estrutura visual (icones, inputs com icones, badge seguranca) |
+| `src/components/dashboard/DashboardLayout.tsx` | Aplicar background aurora na area principal |
+| `src/components/dashboard/Sidebar.tsx` | Estilizar sidebar com glassmorphism |
+| `src/index.css` | Adicionar classes utilitarias para sidebar glass |
 
 ---
 
@@ -48,93 +20,100 @@ Aplicar o estilo visual das imagens de referencia ao projeto, mantendo todos os 
 
 ### 1. src/index.css
 
-Adicionar novas classes utilitarias:
+Adicionar nova classe para sidebar com glassmorphism:
 
 ```css
-/* Gradiente de fundo estilo aurora */
-.bg-aurora {
-  background: linear-gradient(
-    135deg,
-    hsl(220 40% 8%) 0%,
-    hsl(240 30% 15%) 25%,
-    hsl(280 40% 12%) 50%,
-    hsl(200 50% 12%) 75%,
-    hsl(170 40% 10%) 100%
-  );
-}
-
-/* Card glassmorphism aprimorado */
-.glass-card {
-  @apply bg-slate-900/60 backdrop-blur-2xl;
-  border: 1px solid rgba(34, 197, 94, 0.15);
-  box-shadow: 
-    0 0 40px -10px rgba(34, 197, 94, 0.1),
-    inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+/* Sidebar com glassmorphism */
+.sidebar-glass {
+  @apply bg-slate-900/80 backdrop-blur-xl;
+  border-right: 1px solid hsl(142 70% 45% / 0.1);
 }
 ```
 
-### 2. src/pages/Login.tsx
+### 2. src/components/dashboard/DashboardLayout.tsx
 
-#### Estrutura Atualizada:
-- Trocar `bg-background` por `bg-aurora` no container principal
-- Remover decoracoes de fundo antigas (circulos blur)
-- Trocar icone `MessageSquare` por `Phone` com fundo gradiente
-- Adicionar inputs com icones integrados (estilo relativo/absoluto)
-- Adicionar seta no botao "Entrar"
-- Adicionar badge "Conexao segura" com Shield no final do card
-- Remover tabs (baseado na imagem, so mostra login simples)
+Aplicar o background aurora ao container principal:
 
-#### Icones a Importar:
-- `Phone` (logo)
-- `Mail` (input email)
-- `Lock` (input senha)
-- `ArrowRight` (botao)
-- `Shield` (badge seguranca)
+**Antes:**
+```tsx
+<div className="flex h-screen bg-background">
+```
+
+**Depois:**
+```tsx
+<div className="flex h-screen bg-aurora">
+```
+
+A area de conteudo mantera o scroll com fundo transparente, permitindo que o gradiente aurora apareca por tras dos cards.
+
+### 3. src/components/dashboard/Sidebar.tsx
+
+Substituir o fundo solido por glassmorphism:
+
+**Antes:**
+```tsx
+<aside className={cn(
+  'h-screen flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300',
+  collapsed ? 'w-20' : 'w-64'
+)}>
+```
+
+**Depois:**
+```tsx
+<aside className={cn(
+  'h-screen flex flex-col sidebar-glass transition-all duration-300',
+  collapsed ? 'w-20' : 'w-64'
+)}>
+```
+
+Tambem ajustar:
+- Header da sidebar (borda mais sutil)
+- Bordas internas para usar transparencia verde
 
 ---
 
 ## Resultado Visual Esperado
 
 ```
-+------------------------------------------+
-|                                          |
-|     [Logo Verde Gradiente com Phone]     |
-|            WsmartQR                      |
-|   Conecte-se ao futuro da comunicacao   |
-|                                          |
-|  Email                                   |
-|  +----------------------------------+    |
-|  | [Mail]  seu@email.com            |    |
-|  +----------------------------------+    |
-|                                          |
-|  Senha                                   |
-|  +----------------------------------+    |
-|  | [Lock]  ********                 |    |
-|  +----------------------------------+    |
-|                                          |
-|  [========= Entrar -> ============]      |
-|                                          |
-|      [Shield] Conexao segura             |
-|                                          |
-+------------------------------------------+
++------------------+------------------------------------------+
+|                  |                                          |
+|    SIDEBAR       |           CONTEUDO                       |
+|    (glassmorphism|           (fundo aurora visivel)         |
+|    com blur)     |                                          |
+|                  |    +-------------+  +-------------+      |
+|  [Logo]          |    | StatsCard   |  | StatsCard   |      |
+|                  |    | (glass)     |  | (glass)     |      |
+|  Dashboard       |    +-------------+  +-------------+      |
+|  Agendamentos    |                                          |
+|  Disparador >    |    +--------------------------------+    |
+|  Instancias >    |    | Chart Card (glass backdrop)    |    |
+|                  |    +--------------------------------+    |
+|  Admin           |                                          |
+|  Usuarios        |                                          |
+|  Config          |                                          |
+|                  |                                          |
+|  [Avatar]        |                                          |
+|  [Sair]          |                                          |
++------------------+------------------------------------------+
 ```
 
 ---
 
-## Decisao de Design: Tabs vs Login Simples
+## O Que NAO Sera Alterado
 
-A imagem de referencia mostra apenas a tela de login (sem tabs de cadastro). Duas opcoes:
-
-**Opcao A**: Manter as tabs existentes (login + cadastro) mas estiliza-las de acordo
-**Opcao B**: Simplificar para apenas login, como na imagem
-
-Vou implementar a **Opcao A** mantendo as funcionalidades, mas ajustando o visual para ficar consistente com a referencia.
+- Funcionalidades da sidebar (navegacao, collapse, submenus)
+- Logica de autenticacao
+- Componentes de conteudo (StatsCard, DashboardCharts, InstanceCard)
+- Rotas e navegacao
 
 ---
 
-## Observacoes
+## Checklist de Validacao
 
-- Nenhuma funcionalidade sera alterada
-- Apenas estilos CSS e estrutura visual do JSX
-- Os handlers de login/signup permanecem identicos
-- O fluxo de navegacao continua o mesmo
+1. Abrir o dashboard apos login
+2. Verificar que o fundo aurora aparece atras de todo o layout
+3. Verificar que a sidebar tem efeito de vidro (blur)
+4. Verificar que os cards internos mantem o estilo glass
+5. Verificar que a navegacao funciona normalmente
+6. Verificar que o collapse da sidebar funciona
+7. Testar em mobile para garantir responsividade
