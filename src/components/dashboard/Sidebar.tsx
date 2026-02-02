@@ -179,6 +179,17 @@ const Sidebar = () => {
             >
               <span>Histórico</span>
             </Link>
+            <Link
+              to="/dashboard/broadcast/leads"
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
+                isActive('/dashboard/broadcast/leads')
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+              )}
+            >
+              <span>Leads</span>
+            </Link>
           </CollapsibleContent>
         </Collapsible>
 
