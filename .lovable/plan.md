@@ -1,225 +1,226 @@
 
-# Aplicar Visual Aurora e Glass ao Dashboard Completo
+# Criar Base de Leads a partir de Participantes de Grupos
 
 ## Visao Geral
-Aplicar o visual moderno com glassmorphism a todas as paginas do dashboard (Instancias, Usuarios, Configuracoes, Agendamentos, Disparador, Historico) e adicionar efeito de hover com glow verde nos cards.
+Adicionar funcionalidade no Broadcaster de Grupos que permite criar uma nova base de leads persistente a partir dos participantes (nao-admins) dos grupos selecionados, salvando diretamente no banco de dados.
+
+---
+
+## Fluxo Atual vs Novo
+
+| Fluxo Atual | Novo Fluxo |
+|-------------|------------|
+| Grupos > Enviar mensagem imediata | Grupos > Criar base de leads OU Enviar mensagem |
+| Participantes sao temporarios | Participantes salvos permanentemente em lead_databases |
+| Sem reutilizacao | Base pode ser reutilizada no Leads Broadcaster |
+
+---
+
+## Mudancas na Interface
+
+### Pagina Broadcaster.tsx (Passo 2 - Selecao de Grupos)
+
+Adicionar um botao secundario "Criar Base de Leads" ao lado do botao "Continuar":
+
+```
++--------------------------------------------------+
+|  [X] grupos selecionados                         |
+|                                                  |
+|  [Criar Base de Leads]  [Continuar com X grupos] |
++--------------------------------------------------+
+```
+
+Ao clicar em "Criar Base de Leads":
+1. Abre um Dialog solicitando nome da base
+2. Extrai participantes nao-admin de todos os grupos selecionados
+3. Salva na tabela lead_databases e lead_database_entries
+4. Exibe toast de sucesso com link para Leads Broadcaster
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Descricao |
-|---------|-----------|
-| `src/index.css` | Adicionar classe `glass-card-hover` com efeito glow verde |
-| `src/pages/dashboard/Instances.tsx` | Aplicar glass-card aos cards e dialogs |
-| `src/pages/dashboard/UsersManagement.tsx` | Aplicar glass-card aos cards de usuario |
-| `src/pages/dashboard/Settings.tsx` | Substituir `.glass` por `.glass-card` |
-| `src/pages/dashboard/ScheduledMessages.tsx` | Aplicar glass-card aos cards de mensagens |
-| `src/pages/dashboard/Broadcaster.tsx` | Aplicar glass-card aos cards de selecao |
-| `src/components/dashboard/StatsCard.tsx` | Adicionar efeito hover glow |
-| `src/components/dashboard/InstanceCard.tsx` | Adicionar efeito hover glow |
-| `src/components/dashboard/DashboardCharts.tsx` | Adicionar efeito hover glow |
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/pages/dashboard/Broadcaster.tsx` | Adicionar botao e dialog para criar base de leads |
+| `src/components/broadcast/CreateLeadDatabaseDialog.tsx` | Novo componente de dialog |
 
 ---
 
-## Mudancas Detalhadas
+## Novo Componente: CreateLeadDatabaseDialog.tsx
 
-### 1. src/index.css
-
-Adicionar nova classe para hover com glow verde:
-
-```css
-/* Glass card com hover glow */
-.glass-card-hover {
-  @apply glass-card transition-all duration-300;
-}
-
-.glass-card-hover:hover {
-  border-color: hsl(142 70% 45% / 0.3);
-  box-shadow: 
-    0 0 30px -5px hsl(142 70% 45% / 0.25),
-    0 0 60px -10px hsl(142 70% 45% / 0.15),
-    inset 0 1px 0 0 hsl(0 0% 100% / 0.08);
-}
+```
+src/components/broadcast/CreateLeadDatabaseDialog.tsx
 ```
 
-### 2. src/components/dashboard/StatsCard.tsx
+**Props:**
+- `open: boolean` - controla visibilidade
+- `onOpenChange: (open: boolean) => void`
+- `groups: Group[]` - grupos selecionados com participantes
+- `onSuccess?: () => void` - callback apos sucesso
 
-Atualizar para usar a nova classe com hover:
+**Funcionalidades:**
+1. Input para nome da base
+2. Input opcional para descricao
+3. Exibe preview: X grupos, Y participantes unicos
+4. Botao "Criar Base" que:
+   - Valida se tem nome
+   - Extrai participantes nao-admin (deduplicados por telefone)
+   - Insere em lead_databases
+   - Insere entradas em lead_database_entries
+   - Exibe toast de sucesso
 
-**Antes:**
-```tsx
-<Card className={cn('glass-card', className)}>
-```
+---
 
-**Depois:**
-```tsx
-<Card className={cn('glass-card-hover', className)}>
-```
+## Logica de Extracao
 
-### 3. src/components/dashboard/InstanceCard.tsx
+```typescript
+// Extrair participantes unicos nao-admin
+const extractLeadsFromGroups = (groups: Group[]) => {
+  const seenPhones = new Set<string>();
+  const leads = [];
 
-Atualizar para usar a nova classe com hover:
+  for (const group of groups) {
+    for (const participant of group.participants) {
+      // Pular admins
+      if (participant.isAdmin || participant.isSuperAdmin) continue;
+      
+      // Extrair telefone do JID ou phoneNumber
+      const phoneMatch = (participant.phoneNumber || participant.jid)?.match(/^(\d+)@/);
+      if (!phoneMatch) continue;
+      
+      const phone = phoneMatch[1];
+      if (seenPhones.has(phone)) continue;
+      seenPhones.add(phone);
 
-**Antes:**
-```tsx
-<Card className="glass-card hover:border-primary/30 transition-all group">
-```
+      leads.push({
+        phone: formatPhone(phone),
+        name: participant.name || null,
+        jid: `${phone}@s.whatsapp.net`,
+        source: 'group',
+        group_name: group.name,
+      });
+    }
+  }
 
-**Depois:**
-```tsx
-<Card className="glass-card-hover group">
-```
-
-### 4. src/components/dashboard/DashboardCharts.tsx
-
-Atualizar todos os cards de graficos:
-
-**Antes:**
-```tsx
-<Card className="glass-card">
-```
-
-**Depois:**
-```tsx
-<Card className="glass-card-hover">
-```
-
-### 5. src/pages/dashboard/Settings.tsx
-
-Substituir a classe `.glass` por `.glass-card-hover`:
-
-**Antes:**
-```tsx
-<Card className="glass border-border/50">
-```
-
-**Depois:**
-```tsx
-<Card className="glass-card-hover">
-```
-
-Aplicar a todos os 3 cards da pagina (System Info, Security, Database).
-
-### 6. src/pages/dashboard/UsersManagement.tsx
-
-Atualizar os cards de usuario:
-
-**Antes (linha 414):**
-```tsx
-className="relative p-5 rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm hover:border-primary/30 transition-all"
-```
-
-**Depois:**
-```tsx
-className="relative p-5 glass-card-hover"
-```
-
-### 7. src/pages/dashboard/Instances.tsx
-
-Atualizar o dialog de QR Code para usar glass-card:
-
-**Antes (DialogContent):**
-```tsx
-<DialogContent>
-```
-
-**Depois:**
-```tsx
-<DialogContent className="glass-card border-none">
-```
-
-### 8. src/pages/dashboard/ScheduledMessages.tsx
-
-Atualizar o card de mensagem agendada:
-
-**Antes (linha 141):**
-```tsx
-<Card>
-```
-
-**Depois:**
-```tsx
-<Card className="glass-card-hover">
-```
-
-Atualizar tambem o card de estado vazio:
-
-**Antes (linha 396):**
-```tsx
-<Card>
-```
-
-**Depois:**
-```tsx
-<Card className="glass-card">
-```
-
-### 9. src/pages/dashboard/Broadcaster.tsx
-
-Atualizar os cards de selecao:
-
-**Antes (linhas 169, 195, 233):**
-```tsx
-<Card className="border-border/50 bg-card/50 backdrop-blur-sm">
-```
-
-**Depois:**
-```tsx
-<Card className="glass-card-hover">
-```
-
-E o card de resumo de grupos selecionados:
-
-**Antes (linha 233):**
-```tsx
-<Card className="border-border/50 bg-muted/30">
-```
-
-**Depois:**
-```tsx
-<Card className="glass-card">
+  return leads;
+};
 ```
 
 ---
 
-## Resultado Visual Esperado
+## Detalhes do Dialog
 
 ```
 +--------------------------------------------------+
-|  CARD (estado normal)                            |
-|  - Fundo: slate-900/60                           |
-|  - Borda: verde/15 sutil                         |
-|  - Blur: backdrop-blur-2xl                       |
+|  Criar Base de Leads                        [X]  |
 +--------------------------------------------------+
-
+|                                                  |
+|  Nome da Base *                                  |
+|  [________________________]                      |
+|                                                  |
+|  Descricao (opcional)                            |
+|  [________________________]                      |
+|                                                  |
+|  Preview:                                        |
+|  - 5 grupos selecionados                         |
+|  - 127 participantes unicos (excl. admins)       |
+|                                                  |
 +--------------------------------------------------+
-|  CARD (hover)                                    |
-|  - Borda: verde/30 mais visivel                  |
-|  - Glow: sombra verde radiante                   |
-|  - Efeito suave de destaque                      |
+|                    [Cancelar]  [Criar Base]      |
 +--------------------------------------------------+
 ```
 
 ---
 
-## O Que NAO Sera Alterado
+## Estrutura do Banco (Existente)
 
-- Funcionalidades de todas as paginas
-- Logica de autenticacao e permissoes
-- Rotas e navegacao
-- Componentes internos dos cards
+As tabelas ja existem:
+
+**lead_databases:**
+- id, name, description, user_id, leads_count, created_at, updated_at
+
+**lead_database_entries:**
+- id, database_id, phone, name, jid, source, group_name, is_verified, verified_name, verification_status
+
+---
+
+## Mudancas em Broadcaster.tsx
+
+### Adicionar imports
+```typescript
+import CreateLeadDatabaseDialog from '@/components/broadcast/CreateLeadDatabaseDialog';
+import { Database } from 'lucide-react';
+```
+
+### Adicionar estado
+```typescript
+const [showCreateDatabaseDialog, setShowCreateDatabaseDialog] = useState(false);
+```
+
+### Modificar o bloco de botoes (Step 2)
+Adicionar botao "Criar Base" antes do "Continuar":
+
+```tsx
+{selectedGroups.length > 0 && (
+  <div className="flex justify-end gap-2 pt-2 border-t">
+    <Button 
+      variant="outline" 
+      onClick={() => setShowCreateDatabaseDialog(true)}
+    >
+      <Database className="w-4 h-4 mr-2" />
+      Criar Base de Leads
+    </Button>
+    <Button onClick={handleContinueToMessage}>
+      Continuar com {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
+      <ChevronRight className="w-4 h-4 ml-2" />
+    </Button>
+  </div>
+)}
+```
+
+### Adicionar o Dialog
+```tsx
+<CreateLeadDatabaseDialog
+  open={showCreateDatabaseDialog}
+  onOpenChange={setShowCreateDatabaseDialog}
+  groups={selectedGroups}
+  onSuccess={() => {
+    setShowCreateDatabaseDialog(false);
+    toast.success('Base criada! Acesse em Disparador > Leads');
+  }}
+/>
+```
+
+---
+
+## Validacoes
+
+1. Nome da base obrigatorio
+2. Pelo menos 1 participante valido (com numero)
+3. Tratamento de erro se falhar insercao no banco
+4. Prevenir duplicatas se ja existe base com mesmo nome
+
+---
+
+## Resultado Esperado
+
+1. Usuario seleciona grupos no Broadcaster
+2. Clica em "Criar Base de Leads"
+3. Preenche nome da base
+4. Clica em "Criar Base"
+5. Sistema salva os participantes como leads
+6. Toast de sucesso aparece
+7. Usuario pode ir para Leads Broadcaster e usar a base
 
 ---
 
 ## Checklist de Validacao
 
-1. Verificar que todos os cards tem o visual glass
-2. Passar o mouse sobre os cards e verificar o efeito glow verde
-3. Navegar entre todas as paginas do dashboard
-4. Testar na pagina de Instancias
-5. Testar na pagina de Usuarios
-6. Testar na pagina de Configuracoes
-7. Testar na pagina de Agendamentos
-8. Testar na pagina do Disparador
-9. Verificar responsividade em mobile
+1. Verificar que o botao aparece quando grupos estao selecionados
+2. Testar criacao de base com 1 grupo
+3. Testar criacao de base com multiplos grupos
+4. Verificar deduplicacao (mesmo participante em 2 grupos = 1 lead)
+5. Verificar que admins sao excluidos
+6. Confirmar que a base aparece no Leads Broadcaster
+7. Verificar contagem de leads esta correta
