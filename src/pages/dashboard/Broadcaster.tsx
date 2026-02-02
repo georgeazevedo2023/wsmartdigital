@@ -15,6 +15,7 @@ interface ResendData {
   mediaUrl: string | null;
   instanceId: string;
   instanceName: string | null;
+  carouselData?: unknown;
 }
 
 const Broadcaster = () => {
@@ -103,6 +104,7 @@ const Broadcaster = () => {
               <span className="text-sm font-medium">Reenviando mensagem</span>
               <Badge variant="secondary" className="text-xs">
                 {resendData.messageType === 'text' ? 'Texto' : 
+                 resendData.messageType === 'carousel' ? 'Carrossel' :
                  resendData.messageType === 'image' ? 'Imagem' :
                  resendData.messageType === 'video' ? 'Vídeo' :
                  resendData.messageType === 'audio' || resendData.messageType === 'ptt' ? 'Áudio' : 'Documento'}
@@ -272,6 +274,7 @@ const Broadcaster = () => {
               messageType: resendData.messageType,
               content: resendData.content,
               mediaUrl: resendData.mediaUrl,
+              carouselData: resendData.carouselData,
             } : undefined}
           />
         </div>

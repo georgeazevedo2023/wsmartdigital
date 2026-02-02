@@ -10,6 +10,7 @@ const BroadcastHistoryPage = () => {
     message_type: string;
     content: string | null;
     media_url: string | null;
+    carousel_data: unknown;
   }) => {
     // Store resend data in sessionStorage and navigate to broadcaster
     sessionStorage.setItem('resendData', JSON.stringify({
@@ -18,6 +19,7 @@ const BroadcastHistoryPage = () => {
       mediaUrl: log.media_url,
       instanceId: log.instance_id,
       instanceName: log.instance_name,
+      carouselData: log.carousel_data,
     }));
     navigate('/dashboard/broadcast');
   };
