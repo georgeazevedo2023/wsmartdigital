@@ -63,8 +63,9 @@ const ParticipantSelector = ({
         if (!seenJids.has(member.jid)) {
           seenJids.add(member.jid);
           
-          // Prioriza phoneNumber, senão usa jid
-          const rawNumber = member.phoneNumber || member.jid;
+          // Usa jid como fonte principal (sempre limpo), phoneNumber como fallback
+          // O jid está no formato "5581999999999@s.whatsapp.net" - mais confiável
+          const rawNumber = member.jid || member.phoneNumber || '';
           
           participants.push({
             jid: member.jid,
