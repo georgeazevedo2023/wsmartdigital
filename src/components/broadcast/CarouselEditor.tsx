@@ -124,7 +124,7 @@ export function CarouselEditor({ value, onChange, disabled }: CarouselEditorProp
       </div>
 
       {/* Cards List */}
-      <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+      <div className="space-y-4">
         {value.cards.map((card, index) => (
           <CarouselCardEditor
             key={card.id}
