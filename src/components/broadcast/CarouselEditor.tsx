@@ -142,7 +142,7 @@ export function CarouselEditor({ value, onChange, disabled }: CarouselEditorProp
 
       {/* Validation Errors */}
       {hasErrors && (
-        <Alert variant="destructive" className="py-2">
+        <Alert variant="warning" className="py-2">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription className="text-xs">
             <ul className="list-disc list-inside space-y-0.5">
