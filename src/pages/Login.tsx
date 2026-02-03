@@ -90,7 +90,7 @@ const Login = () => {
                 <div className="space-y-2">
                   <Label htmlFor="login-email" className="text-foreground">Email</Label>
                   <div className="relative">
-                    <Mail className="input-icon" />
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       id="login-email"
                       type="email"
@@ -99,14 +99,14 @@ const Login = () => {
                       onChange={(e) => setLoginEmail(e.target.value)}
                       required
                       disabled={isLoading}
-                      className="input-with-icon"
+                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="login-password" className="text-foreground">Senha</Label>
                   <div className="relative">
-                    <Lock className="input-icon" />
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       id="login-password"
                       type="password"
@@ -115,7 +115,7 @@ const Login = () => {
                       onChange={(e) => setLoginPassword(e.target.value)}
                       required
                       disabled={isLoading}
-                      className="input-with-icon"
+                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
                     />
                   </div>
                 </div>
@@ -140,7 +140,7 @@ const Login = () => {
                 <div className="space-y-2">
                   <Label htmlFor="signup-name" className="text-foreground">Nome completo</Label>
                   <div className="relative">
-                    <User className="input-icon" />
+                    <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       id="signup-name"
                       type="text"
@@ -149,14 +149,14 @@ const Login = () => {
                       onChange={(e) => setSignupName(e.target.value)}
                       required
                       disabled={isLoading}
-                      className="input-with-icon"
+                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-email" className="text-foreground">Email</Label>
                   <div className="relative">
-                    <Mail className="input-icon" />
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       id="signup-email"
                       type="email"
@@ -165,14 +165,14 @@ const Login = () => {
                       onChange={(e) => setSignupEmail(e.target.value)}
                       required
                       disabled={isLoading}
-                      className="input-with-icon"
+                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
                     />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="signup-password" className="text-foreground">Senha</Label>
                   <div className="relative">
-                    <Lock className="input-icon" />
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                     <Input
                       id="signup-password"
                       type="password"
@@ -182,7 +182,7 @@ const Login = () => {
                       required
                       minLength={6}
                       disabled={isLoading}
-                      className="input-with-icon"
+                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
                     />
                   </div>
                 </div>
