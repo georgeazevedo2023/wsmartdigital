@@ -45,7 +45,8 @@ import {
   Eye,
   Play,
   LayoutGrid,
-  Trash2
+  Trash2,
+  User
 } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -83,6 +84,7 @@ interface BroadcastHistoryProps {
 
 type StatusFilter = 'all' | 'completed' | 'cancelled' | 'error';
 type MessageTypeFilter = 'all' | 'text' | 'image' | 'video' | 'audio' | 'document' | 'carousel';
+type TargetFilter = 'all' | 'groups' | 'leads';
 
 // WhatsApp formatting parser (same logic as MessagePreview)
 const formatWhatsAppText = (text: string): React.ReactNode => {
@@ -257,6 +259,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [targetFilter, setTargetFilter] = useState<TargetFilter>('all');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [logToDelete, setLogToDelete] = useState<BroadcastLog | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -387,6 +390,13 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
         return false;
       }
 
+      // Target filter (groups vs leads)
+      if (targetFilter !== 'all') {
+        const isLeadBroadcast = log.groups_targeted === 0;
+        if (targetFilter === 'leads' && !isLeadBroadcast) return false;
+        if (targetFilter === 'groups' && isLeadBroadcast) return false;
+      }
+
       // Instance filter
       if (instanceFilter !== 'all' && log.instance_id !== instanceFilter) {
         return false;
@@ -425,13 +435,14 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
       return true;
     });
-  }, [logs, statusFilter, typeFilter, instanceFilter, dateFrom, dateTo, searchQuery]);
+  }, [logs, statusFilter, typeFilter, targetFilter, instanceFilter, dateFrom, dateTo, searchQuery]);
 
-  const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || instanceFilter !== 'all' || dateFrom || dateTo || searchQuery;
+  const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || targetFilter !== 'all' || instanceFilter !== 'all' || dateFrom || dateTo || searchQuery;
 
   const clearFilters = () => {
     setStatusFilter('all');
     setTypeFilter('all');
+    setTargetFilter('all');
     setInstanceFilter('all');
     setDateFrom('');
     setDateTo('');
@@ -594,6 +605,17 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                 <SelectItem value="audio">Áudio</SelectItem>
                 <SelectItem value="document">Documento</SelectItem>
                 <SelectItem value="carousel">Carrossel</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={targetFilter} onValueChange={(v) => setTargetFilter(v as TargetFilter)}>
+              <SelectTrigger className="w-[130px] h-8 text-sm">
+                <SelectValue placeholder="Destino" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos destinos</SelectItem>
+                <SelectItem value="groups">Grupos</SelectItem>
+                <SelectItem value="leads">Leads</SelectItem>
               </SelectContent>
             </Select>
 
@@ -762,6 +784,17 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                             <Badge variant="outline" className="text-xs">
                               {getMessageTypeLabel(log.message_type)}
                             </Badge>
+                            {log.groups_targeted === 0 ? (
+                              <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-600 border-purple-500/20">
+                                <User className="w-3 h-3 mr-1" />
+                                Leads
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                <Users className="w-3 h-3 mr-1" />
+                                {log.groups_targeted} grupo{log.groups_targeted !== 1 ? 's' : ''}
+                              </Badge>
+                            )}
                             {log.random_delay && log.random_delay !== 'none' && (
                               <Badge variant="outline" className="text-xs">
                                 <Shield className="w-3 h-3 mr-1" />
@@ -770,7 +803,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground mt-1">
-                            {log.instance_name || log.instance_id} • {log.groups_targeted} grupo(s)
+                            {log.instance_name || log.instance_id}
                           </p>
                         </div>
                       </div>
@@ -793,12 +826,21 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
                     {isExpanded && (
                       <div className="mt-3 pt-3 border-t space-y-4">
-                        {/* Group Names */}
+                        {/* Group/Lead Names */}
                         {log.group_names && log.group_names.length > 0 && (
                           <div>
                             <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1">
-                              <Users className="w-3 h-3" />
-                              Grupos ({log.group_names.length}):
+                              {log.groups_targeted === 0 ? (
+                                <>
+                                  <User className="w-3 h-3" />
+                                  Leads ({log.group_names.length}):
+                                </>
+                              ) : (
+                                <>
+                                  <Users className="w-3 h-3" />
+                                  Grupos ({log.group_names.length}):
+                                </>
+                              )}
                             </p>
                             <div className="flex flex-wrap gap-1.5">
                               {log.group_names.map((name, idx) => (
