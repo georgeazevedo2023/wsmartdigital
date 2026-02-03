@@ -43,6 +43,20 @@ interface ResendData {
   mediaUrl: string | null;
   instanceId: string;
   instanceName: string | null;
+  carouselData?: {
+    message?: string;
+    cards?: Array<{
+      id?: string;
+      text?: string;
+      image?: string;
+      buttons?: Array<{
+        id?: string;
+        type: 'URL' | 'REPLY' | 'CALL';
+        label: string;
+        value?: string;
+      }>;
+    }>;
+  };
 }
 
 const LeadsBroadcaster = () => {
@@ -463,6 +477,7 @@ const LeadsBroadcaster = () => {
               <span className="text-sm font-medium">Reenviando mensagem</span>
               <Badge variant="secondary" className="text-xs">
                 {resendData.messageType === 'text' ? 'Texto' : 
+                 resendData.messageType === 'carousel' ? 'Carrossel' :
                  resendData.messageType === 'image' ? 'Imagem' :
                  resendData.messageType === 'video' ? 'Vídeo' :
                  resendData.messageType === 'audio' || resendData.messageType === 'ptt' ? 'Áudio' : 'Documento'}
