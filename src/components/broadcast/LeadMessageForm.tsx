@@ -10,9 +10,11 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
-import { Send, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer, StopCircle, Shield } from 'lucide-react';
+import { Send, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer, StopCircle, Shield, LayoutGrid } from 'lucide-react';
 import { toast } from 'sonner';
 import MessagePreview from './MessagePreview';
+import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor';
+import { CarouselPreview } from './CarouselPreview';
 import type { Instance } from './InstanceSelector';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
 
@@ -20,6 +22,20 @@ interface InitialData {
   messageType: string;
   content: string | null;
   mediaUrl: string | null;
+  carouselData?: {
+    message?: string;
+    cards?: Array<{
+      id?: string;
+      text?: string;
+      image?: string;
+      buttons?: Array<{
+        id?: string;
+        type: 'URL' | 'REPLY' | 'CALL';
+        label: string;
+        value?: string;
+      }>;
+    }>;
+  };
 }
 
 interface LeadMessageFormProps {
@@ -39,7 +55,7 @@ interface SendProgress {
 }
 
 type MediaType = 'image' | 'video' | 'audio' | 'file';
-type ActiveTab = 'text' | 'media';
+type ActiveTab = 'text' | 'media' | 'carousel';
 
 const MAX_MESSAGE_LENGTH = 4096;
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
@@ -50,10 +66,37 @@ const ALLOWED_VIDEO_TYPES = ['video/mp4'];
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/wav'];
 
 const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: LeadMessageFormProps) => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>(
-    initialData?.messageType && initialData.messageType !== 'text' ? 'media' : 'text'
-  );
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
+    if (initialData?.messageType === 'carousel') return 'carousel';
+    if (initialData?.messageType && initialData.messageType !== 'text') return 'media';
+    return 'text';
+  });
   const [message, setMessage] = useState(initialData?.content || '');
+  
+  // Carousel state
+  const [carouselData, setCarouselData] = useState<CarouselData>(() => {
+    if (initialData?.carouselData && initialData.carouselData.cards) {
+      return {
+        message: initialData.carouselData.message || '',
+        cards: initialData.carouselData.cards.map((card) => ({
+          id: card.id || crypto.randomUUID(),
+          text: card.text || '',
+          image: card.image || '',
+          buttons: card.buttons?.map((btn) => ({
+            id: btn.id || crypto.randomUUID(),
+            type: btn.type,
+            label: btn.label,
+            url: btn.type === 'URL' ? (btn.value || '') : '',
+            phone: btn.type === 'CALL' ? (btn.value || '') : '',
+          })) || [],
+        })),
+      };
+    }
+    return {
+      message: '',
+      cards: [createEmptyCard(), createEmptyCard()],
+    };
+  });
   const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20'>('none');
   const [progress, setProgress] = useState<SendProgress>({
     current: 0,
@@ -188,6 +231,7 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
     startedAt: number;
     errorMessage?: string;
     leadNames: string[];
+    carouselData?: CarouselData;
   }) => {
     try {
       const session = await supabase.auth.getSession();
@@ -215,6 +259,20 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
         duration_seconds: durationSeconds,
         error_message: params.errorMessage || null,
         group_names: params.leadNames,
+        carousel_data: params.carouselData ? {
+          message: params.carouselData.message,
+          cards: params.carouselData.cards.map(card => ({
+            id: card.id,
+            text: card.text,
+            image: card.image || '',
+            buttons: card.buttons.map(btn => ({
+              id: btn.id,
+              type: btn.type,
+              label: btn.label,
+              value: btn.url || btn.phone || '',
+            })),
+          })),
+        } : null,
       });
     } catch (err) {
       console.error('Error saving broadcast log:', err);
@@ -348,9 +406,157 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
     return response.json();
   };
 
+  const sendCarouselToNumber = async (
+    jid: string, 
+    carousel: CarouselData,
+    accessToken: string
+  ) => {
+    // Convert local files to base64
+    const processedCards = await Promise.all(
+      carousel.cards.map(async (card) => {
+        let imageUrl = card.image;
+        if (card.imageFile) {
+          imageUrl = await fileToBase64(card.imageFile);
+          const base64Data = imageUrl.split(',')[1] || imageUrl;
+          imageUrl = base64Data;
+        }
+        return {
+          text: card.text,
+          image: imageUrl,
+          buttons: card.buttons,
+        };
+      })
+    );
+
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          action: 'send-carousel',
+          token: instance.token,
+          groupjid: jid,
+          message: carousel.message,
+          carousel: processedCards,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error || errorData.message || 'Erro ao enviar carrossel');
+    }
+
+    return response.json();
+  };
+
+  const handleSendCarousel = async () => {
+    // Basic validation
+    const hasValidCard = carouselData.cards.some(c => 
+      (c.image || c.imageFile) && c.text.trim()
+    );
+    
+    if (!hasValidCard) {
+      toast.error('Preencha pelo menos um card com imagem e texto');
+      return;
+    }
+
+    const session = await supabase.auth.getSession();
+    if (!session.data.session) {
+      toast.error('Sessão expirada');
+      return;
+    }
+
+    const accessToken = session.data.session.access_token;
+    const startedAt = Date.now();
+
+    isPausedRef.current = false;
+    isCancelledRef.current = false;
+
+    setProgress({
+      current: 0,
+      total: selectedLeads.length,
+      currentName: '',
+      status: 'sending',
+      results: [],
+      startedAt,
+    });
+
+    const results: SendProgress['results'] = [];
+
+    for (let i = 0; i < selectedLeads.length; i++) {
+      if (isCancelledRef.current) {
+        setProgress(p => ({ ...p, status: 'cancelled' }));
+        toast.warning('Envio cancelado');
+        break;
+      }
+
+      await waitWhilePaused();
+
+      const lead = selectedLeads[i];
+      const displayName = lead.name || lead.phone;
+
+      setProgress(p => ({
+        ...p,
+        current: i + 1,
+        currentName: displayName,
+      }));
+
+      try {
+        await sendCarouselToNumber(lead.jid, carouselData, accessToken);
+        results.push({ name: displayName, success: true });
+      } catch (error: any) {
+        results.push({ name: displayName, success: false, error: error.message });
+      }
+
+      setProgress(p => ({ ...p, results: [...results] }));
+
+      if (i < selectedLeads.length - 1 && !isCancelledRef.current) {
+        await delay(getRandomDelay());
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
+
+    if (!isCancelledRef.current) {
+      setProgress(p => ({
+        ...p,
+        status: failCount > 0 ? 'error' : 'success',
+      }));
+
+      if (failCount === 0) {
+        toast.success(`Carrossel enviado para ${successCount} contato${successCount !== 1 ? 's' : ''}`);
+      } else {
+        toast.warning(`${successCount} enviados, ${failCount} falharam`);
+      }
+    }
+
+    // Save log with carouselData
+    const leadNames = selectedLeads.slice(0, 50).map(l => l.name || l.phone);
+    await saveBroadcastLog({
+      messageType: 'carousel',
+      content: carouselData.message || null,
+      mediaUrl: null,
+      recipientsTargeted: selectedLeads.length,
+      recipientsSuccess: successCount,
+      recipientsFailed: failCount,
+      status: isCancelledRef.current ? 'cancelled' : (failCount > 0 ? 'error' : 'completed'),
+      startedAt,
+      leadNames,
+      carouselData,
+    });
+  };
+
   const handleSend = async () => {
     if (activeTab === 'text') {
       await handleSendText();
+    } else if (activeTab === 'carousel') {
+      await handleSendCarousel();
     } else {
       await handleSendMedia();
     }
@@ -575,7 +781,9 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
 
   const canSend = activeTab === 'text' 
     ? message.trim().length > 0
-    : (selectedFile || mediaUrl.trim());
+    : activeTab === 'carousel'
+      ? carouselData.cards.some(c => (c.image || c.imageFile) && c.text.trim())
+      : (selectedFile || mediaUrl.trim());
 
   const isSending = progress.status === 'sending' || progress.status === 'paused';
   const isComplete = progress.status === 'success' || progress.status === 'error' || progress.status === 'cancelled';
@@ -595,7 +803,7 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
         </CardHeader>
         <CardContent className="space-y-4">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
-            <TabsList className="grid w-full grid-cols-2">
+            <TabsList className="grid w-full grid-cols-3">
               <TabsTrigger value="text" className="gap-2">
                 <MessageSquare className="w-4 h-4" />
                 Texto
@@ -603,6 +811,10 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
               <TabsTrigger value="media" className="gap-2">
                 <Image className="w-4 h-4" />
                 Mídia
+              </TabsTrigger>
+              <TabsTrigger value="carousel" className="gap-2">
+                <LayoutGrid className="w-4 h-4" />
+                Carrossel
               </TabsTrigger>
             </TabsList>
 
@@ -718,6 +930,14 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
                   />
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="carousel" className="space-y-4 mt-4">
+              <CarouselEditor
+                value={carouselData}
+                onChange={setCarouselData}
+                disabled={isSending}
+              />
             </TabsContent>
           </Tabs>
 
@@ -846,14 +1066,18 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
           <CardTitle className="text-lg">Preview</CardTitle>
         </CardHeader>
         <CardContent>
-          <MessagePreview
-            type={activeTab === 'text' ? 'text' : mediaType}
-            text={activeTab === 'text' ? message : caption}
-            previewUrl={previewUrl}
-            mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
-            filename={filename}
-            isPtt={isPtt}
-          />
+          {activeTab === 'carousel' ? (
+            <CarouselPreview message={carouselData.message} cards={carouselData.cards} />
+          ) : (
+            <MessagePreview
+              type={activeTab === 'text' ? 'text' : mediaType}
+              text={activeTab === 'text' ? message : caption}
+              previewUrl={previewUrl}
+              mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
+              filename={filename}
+              isPtt={isPtt}
+            />
+          )}
         </CardContent>
       </Card>
     </div>
