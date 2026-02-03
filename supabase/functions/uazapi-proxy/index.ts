@@ -499,11 +499,21 @@ Deno.serve(async (req) => {
           checkData = { raw: checkRawText }
         }
         
-        // Normalize response - UAZAPI may return { Users: [...] } or other variations
-        const users = (checkData as Record<string, unknown>)?.Users || 
-                      (checkData as Record<string, unknown>)?.users || 
-                      (checkData as Record<string, unknown>)?.data || 
-                      []
+        // Normalize response - UAZAPI returns array directly: [{query, isInWhatsapp, ...}, ...]
+        // Or wrapped in { Users: [...] } or { users: [...] } or { data: [...] }
+        let users: unknown[]
+        if (Array.isArray(checkData)) {
+          // Direct array response
+          users = checkData
+          console.log('Check response is direct array with', users.length, 'items')
+        } else {
+          // Try to extract from object wrapper
+          users = (checkData as Record<string, unknown>)?.Users as unknown[] || 
+                  (checkData as Record<string, unknown>)?.users as unknown[] || 
+                  (checkData as Record<string, unknown>)?.data as unknown[] || 
+                  []
+          console.log('Check response extracted from object, items:', users.length)
+        }
         
         return new Response(
           JSON.stringify({ users }),
