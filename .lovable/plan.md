@@ -1,86 +1,163 @@
 
-# Correção da Verificação de Números de WhatsApp
+# Adicionar Envios de Leads ao Histórico
 
-## Problema Diagnosticado
-
-A verificação de números está falhando porque existe uma incompatibilidade entre o formato de resposta da UAZAPI e o código que a processa.
-
-### Evidência dos Logs
-
-A UAZAPI está retornando os dados corretamente (status 200):
-```json
-[{"query":"558196048149","isInWhatsapp":true,"jid":"558196048149@s.whatsapp.net",...}, ...]
-```
-
-Porém a edge function procura por `checkData?.Users` ou `checkData?.users`, mas o retorno é um **array direto**, não um objeto com propriedade `users`.
-
-### Impacto
-
-1. Todos os 546 números aparecem como "Erro" (badge amarelo)
-2. Os contadores mostram "0 válidos" e "0 inválidos" porque nenhum lead tem status `valid` ou `invalid` - todos estão como `error`
+## Problema Atual
+Os envios feitos pelo **Disparador de Leads** não estão sendo salvos na tabela `broadcast_logs`, por isso não aparecem na página de Histórico de Envios. Apenas os envios para grupos (via `BroadcastMessageForm`) são registrados.
 
 ---
 
 ## Solução
 
-### Arquivo: `supabase/functions/uazapi-proxy/index.ts`
+### 1. Adicionar função de log no LeadMessageForm
 
-Modificar o case `check-numbers` (linhas 502-510) para detectar corretamente quando a resposta é um array direto:
+**Arquivo:** `src/components/broadcast/LeadMessageForm.tsx`
 
-**De:**
+Adicionar uma função `saveBroadcastLog` similar à do `BroadcastMessageForm`, adaptada para o contexto de leads:
+
 ```typescript
-// Normalize response - UAZAPI may return { Users: [...] } or other variations
-const users = (checkData as Record<string, unknown>)?.Users || 
-              (checkData as Record<string, unknown>)?.users || 
-              (checkData as Record<string, unknown>)?.data || 
-              []
+const saveBroadcastLog = async (params: {
+  messageType: string;
+  content: string | null;
+  mediaUrl: string | null;
+  recipientsTargeted: number;
+  recipientsSuccess: number;
+  recipientsFailed: number;
+  status: 'completed' | 'cancelled' | 'error';
+  startedAt: number;
+  errorMessage?: string;
+  leadNames: string[];
+}) => {
+  try {
+    const session = await supabase.auth.getSession();
+    if (!session.data.session) return;
 
-return new Response(
-  JSON.stringify({ users }),
-  { status: checkResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-)
+    const completedAt = Date.now();
+    const durationSeconds = Math.round((completedAt - params.startedAt) / 1000);
+
+    await supabase.from('broadcast_logs').insert({
+      user_id: session.data.session.user.id,
+      instance_id: instance.id,
+      instance_name: instance.name,
+      message_type: params.messageType,
+      content: params.content,
+      media_url: params.mediaUrl,
+      groups_targeted: 0, // 0 indica envio para leads, não grupos
+      recipients_targeted: params.recipientsTargeted,
+      recipients_success: params.recipientsSuccess,
+      recipients_failed: params.recipientsFailed,
+      exclude_admins: false,
+      random_delay: randomDelay,
+      status: params.status,
+      started_at: new Date(params.startedAt).toISOString(),
+      completed_at: new Date(completedAt).toISOString(),
+      duration_seconds: durationSeconds,
+      error_message: params.errorMessage || null,
+      group_names: params.leadNames, // Nomes dos leads para referência
+    });
+  } catch (err) {
+    console.error('Error saving broadcast log:', err);
+  }
+};
 ```
 
-**Para:**
-```typescript
-// Normalize response - UAZAPI returns array directly: [{query, isInWhatsapp, ...}, ...]
-// Or wrapped in { Users: [...] } or { users: [...] } or { data: [...] }
-let users: unknown[]
-if (Array.isArray(checkData)) {
-  // Direct array response
-  users = checkData
-  console.log('Check response is direct array with', users.length, 'items')
-} else {
-  // Try to extract from object wrapper
-  users = (checkData as Record<string, unknown>)?.Users as unknown[] || 
-          (checkData as Record<string, unknown>)?.users as unknown[] || 
-          (checkData as Record<string, unknown>)?.data as unknown[] || 
-          []
-  console.log('Check response extracted from object, items:', users.length)
-}
+### 2. Chamar a função após os envios
 
-return new Response(
-  JSON.stringify({ users }),
-  { status: checkResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-)
+Modificar `handleSendText` e `handleSendMedia` para salvar o log ao final:
+
+```typescript
+// Ao final de handleSendText (após o loop de envio):
+const leadNames = selectedLeads.slice(0, 10).map(l => l.name || l.phone);
+await saveBroadcastLog({
+  messageType: 'text',
+  content: message.trim(),
+  mediaUrl: null,
+  recipientsTargeted: selectedLeads.length,
+  recipientsSuccess: successCount,
+  recipientsFailed: failCount,
+  status: isCancelledRef.current ? 'cancelled' : (failCount > 0 ? 'error' : 'completed'),
+  startedAt,
+  leadNames,
+});
 ```
+
+```typescript
+// Ao final de handleSendMedia:
+const actualMediaType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType;
+const leadNames = selectedLeads.slice(0, 10).map(l => l.name || l.phone);
+await saveBroadcastLog({
+  messageType: actualMediaType,
+  content: caption || null,
+  mediaUrl: mediaUrl || null, // Não salvar base64, apenas URL se houver
+  recipientsTargeted: selectedLeads.length,
+  recipientsSuccess: successCount,
+  recipientsFailed: failCount,
+  status: isCancelledRef.current ? 'cancelled' : (failCount > 0 ? 'error' : 'completed'),
+  startedAt,
+  leadNames,
+});
+```
+
+### 3. Atualizar exibição no histórico para distinguir envios
+
+**Arquivo:** `src/components/broadcast/BroadcastHistory.tsx`
+
+Adicionar indicador visual para diferenciar envios de grupos vs leads:
+
+```typescript
+// Na renderização de cada log, verificar se groups_targeted === 0
+{log.groups_targeted === 0 ? (
+  <Badge variant="outline" className="text-xs">
+    <User className="w-3 h-3 mr-1" />
+    Leads
+  </Badge>
+) : (
+  <Badge variant="outline" className="text-xs">
+    <Users className="w-3 h-3 mr-1" />
+    {log.groups_targeted} grupo{log.groups_targeted !== 1 ? 's' : ''}
+  </Badge>
+)}
+```
+
+Também atualizar o label onde mostra "Grupos" para ser dinâmico:
+
+- Se `groups_targeted > 0`: mostrar "X grupo(s)"
+- Se `groups_targeted === 0`: mostrar "Leads" e usar `group_names` como lista de contatos
+
+### 4. Adicionar filtro por tipo de envio (opcional)
+
+Adicionar um novo filtro no histórico para filtrar por tipo:
+
+```typescript
+type TargetFilter = 'all' | 'groups' | 'leads';
+
+// No dropdown de filtros:
+<Select value={targetFilter} onValueChange={(v) => setTargetFilter(v as TargetFilter)}>
+  <SelectTrigger className="w-[140px] h-8 text-sm">
+    <SelectValue placeholder="Destino" />
+  </SelectTrigger>
+  <SelectContent>
+    <SelectItem value="all">Todos</SelectItem>
+    <SelectItem value="groups">Grupos</SelectItem>
+    <SelectItem value="leads">Leads</SelectItem>
+  </SelectContent>
+</Select>
+```
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/broadcast/LeadMessageForm.tsx` | Adicionar `saveBroadcastLog` e chamar após envios |
+| `src/components/broadcast/BroadcastHistory.tsx` | Adicionar badge e filtro para distinguir leads vs grupos |
 
 ---
 
 ## Resultado Esperado
 
-Após a correção:
-
-| Antes | Depois |
-|-------|--------|
-| 0 válidos, 0 inválidos, todos como "Erro" | 540+ válidos, alguns inválidos (se houver) |
-| Badge amarelo "Erro" em todos | Badge verde "WhatsApp" nos válidos |
-| Toast: "0 válidos, 0 inválidos" | Toast: "543 válidos, 3 inválidos" (exemplo) |
-
----
-
-## Observacoes Tecnicas
-
-- O código no frontend (`LeadsBroadcaster.tsx`) já está correto - ele espera `response.data.users` e processa os campos `query`, `isInWhatsapp`, etc.
-- Nenhuma alteração necessária no frontend
-- A correção é apenas na edge function para normalizar a resposta da UAZAPI
+Após a implementação:
+1. Envios para leads aparecerão no Histórico de Envios
+2. Será possível identificar visualmente se o envio foi para grupos ou leads
+3. O botão "Reenviar" funcionará normalmente para envios de leads
+4. Filtro opcional permitirá ver apenas envios de grupos ou leads
