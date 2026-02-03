@@ -159,6 +159,50 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete }: LeadMessageFor
     return `${minHours}h${minMins > 0 ? minMins + 'min' : ''} - ${maxHours}h${maxMins > 0 ? maxMins + 'min' : ''}`;
   };
 
+  const saveBroadcastLog = async (params: {
+    messageType: string;
+    content: string | null;
+    mediaUrl: string | null;
+    recipientsTargeted: number;
+    recipientsSuccess: number;
+    recipientsFailed: number;
+    status: 'completed' | 'cancelled' | 'error';
+    startedAt: number;
+    errorMessage?: string;
+    leadNames: string[];
+  }) => {
+    try {
+      const session = await supabase.auth.getSession();
+      if (!session.data.session) return;
+
+      const completedAt = Date.now();
+      const durationSeconds = Math.round((completedAt - params.startedAt) / 1000);
+
+      await supabase.from('broadcast_logs').insert({
+        user_id: session.data.session.user.id,
+        instance_id: instance.id,
+        instance_name: instance.name,
+        message_type: params.messageType,
+        content: params.content,
+        media_url: params.mediaUrl,
+        groups_targeted: 0, // 0 indicates lead broadcast, not groups
+        recipients_targeted: params.recipientsTargeted,
+        recipients_success: params.recipientsSuccess,
+        recipients_failed: params.recipientsFailed,
+        exclude_admins: false,
+        random_delay: randomDelay,
+        status: params.status,
+        started_at: new Date(params.startedAt).toISOString(),
+        completed_at: new Date(completedAt).toISOString(),
+        duration_seconds: durationSeconds,
+        error_message: params.errorMessage || null,
+        group_names: params.leadNames,
+      });
+    } catch (err) {
+      console.error('Error saving broadcast log:', err);
+    }
+  };
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -359,10 +403,10 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete }: LeadMessageFor
       }
     }
 
-    if (!isCancelledRef.current) {
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
 
+    if (!isCancelledRef.current) {
       setProgress(p => ({
         ...p,
         status: failCount > 0 ? 'error' : 'success',
@@ -374,6 +418,20 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete }: LeadMessageFor
         toast.warning(`${successCount} enviados, ${failCount} falharam`);
       }
     }
+
+    // Save broadcast log
+    const leadNames = selectedLeads.slice(0, 50).map(l => l.name || l.phone);
+    await saveBroadcastLog({
+      messageType: 'text',
+      content: message.trim(),
+      mediaUrl: null,
+      recipientsTargeted: selectedLeads.length,
+      recipientsSuccess: successCount,
+      recipientsFailed: failCount,
+      status: isCancelledRef.current ? 'cancelled' : (failCount > 0 ? 'error' : 'completed'),
+      startedAt,
+      leadNames,
+    });
   };
 
   const handleSendMedia = async () => {
@@ -452,10 +510,10 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete }: LeadMessageFor
       }
     }
 
-    if (!isCancelledRef.current) {
-      const successCount = results.filter(r => r.success).length;
-      const failCount = results.filter(r => !r.success).length;
+    const successCount = results.filter(r => r.success).length;
+    const failCount = results.filter(r => !r.success).length;
 
+    if (!isCancelledRef.current) {
       setProgress(p => ({
         ...p,
         status: failCount > 0 ? 'error' : 'success',
@@ -467,6 +525,20 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete }: LeadMessageFor
         toast.warning(`${successCount} enviados, ${failCount} falharam`);
       }
     }
+
+    // Save broadcast log - reuse actualMediaType from above
+    const leadNames = selectedLeads.slice(0, 50).map(l => l.name || l.phone);
+    await saveBroadcastLog({
+      messageType: actualMediaType,
+      content: caption || null,
+      mediaUrl: mediaUrl || null,
+      recipientsTargeted: selectedLeads.length,
+      recipientsSuccess: successCount,
+      recipientsFailed: failCount,
+      status: isCancelledRef.current ? 'cancelled' : (failCount > 0 ? 'error' : 'completed'),
+      startedAt,
+      leadNames,
+    });
   };
 
   const handleReset = () => {
