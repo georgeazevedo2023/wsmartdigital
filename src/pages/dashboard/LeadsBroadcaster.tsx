@@ -37,6 +37,14 @@ interface LeadDatabase {
   updated_at: string;
 }
 
+interface ResendData {
+  messageType: string;
+  content: string | null;
+  mediaUrl: string | null;
+  instanceId: string;
+  instanceName: string | null;
+}
+
 const LeadsBroadcaster = () => {
   const { user } = useAuth();
   // Optimized: 3 steps instead of 4
@@ -54,6 +62,25 @@ const LeadsBroadcaster = () => {
   const [isSavingDatabase, setIsSavingDatabase] = useState(false);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [editTarget, setEditTarget] = useState<LeadDatabase | null>(null);
+  const [resendData, setResendData] = useState<ResendData | null>(null);
+
+  // Check for resend data from history
+  useEffect(() => {
+    const storedData = sessionStorage.getItem('resendData');
+    if (storedData) {
+      try {
+        const parsed = JSON.parse(storedData);
+        setResendData(parsed);
+        sessionStorage.removeItem('resendData');
+        toast.info('Selecione a instância, base e contatos para reenviar a mensagem', {
+          duration: 4000,
+        });
+      } catch (e) {
+        console.error('Failed to parse resend data:', e);
+        sessionStorage.removeItem('resendData');
+      }
+    }
+  }, []);
 
   // Fetch databases when instance is selected
   useEffect(() => {
@@ -367,6 +394,7 @@ const LeadsBroadcaster = () => {
     setSelectedDatabase(null);
     setIsCreatingNewDatabase(false);
     setNewDatabaseName('');
+    setResendData(null);
   };
 
   const handleBack = () => {
@@ -425,6 +453,37 @@ const LeadsBroadcaster = () => {
           </Button>
         )}
       </div>
+
+      {/* Resend Banner */}
+      {resendData && (
+        <div className="p-3 bg-primary/10 border border-primary/20 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-4 h-4 text-primary" />
+              <span className="text-sm font-medium">Reenviando mensagem</span>
+              <Badge variant="secondary" className="text-xs">
+                {resendData.messageType === 'text' ? 'Texto' : 
+                 resendData.messageType === 'image' ? 'Imagem' :
+                 resendData.messageType === 'video' ? 'Vídeo' :
+                 resendData.messageType === 'audio' || resendData.messageType === 'ptt' ? 'Áudio' : 'Documento'}
+              </Badge>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setResendData(null)}
+              className="text-xs"
+            >
+              Cancelar
+            </Button>
+          </div>
+          {resendData.content && (
+            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+              "{resendData.content}"
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Progress Steps - Optimized: 3 steps */}
       <div className="flex items-center gap-2 text-sm">
@@ -731,6 +790,11 @@ const LeadsBroadcaster = () => {
             instance={selectedInstance}
             selectedLeads={selectedLeadsList}
             onComplete={handleComplete}
+            initialData={resendData ? {
+              messageType: resendData.messageType,
+              content: resendData.content,
+              mediaUrl: resendData.mediaUrl,
+            } : undefined}
           />
         </div>
       )}

@@ -16,10 +16,17 @@ import MessagePreview from './MessagePreview';
 import type { Instance } from './InstanceSelector';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
 
+interface InitialData {
+  messageType: string;
+  content: string | null;
+  mediaUrl: string | null;
+}
+
 interface LeadMessageFormProps {
   instance: Instance;
   selectedLeads: Lead[];
   onComplete?: () => void;
+  initialData?: InitialData;
 }
 
 interface SendProgress {
@@ -42,9 +49,11 @@ const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp
 const ALLOWED_VIDEO_TYPES = ['video/mp4'];
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3', 'audio/wav'];
 
-const LeadMessageForm = ({ instance, selectedLeads, onComplete }: LeadMessageFormProps) => {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('text');
-  const [message, setMessage] = useState('');
+const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: LeadMessageFormProps) => {
+  const [activeTab, setActiveTab] = useState<ActiveTab>(
+    initialData?.messageType && initialData.messageType !== 'text' ? 'media' : 'text'
+  );
+  const [message, setMessage] = useState(initialData?.content || '');
   const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20'>('none');
   const [progress, setProgress] = useState<SendProgress>({
     current: 0,
@@ -60,13 +69,22 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete }: LeadMessageFor
   const isPausedRef = useRef(false);
   const isCancelledRef = useRef(false);
 
-  // Media states
-  const [mediaType, setMediaType] = useState<MediaType>('image');
-  const [mediaUrl, setMediaUrl] = useState('');
+  // Media states - initialize from initialData if present
+  const getInitialMediaType = (): MediaType => {
+    if (!initialData?.messageType) return 'image';
+    if (initialData.messageType === 'image') return 'image';
+    if (initialData.messageType === 'video') return 'video';
+    if (initialData.messageType === 'audio' || initialData.messageType === 'ptt') return 'audio';
+    if (initialData.messageType === 'document' || initialData.messageType === 'file') return 'file';
+    return 'image';
+  };
+
+  const [mediaType, setMediaType] = useState<MediaType>(getInitialMediaType());
+  const [mediaUrl, setMediaUrl] = useState(initialData?.mediaUrl || '');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [caption, setCaption] = useState('');
-  const [isPtt, setIsPtt] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.mediaUrl || null);
+  const [caption, setCaption] = useState(initialData?.messageType !== 'text' ? (initialData?.content || '') : '');
+  const [isPtt, setIsPtt] = useState(initialData?.messageType === 'ptt');
   const [filename, setFilename] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 

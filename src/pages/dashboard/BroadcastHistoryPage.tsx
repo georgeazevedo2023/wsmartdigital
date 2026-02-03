@@ -11,8 +11,12 @@ const BroadcastHistoryPage = () => {
     content: string | null;
     media_url: string | null;
     carousel_data: unknown;
+    groups_targeted: number;
   }) => {
-    // Store resend data in sessionStorage and navigate to broadcaster
+    // Check if it's a lead broadcast (groups_targeted === 0)
+    const isLeadBroadcast = log.groups_targeted === 0;
+    
+    // Store resend data in sessionStorage
     sessionStorage.setItem('resendData', JSON.stringify({
       messageType: log.message_type,
       content: log.content,
@@ -21,7 +25,13 @@ const BroadcastHistoryPage = () => {
       instanceName: log.instance_name,
       carouselData: log.carousel_data,
     }));
-    navigate('/dashboard/broadcast');
+    
+    // Navigate to appropriate broadcaster
+    if (isLeadBroadcast) {
+      navigate('/dashboard/leads-broadcast');
+    } else {
+      navigate('/dashboard/broadcast');
+    }
   };
 
   return (
