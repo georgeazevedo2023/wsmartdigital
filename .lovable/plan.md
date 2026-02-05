@@ -1,412 +1,220 @@
 
-# Adicionar Suporte a Carrossel no Disparador de Leads
+# Atualizar Landing Page com Todas as Novas Funcionalidades
 
-## Resumo
-Adicionar a aba "Carrossel" no formulário de mensagens do Disparador de Leads, permitindo enviar carrosséis interativos (cards com imagens, texto e botões) para contatos individuais, replicando a funcionalidade já existente no Disparador de Grupos.
+## Objetivo
+Atualizar a página inicial (Index.tsx) para refletir todas as funcionalidades atuais da plataforma WsmartQR, destacando os recursos de disparador, carrosséis interativos, gerenciamento de leads e agendamentos.
 
 ---
 
-## Componentes Envolvidos
+## Novas Funcionalidades a Destacar
+
+Com base na análise do código, as seguintes funcionalidades precisam ser adicionadas/atualizadas:
+
+| Funcionalidade | Descrição |
+|----------------|-----------|
+| **Disparador para Grupos** | Envio em massa de mensagens para múltiplos grupos do WhatsApp |
+| **Disparador para Leads** | Envio direto para contatos individuais a partir de bases de leads |
+| **Mensagens com Carrossel** | Cards interativos com imagens, texto e botões (URL, Resposta, Chamada) |
+| **Agendamento de Mensagens** | Programar envios para data/hora específica com recorrência opcional |
+| **Histórico de Envios** | Rastreamento completo de todos os envios realizados |
+| **Reenvio de Mensagens** | Reenviar mensagens do histórico com um clique |
+| **Mídia Diversificada** | Suporte a imagens, vídeos, áudios (incluindo PTT) e arquivos |
+| **Delay Anti-Bloqueio** | Intervalos aleatórios para evitar bloqueios do WhatsApp |
+| **Gerenciamento de Bases de Leads** | Importação e organização de contatos em bases separadas |
+
+---
+
+## Alterações no Arquivo
+
+### Arquivo: `src/pages/Index.tsx`
+
+### 1. Importações Adicionais
+```typescript
+import { 
+  MessageSquare, Shield, Server, Users, ArrowRight, Zap,
+  // Novos ícones
+  Send, Calendar, Clock, Image, LayoutGrid, 
+  Database, History, RefreshCw, Timer
+} from 'lucide-react';
+```
+
+### 2. Atualizar Seção Hero
+- Manter o design atual mas atualizar a descrição para refletir melhor as capacidades
+
+```typescript
+<p className="text-lg text-muted-foreground mb-10 max-w-2xl mx-auto">
+  WsmartQR é uma plataforma SaaS completa para gestão e automação de WhatsApp. 
+  Dispare mensagens para grupos e leads, agende envios e crie carrosséis interativos.
+</p>
+```
+
+### 3. Atualizar Array de Features (Principal)
+Substituir o array atual por um mais abrangente:
+
+```typescript
+const features = [
+  {
+    icon: Server,
+    title: 'Múltiplas Instâncias',
+    description: 'Conecte e gerencie várias instâncias do WhatsApp em um painel centralizado.',
+  },
+  {
+    icon: Send,
+    title: 'Disparador em Massa',
+    description: 'Envie mensagens para múltiplos grupos ou leads com delays anti-bloqueio.',
+  },
+  {
+    icon: LayoutGrid,
+    title: 'Carrosséis Interativos',
+    description: 'Crie mensagens com cards interativos contendo imagens, textos e botões.',
+  },
+  {
+    icon: Database,
+    title: 'Gestão de Leads',
+    description: 'Importe e organize contatos em bases separadas para campanhas direcionadas.',
+  },
+  {
+    icon: Calendar,
+    title: 'Agendamento de Envios',
+    description: 'Programe mensagens para datas específicas com opções de recorrência.',
+  },
+  {
+    icon: History,
+    title: 'Histórico Completo',
+    description: 'Rastreie todos os envios com estatísticas de sucesso e opção de reenvio.',
+  },
+];
+```
+
+### 4. Adicionar Nova Seção: "Tipos de Mensagem"
+Criar uma seção adicional mostrando os tipos de conteúdo suportados:
+
+```typescript
+{/* Message Types Section */}
+<section className="relative z-10 py-24 border-t border-border/50">
+  <div className="container mx-auto px-4">
+    <div className="text-center mb-16">
+      <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">
+        Múltiplos Formatos de Mensagem
+      </h2>
+      <p className="text-muted-foreground max-w-2xl mx-auto">
+        Envie diferentes tipos de conteúdo para engajar sua audiência
+      </p>
+    </div>
+
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4 max-w-4xl mx-auto">
+      {[
+        { icon: MessageSquare, label: 'Texto' },
+        { icon: Image, label: 'Imagens' },
+        { icon: Video, label: 'Vídeos' },
+        { icon: Mic, label: 'Áudios' },
+        { icon: LayoutGrid, label: 'Carrosséis' },
+      ].map((item, i) => (
+        <div key={i} className="flex flex-col items-center p-4 rounded-xl bg-card/50 border border-border/50">
+          <item.icon className="w-8 h-8 text-primary mb-2" />
+          <span className="text-sm font-medium">{item.label}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+```
+
+### 5. Adicionar Nova Seção: "Como Funciona"
+Uma seção visual mostrando o fluxo de uso:
+
+```typescript
+{/* How it Works Section */}
+<section className="relative z-10 py-24 border-t border-border/50">
+  <div className="container mx-auto px-4">
+    <div className="text-center mb-16">
+      <h2 className="text-3xl md:text-4xl font-display font-bold mb-4">
+        Simples e Eficiente
+      </h2>
+      <p className="text-muted-foreground max-w-2xl mx-auto">
+        Em poucos passos você está pronto para disparar suas mensagens
+      </p>
+    </div>
+
+    <div className="grid md:grid-cols-3 gap-8 max-w-4xl mx-auto">
+      {[
+        { step: '01', title: 'Conecte', description: 'Escaneie o QR Code para conectar sua instância do WhatsApp' },
+        { step: '02', title: 'Selecione', description: 'Escolha grupos ou importe leads para sua campanha' },
+        { step: '03', title: 'Dispare', description: 'Envie mensagens instantaneamente ou agende para depois' },
+      ].map((item, i) => (
+        <div key={i} className="text-center">
+          <div className="w-16 h-16 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
+            <span className="text-xl font-display font-bold text-primary">{item.step}</span>
+          </div>
+          <h3 className="font-display font-semibold text-lg mb-2">{item.title}</h3>
+          <p className="text-muted-foreground text-sm">{item.description}</p>
+        </div>
+      ))}
+    </div>
+  </div>
+</section>
+```
+
+### 6. Atualizar Footer
+Atualizar o ano para 2026:
+
+```typescript
+<p>© 2026 WsmartQR. Todos os direitos reservados.</p>
+```
+
+---
+
+## Estrutura Final da Página
+
+```text
++------------------------------------------+
+|              Header (Logo + Login)       |
++------------------------------------------+
+|                                          |
+|             Hero Section                 |
+|    (Título + Descrição + CTAs)           |
+|                                          |
++------------------------------------------+
+|                                          |
+|           Features Section               |
+|   (6 cards: Instâncias, Disparador,      |
+|    Carrossel, Leads, Agendamento,        |
+|    Histórico)                            |
+|                                          |
++------------------------------------------+
+|                                          |
+|         Message Types Section            |
+|   (Texto, Imagens, Vídeos, Áudios,       |
+|    Carrosséis)                           |
+|                                          |
++------------------------------------------+
+|                                          |
+|          How it Works Section            |
+|   (01 Conecte, 02 Selecione, 03 Dispare) |
+|                                          |
++------------------------------------------+
+|                                          |
+|             CTA Section                  |
+|   (Pronto para começar? + Botão)         |
+|                                          |
++------------------------------------------+
+|              Footer (© 2026)             |
++------------------------------------------+
+```
+
+---
+
+## Arquivos a Modificar
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/broadcast/LeadMessageForm.tsx` | Adicionar aba Carrossel, estado, função de envio e log |
-| `src/pages/dashboard/LeadsBroadcaster.tsx` | Atualizar interface `ResendData` para incluir `carouselData` |
-
----
-
-## Alterações Detalhadas
-
-### 1. LeadMessageForm.tsx
-
-#### 1.1 Importações Adicionais
-```typescript
-import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor';
-import { CarouselPreview } from './CarouselPreview';
-import { LayoutGrid } from 'lucide-react';
-```
-
-#### 1.2 Atualizar Tipos
-```typescript
-// Atualizar ActiveTab para incluir 'carousel'
-type ActiveTab = 'text' | 'media' | 'carousel';
-
-// Atualizar interface InitialData para incluir carouselData
-interface InitialData {
-  messageType: string;
-  content: string | null;
-  mediaUrl: string | null;
-  carouselData?: {
-    message?: string;
-    cards?: Array<{
-      id?: string;
-      text?: string;
-      image?: string;
-      buttons?: Array<{
-        id?: string;
-        type: 'URL' | 'REPLY' | 'CALL';
-        label: string;
-        value?: string;
-      }>;
-    }>;
-  };
-}
-```
-
-#### 1.3 Adicionar Estado do Carrossel
-```typescript
-// Inicializar carouselData a partir de initialData (para reenvio)
-const [carouselData, setCarouselData] = useState<CarouselData>(() => {
-  if (initialData?.carouselData && initialData.carouselData.cards) {
-    return {
-      message: initialData.carouselData.message || '',
-      cards: initialData.carouselData.cards.map((card) => ({
-        id: card.id || crypto.randomUUID(),
-        text: card.text || '',
-        image: card.image || '',
-        buttons: card.buttons?.map((btn) => ({
-          id: btn.id || crypto.randomUUID(),
-          type: btn.type,
-          label: btn.label,
-          url: btn.type === 'URL' ? (btn.value || '') : '',
-          phone: btn.type === 'CALL' ? (btn.value || '') : '',
-        })) || [],
-      })),
-    };
-  }
-  return {
-    message: '',
-    cards: [createEmptyCard(), createEmptyCard()],
-  };
-});
-```
-
-#### 1.4 Atualizar activeTab inicial
-```typescript
-const [activeTab, setActiveTab] = useState<ActiveTab>(() => {
-  if (initialData?.messageType === 'carousel') return 'carousel';
-  if (initialData?.messageType && initialData.messageType !== 'text') return 'media';
-  return 'text';
-});
-```
-
-#### 1.5 Adicionar Função sendCarouselToNumber
-```typescript
-const sendCarouselToNumber = async (
-  jid: string, 
-  carousel: CarouselData,
-  accessToken: string
-) => {
-  // Converter arquivos locais para base64
-  const processedCards = await Promise.all(
-    carousel.cards.map(async (card) => {
-      let imageUrl = card.image;
-      if (card.imageFile) {
-        imageUrl = await fileToBase64(card.imageFile);
-        const base64Data = imageUrl.split(',')[1] || imageUrl;
-        imageUrl = base64Data;
-      }
-      return {
-        text: card.text,
-        image: imageUrl,
-        buttons: card.buttons,
-      };
-    })
-  );
-
-  const response = await fetch(
-    `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({
-        action: 'send-carousel',
-        token: instance.token,
-        groupjid: jid,
-        message: carousel.message,
-        carousel: processedCards,
-      }),
-    }
-  );
-
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || errorData.message || 'Erro ao enviar carrossel');
-  }
-
-  return response.json();
-};
-```
-
-#### 1.6 Adicionar Função handleSendCarousel
-```typescript
-const handleSendCarousel = async () => {
-  // Validação básica
-  const hasValidCard = carouselData.cards.some(c => 
-    (c.image || c.imageFile) && c.text.trim()
-  );
-  
-  if (!hasValidCard) {
-    toast.error('Preencha pelo menos um card com imagem e texto');
-    return;
-  }
-
-  const session = await supabase.auth.getSession();
-  if (!session.data.session) {
-    toast.error('Sessão expirada');
-    return;
-  }
-
-  const accessToken = session.data.session.access_token;
-  const startedAt = Date.now();
-
-  isPausedRef.current = false;
-  isCancelledRef.current = false;
-
-  setProgress({
-    current: 0,
-    total: selectedLeads.length,
-    currentName: '',
-    status: 'sending',
-    results: [],
-    startedAt,
-  });
-
-  const results: SendProgress['results'] = [];
-
-  for (let i = 0; i < selectedLeads.length; i++) {
-    if (isCancelledRef.current) {
-      setProgress(p => ({ ...p, status: 'cancelled' }));
-      toast.warning('Envio cancelado');
-      break;
-    }
-
-    await waitWhilePaused();
-
-    const lead = selectedLeads[i];
-    const displayName = lead.name || lead.phone;
-
-    setProgress(p => ({
-      ...p,
-      current: i + 1,
-      currentName: displayName,
-    }));
-
-    try {
-      await sendCarouselToNumber(lead.jid, carouselData, accessToken);
-      results.push({ name: displayName, success: true });
-    } catch (error: any) {
-      results.push({ name: displayName, success: false, error: error.message });
-    }
-
-    setProgress(p => ({ ...p, results: [...results] }));
-
-    if (i < selectedLeads.length - 1 && !isCancelledRef.current) {
-      await delay(getRandomDelay());
-    }
-  }
-
-  const successCount = results.filter(r => r.success).length;
-  const failCount = results.filter(r => !r.success).length;
-
-  if (!isCancelledRef.current) {
-    setProgress(p => ({
-      ...p,
-      status: failCount > 0 ? 'error' : 'success',
-    }));
-
-    if (failCount === 0) {
-      toast.success(`Carrossel enviado para ${successCount} contato${successCount !== 1 ? 's' : ''}`);
-    } else {
-      toast.warning(`${successCount} enviados, ${failCount} falharam`);
-    }
-  }
-
-  // Salvar log com carouselData
-  const leadNames = selectedLeads.slice(0, 50).map(l => l.name || l.phone);
-  await saveBroadcastLogWithCarousel({
-    messageType: 'carousel',
-    content: carouselData.message || null,
-    mediaUrl: null,
-    recipientsTargeted: selectedLeads.length,
-    recipientsSuccess: successCount,
-    recipientsFailed: failCount,
-    status: isCancelledRef.current ? 'cancelled' : (failCount > 0 ? 'error' : 'completed'),
-    startedAt,
-    leadNames,
-    carouselData,
-  });
-};
-```
-
-#### 1.7 Atualizar saveBroadcastLog para suportar carouselData
-Adicionar parâmetro opcional `carouselData` à função `saveBroadcastLog` e incluir no insert:
-```typescript
-carousel_data: params.carouselData ? {
-  message: params.carouselData.message,
-  cards: params.carouselData.cards.map(card => ({
-    id: card.id,
-    text: card.text,
-    image: card.image || '', // Não salvar base64 grande
-    buttons: card.buttons.map(btn => ({
-      id: btn.id,
-      type: btn.type,
-      label: btn.label,
-      value: btn.url || btn.phone || '',
-    })),
-  })),
-} : null,
-```
-
-#### 1.8 Atualizar handleSend
-```typescript
-const handleSend = async () => {
-  if (activeTab === 'text') {
-    await handleSendText();
-  } else if (activeTab === 'carousel') {
-    await handleSendCarousel();
-  } else {
-    await handleSendMedia();
-  }
-};
-```
-
-#### 1.9 Atualizar canSend
-```typescript
-const canSend = activeTab === 'text' 
-  ? message.trim().length > 0
-  : activeTab === 'carousel'
-    ? carouselData.cards.some(c => (c.image || c.imageFile) && c.text.trim())
-    : (selectedFile || mediaUrl.trim());
-```
-
-#### 1.10 Atualizar UI - TabsList para 3 colunas
-```tsx
-<TabsList className="grid w-full grid-cols-3">
-  <TabsTrigger value="text" className="gap-2">
-    <MessageSquare className="w-4 h-4" />
-    Texto
-  </TabsTrigger>
-  <TabsTrigger value="media" className="gap-2">
-    <Image className="w-4 h-4" />
-    Mídia
-  </TabsTrigger>
-  <TabsTrigger value="carousel" className="gap-2">
-    <LayoutGrid className="w-4 h-4" />
-    Carrossel
-  </TabsTrigger>
-</TabsList>
-```
-
-#### 1.11 Adicionar TabsContent para Carrossel
-```tsx
-<TabsContent value="carousel" className="space-y-4 mt-4">
-  <CarouselEditor
-    value={carouselData}
-    onChange={setCarouselData}
-    disabled={isSending}
-  />
-</TabsContent>
-```
-
-#### 1.12 Atualizar Preview para mostrar Carrossel
-```tsx
-{activeTab === 'carousel' ? (
-  <CarouselPreview message={carouselData.message} cards={carouselData.cards} />
-) : (
-  <MessagePreview
-    type={activeTab === 'text' ? 'text' : mediaType}
-    text={activeTab === 'text' ? message : caption}
-    previewUrl={previewUrl}
-    mediaUrl={activeTab === 'media' ? mediaUrl : undefined}
-    filename={filename}
-    isPtt={isPtt}
-  />
-)}
-```
-
----
-
-### 2. LeadsBroadcaster.tsx
-
-#### 2.1 Atualizar interface ResendData
-```typescript
-interface ResendData {
-  messageType: string;
-  content: string | null;
-  mediaUrl: string | null;
-  instanceId: string;
-  instanceName: string | null;
-  carouselData?: {
-    message?: string;
-    cards?: Array<{
-      id?: string;
-      text?: string;
-      image?: string;
-      buttons?: Array<{
-        id?: string;
-        type: 'URL' | 'REPLY' | 'CALL';
-        label: string;
-        value?: string;
-      }>;
-    }>;
-  };
-}
-```
-
----
-
-## Fluxo de Funcionamento
-
-```text
-+-------------------+     +-------------------+     +-------------------+
-| 1. Selecionar     | --> | 2. Selecionar     | --> | 3. Compor         |
-|    Instância      |     |    Base + Leads   |     |    Mensagem       |
-+-------------------+     +-------------------+     +-------------------+
-                                                           |
-                                                           v
-                                              +-------------------------+
-                                              | Tabs:                   |
-                                              | [Texto] [Mídia] [Carrossel] |
-                                              +-------------------------+
-                                                           |
-                                                           v
-                                              +-------------------------+
-                                              | CarouselEditor:         |
-                                              | - Mensagem principal    |
-                                              | - 2-10 Cards            |
-                                              | - Cada card: imagem,    |
-                                              |   texto, botões         |
-                                              +-------------------------+
-                                                           |
-                                                           v
-                                              +-------------------------+
-                                              | Envio sequencial:       |
-                                              | Lead 1 -> delay ->      |
-                                              | Lead 2 -> delay -> ...  |
-                                              +-------------------------+
-```
+| `src/pages/Index.tsx` | Atualizar features, adicionar seções de tipos de mensagem e "como funciona" |
 
 ---
 
 ## Resultado Esperado
 
-1. Nova aba "Carrossel" visível no formulário de mensagens do Disparador de Leads
-2. Editor visual idêntico ao do Disparador de Grupos (2-10 cards, botões interativos)
-3. Preview em tempo real do carrossel
-4. Envio sequencial com delay anti-bloqueio
-5. Registro no histórico com `message_type: 'carousel'` e `carousel_data` persistido
-6. Reenvio funcional a partir do histórico (carrega dados do carrossel no editor)
-
----
-
-## Testes Recomendados
-
-1. Criar carrossel com 3 cards e enviar para 2-3 leads
-2. Verificar se aparece no histórico com badge "Carrossel"
-3. Testar reenvio a partir do histórico
-4. Testar pausar/cancelar durante envio de carrossel
-5. Verificar validação (cards sem imagem/texto devem bloquear envio)
+1. Landing page atualizada refletindo todas as funcionalidades da plataforma
+2. Novas seções explicando tipos de mensagem e fluxo de uso
+3. Visual coerente com o design atual (dark mode com glassmorphism)
+4. Ano do footer atualizado para 2026
