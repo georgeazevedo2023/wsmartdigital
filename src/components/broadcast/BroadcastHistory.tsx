@@ -22,6 +22,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import { 
   History, 
   CheckCircle2, 
@@ -46,11 +51,14 @@ import {
   Play,
   LayoutGrid,
   Trash2,
-  User
+  User,
+  Search
 } from 'lucide-react';
 import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/hooks/use-mobile';
 
 import { HistoryCarouselPreview, HistoryCarouselData } from './HistoryCarouselPreview';
 import type { Json } from '@/integrations/supabase/types';
@@ -252,6 +260,7 @@ const HistoryMessagePreview = ({
 };
 
 const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
+  const isMobile = useIsMobile();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [typeFilter, setTypeFilter] = useState<MessageTypeFilter>('all');
@@ -264,6 +273,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
   const [logToDelete, setLogToDelete] = useState<BroadcastLog | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [batchDeleteDialogOpen, setBatchDeleteDialogOpen] = useState(false);
+  const [filtersExpanded, setFiltersExpanded] = useState(false);
 
   const queryClient = useQueryClient();
 
@@ -439,6 +449,19 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
   const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || targetFilter !== 'all' || instanceFilter !== 'all' || dateFrom || dateTo || searchQuery;
 
+  // Count active filters for mobile badge
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== 'all') count++;
+    if (typeFilter !== 'all') count++;
+    if (targetFilter !== 'all') count++;
+    if (instanceFilter !== 'all') count++;
+    if (dateFrom) count++;
+    if (dateTo) count++;
+    if (searchQuery) count++;
+    return count;
+  }, [statusFilter, typeFilter, targetFilter, instanceFilter, dateFrom, dateTo, searchQuery]);
+
   const clearFilters = () => {
     setStatusFilter('all');
     setTypeFilter('all');
@@ -536,6 +559,235 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
     return Math.round((success / total) * 100);
   };
 
+  // Mobile Filters Component
+  const MobileFilters = () => (
+    <Collapsible open={filtersExpanded} onOpenChange={setFiltersExpanded}>
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="outline"
+          className="w-full justify-between h-10"
+        >
+          <span className="flex items-center gap-2">
+            <Filter className="w-4 h-4" />
+            <span>Filtros</span>
+            {activeFilterCount > 0 && (
+              <Badge variant="secondary" className="ml-1 px-1.5 py-0.5 text-xs">
+                {activeFilterCount}
+              </Badge>
+            )}
+          </span>
+          <ChevronDown className={cn(
+            "w-4 h-4 transition-transform",
+            filtersExpanded && "rotate-180"
+          )} />
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-3 space-y-3">
+        {/* 2-column grid for select filters */}
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos status</SelectItem>
+              <SelectItem value="completed">Concluído</SelectItem>
+              <SelectItem value="cancelled">Cancelado</SelectItem>
+              <SelectItem value="error">Erro</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as MessageTypeFilter)}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Tipo" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos tipos</SelectItem>
+              <SelectItem value="text">Texto</SelectItem>
+              <SelectItem value="image">Imagem</SelectItem>
+              <SelectItem value="video">Vídeo</SelectItem>
+              <SelectItem value="audio">Áudio</SelectItem>
+              <SelectItem value="document">Documento</SelectItem>
+              <SelectItem value="carousel">Carrossel</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={targetFilter} onValueChange={(v) => setTargetFilter(v as TargetFilter)}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Destino" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos destinos</SelectItem>
+              <SelectItem value="groups">Grupos</SelectItem>
+              <SelectItem value="leads">Leads</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={instanceFilter} onValueChange={(v) => setInstanceFilter(v)}>
+            <SelectTrigger className="h-9 text-xs">
+              <SelectValue placeholder="Instância" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas instâncias</SelectItem>
+              {uniqueInstances.map((instance) => (
+                <SelectItem key={instance.id} value={instance.id}>
+                  {instance.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Date inputs in row */}
+        <div className="flex items-center gap-2">
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="flex-1 h-9 text-xs"
+          />
+          <span className="text-muted-foreground text-xs shrink-0">até</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="flex-1 h-9 text-xs"
+          />
+        </div>
+
+        {/* Search input */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Buscar..."
+            className="w-full h-9 text-xs pl-8"
+          />
+        </div>
+
+        {/* Clear button */}
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="w-full h-8 text-muted-foreground hover:text-foreground"
+          >
+            <X className="w-4 h-4 mr-1" />
+            Limpar filtros
+          </Button>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+
+  // Desktop Filters Component
+  const DesktopFilters = () => (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Filter className="w-4 h-4" />
+          <span>Filtros:</span>
+        </div>
+
+        <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
+          <SelectTrigger className="w-[140px] h-8 text-sm">
+            <SelectValue placeholder="Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos status</SelectItem>
+            <SelectItem value="completed">Concluído</SelectItem>
+            <SelectItem value="cancelled">Cancelado</SelectItem>
+            <SelectItem value="error">Erro</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as MessageTypeFilter)}>
+          <SelectTrigger className="w-[140px] h-8 text-sm">
+            <SelectValue placeholder="Tipo" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos tipos</SelectItem>
+            <SelectItem value="text">Texto</SelectItem>
+            <SelectItem value="image">Imagem</SelectItem>
+            <SelectItem value="video">Vídeo</SelectItem>
+            <SelectItem value="audio">Áudio</SelectItem>
+            <SelectItem value="document">Documento</SelectItem>
+            <SelectItem value="carousel">Carrossel</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={targetFilter} onValueChange={(v) => setTargetFilter(v as TargetFilter)}>
+          <SelectTrigger className="w-[130px] h-8 text-sm">
+            <SelectValue placeholder="Destino" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todos destinos</SelectItem>
+            <SelectItem value="groups">Grupos</SelectItem>
+            <SelectItem value="leads">Leads</SelectItem>
+          </SelectContent>
+        </Select>
+
+        <Select value={instanceFilter} onValueChange={(v) => setInstanceFilter(v)}>
+          <SelectTrigger className="w-[180px] h-8 text-sm">
+            <SelectValue placeholder="Instância" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas instâncias</SelectItem>
+            {uniqueInstances.map((instance) => (
+              <SelectItem key={instance.id} value={instance.id}>
+                {instance.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="h-8 px-2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="w-4 h-4 mr-1" />
+            Limpar
+          </Button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Calendar className="w-4 h-4 text-muted-foreground" />
+          <Input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="w-[140px] h-8 text-sm"
+            placeholder="Data início"
+          />
+          <span className="text-muted-foreground text-sm">até</span>
+          <Input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="w-[140px] h-8 text-sm"
+            placeholder="Data fim"
+          />
+        </div>
+
+        <Input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Buscar por conteúdo, instância ou grupo..."
+          className="flex-1 min-w-[200px] h-8 text-sm"
+        />
+      </div>
+    </div>
+  );
+
   if (isLoading) {
     return (
       <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
@@ -561,7 +813,8 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg flex items-center gap-2">
             <History className="w-5 h-5" />
-            Histórico de Envios
+            <span className="hidden sm:inline">Histórico de Envios</span>
+            <span className="sm:hidden">Histórico</span>
           </CardTitle>
           <Button
             variant="ghost"
@@ -573,107 +826,9 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
           </Button>
         </div>
 
-        {/* Filters Section */}
+        {/* Filters Section - Responsive */}
         <div className="mt-4 space-y-3">
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Filter className="w-4 h-4" />
-              <span>Filtros:</span>
-            </div>
-
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as StatusFilter)}>
-              <SelectTrigger className="w-[140px] h-8 text-sm">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos status</SelectItem>
-                <SelectItem value="completed">Concluído</SelectItem>
-                <SelectItem value="cancelled">Cancelado</SelectItem>
-                <SelectItem value="error">Erro</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={typeFilter} onValueChange={(v) => setTypeFilter(v as MessageTypeFilter)}>
-              <SelectTrigger className="w-[140px] h-8 text-sm">
-                <SelectValue placeholder="Tipo" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos tipos</SelectItem>
-                <SelectItem value="text">Texto</SelectItem>
-                <SelectItem value="image">Imagem</SelectItem>
-                <SelectItem value="video">Vídeo</SelectItem>
-                <SelectItem value="audio">Áudio</SelectItem>
-                <SelectItem value="document">Documento</SelectItem>
-                <SelectItem value="carousel">Carrossel</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={targetFilter} onValueChange={(v) => setTargetFilter(v as TargetFilter)}>
-              <SelectTrigger className="w-[130px] h-8 text-sm">
-                <SelectValue placeholder="Destino" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos destinos</SelectItem>
-                <SelectItem value="groups">Grupos</SelectItem>
-                <SelectItem value="leads">Leads</SelectItem>
-              </SelectContent>
-            </Select>
-
-            <Select value={instanceFilter} onValueChange={(v) => setInstanceFilter(v)}>
-              <SelectTrigger className="w-[180px] h-8 text-sm">
-                <SelectValue placeholder="Instância" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas instâncias</SelectItem>
-                {uniqueInstances.map((instance) => (
-                  <SelectItem key={instance.id} value={instance.id}>
-                    {instance.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            {hasActiveFilters && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearFilters}
-                className="h-8 px-2 text-muted-foreground hover:text-foreground"
-              >
-                <X className="w-4 h-4 mr-1" />
-                Limpar
-              </Button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-muted-foreground" />
-              <Input
-                type="date"
-                value={dateFrom}
-                onChange={(e) => setDateFrom(e.target.value)}
-                className="w-[140px] h-8 text-sm"
-                placeholder="Data início"
-              />
-              <span className="text-muted-foreground text-sm">até</span>
-              <Input
-                type="date"
-                value={dateTo}
-                onChange={(e) => setDateTo(e.target.value)}
-                className="w-[140px] h-8 text-sm"
-                placeholder="Data fim"
-              />
-            </div>
-
-            <Input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por conteúdo, instância ou grupo..."
-              className="flex-1 min-w-[200px] h-8 text-sm"
-            />
-          </div>
+          {isMobile ? <MobileFilters /> : <DesktopFilters />}
 
           {hasActiveFilters && (
             <div className="text-xs text-muted-foreground">
@@ -683,7 +838,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
           {/* Batch Selection Controls */}
           {filteredLogs.length > 0 && (
-            <div className="flex items-center justify-between pt-2 border-t border-border/30">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 pt-2 border-t border-border/30">
               <div className="flex items-center gap-3">
                 <label className="flex items-center gap-2 cursor-pointer text-sm">
                   <input
@@ -692,31 +847,33 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                     onChange={toggleSelectAll}
                     className="w-4 h-4 rounded border-border"
                   />
-                  <span className="text-muted-foreground">
+                  <span className="text-muted-foreground text-xs sm:text-sm">
                     {selectedIds.size === filteredLogs.length ? 'Desmarcar todos' : 'Selecionar todos'}
                   </span>
                 </label>
                 {selectedIds.size > 0 && (
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-xs sm:text-sm text-muted-foreground">
                     {selectedIds.size} selecionado(s)
                   </span>
                 )}
               </div>
               {selectedIds.size > 0 && (
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 w-full sm:w-auto">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={clearSelection}
+                    className="flex-1 sm:flex-none h-8 text-xs sm:text-sm"
                   >
-                    Limpar seleção
+                    Limpar
                   </Button>
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => setBatchDeleteDialogOpen(true)}
+                    className="flex-1 sm:flex-none h-8 text-xs sm:text-sm"
                   >
-                    <Trash2 className="w-4 h-4 mr-1" />
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
                     Excluir {selectedIds.size}
                   </Button>
                 </div>
@@ -747,7 +904,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
             </Button>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-3">
             {filteredLogs.map((log) => {
                 const isExpanded = expandedId === log.id;
                 const deliveryRate = getDeliveryRate(log.recipients_success, log.recipients_targeted);
@@ -755,15 +912,16 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                 return (
                   <div
                     key={log.id}
-                    className={`border rounded-lg p-3 bg-background/50 hover:bg-background/80 transition-colors ${
-                      selectedIds.has(log.id) ? 'ring-2 ring-primary/50 border-primary/50' : ''
-                    }`}
+                    className={cn(
+                      "border rounded-lg p-2.5 sm:p-3 bg-background/50 hover:bg-background/80 transition-colors",
+                      selectedIds.has(log.id) && "ring-2 ring-primary/50 border-primary/50"
+                    )}
                   >
                     <div 
-                      className="flex items-center justify-between cursor-pointer"
+                      className="flex items-start sm:items-center justify-between cursor-pointer gap-2"
                       onClick={() => setExpandedId(isExpanded ? null : log.id)}
                     >
-                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className="flex items-start sm:items-center gap-2 sm:gap-3 min-w-0 flex-1">
                         {/* Checkbox for selection */}
                         <input
                           type="checkbox"
@@ -773,47 +931,48 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                             toggleSelection(log.id, e as unknown as React.MouseEvent);
                           }}
                           onClick={(e) => e.stopPropagation()}
-                          className="w-4 h-4 rounded border-border shrink-0"
+                          className="w-4 h-4 rounded border-border shrink-0 mt-1 sm:mt-0"
                         />
-                        <div className="p-2 rounded-full bg-primary/10">
+                        <div className="p-1.5 sm:p-2 rounded-full bg-primary/10 shrink-0">
                           {getMessageTypeIcon(log.message_type)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             {getStatusBadge(log.status)}
                             <Badge variant="outline" className="text-xs">
                               {getMessageTypeLabel(log.message_type)}
                             </Badge>
                             {log.groups_targeted === 0 ? (
                               <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-600 border-purple-500/20">
-                                <User className="w-3 h-3 mr-1" />
-                                Leads
+                                <User className="w-3 h-3 mr-0.5" />
+                                <span className="hidden sm:inline">Leads</span>
                               </Badge>
                             ) : (
                               <Badge variant="outline" className="text-xs">
-                                <Users className="w-3 h-3 mr-1" />
-                                {log.groups_targeted} grupo{log.groups_targeted !== 1 ? 's' : ''}
+                                <Users className="w-3 h-3 mr-0.5" />
+                                <span>{log.groups_targeted}</span>
+                                <span className="hidden sm:inline ml-0.5">grupo{log.groups_targeted !== 1 ? 's' : ''}</span>
                               </Badge>
                             )}
                             {log.random_delay && log.random_delay !== 'none' && (
-                              <Badge variant="outline" className="text-xs">
+                              <Badge variant="outline" className="text-xs hidden sm:flex">
                                 <Shield className="w-3 h-3 mr-1" />
                                 {log.random_delay === '5-10' ? '5-10s' : '10-20s'}
                               </Badge>
                             )}
                           </div>
-                          <p className="text-sm text-muted-foreground mt-1">
+                          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5 sm:mt-1 truncate">
                             {log.instance_name || log.instance_id}
                           </p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 ml-3">
+                      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
                         <div className="text-right">
-                          <div className="text-sm font-medium">
+                          <div className="text-xs sm:text-sm font-medium">
                             {log.recipients_success}/{log.recipients_targeted}
                           </div>
-                          <div className="text-xs text-muted-foreground">
-                            {deliveryRate}% entregue
+                          <div className="text-[10px] sm:text-xs text-muted-foreground">
+                            {deliveryRate}%
                           </div>
                         </div>
                         {isExpanded ? (
@@ -825,7 +984,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                     </div>
 
                     {isExpanded && (
-                      <div className="mt-3 pt-3 border-t space-y-4">
+                      <div className="mt-3 pt-3 border-t space-y-3 sm:space-y-4">
                         {/* Group/Lead Names */}
                         {log.group_names && log.group_names.length > 0 && (
                           <div>
@@ -842,7 +1001,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                                 </>
                               )}
                             </p>
-                            <div className="flex flex-wrap gap-1.5">
+                            <div className="flex flex-wrap gap-1">
                               {log.group_names.map((name, idx) => (
                                 <Badge key={idx} variant="secondary" className="text-xs">
                                   {name}
@@ -863,27 +1022,27 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                         )}
 
                         {/* Stats Grid - Dates */}
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                        <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm">
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <Play className="w-4 h-4 text-green-500" />
-                            <span>
-                              Início: {format(new Date(log.started_at), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
+                            <Play className="w-3.5 h-3.5 text-green-500" />
+                            <span className="truncate">
+                              Início: {format(new Date(log.started_at), "dd/MM/yy 'às' HH:mm", { locale: ptBR })}
                             </span>
                           </div>
                           {log.completed_at && (
                             <div className="flex items-center gap-2 text-muted-foreground">
-                              <CheckCircle2 className="w-4 h-4 text-primary" />
-                              <span>
-                                Fim: {format(new Date(log.completed_at), "dd/MM/yyyy 'às' HH:mm:ss", { locale: ptBR })}
+                              <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
+                              <span className="truncate">
+                                Fim: {format(new Date(log.completed_at), "dd/MM/yy 'às' HH:mm", { locale: ptBR })}
                               </span>
                             </div>
                           )}
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <Timer className="w-4 h-4" />
+                            <Timer className="w-3.5 h-3.5" />
                             <span>Duração: {formatDuration(log.duration_seconds)}</span>
                           </div>
                           <div className="flex items-center gap-2 text-muted-foreground">
-                            <Users className="w-4 h-4" />
+                            <Users className="w-3.5 h-3.5" />
                             <span>
                               {log.exclude_admins ? 'Excluindo admins' : 'Todos os membros'}
                             </span>
@@ -891,21 +1050,21 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                         </div>
 
                         {/* Recipients Stats */}
-                        <div className="flex items-center gap-3 text-sm">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-green-500" />
+                        <div className="flex items-center gap-3 text-xs sm:text-sm">
+                          <div className="flex items-center gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-green-500" />
                             <span className="text-green-600">{log.recipients_success} sucesso</span>
                           </div>
                           {log.recipients_failed > 0 && (
-                            <div className="flex items-center gap-2">
-                              <XCircle className="w-4 h-4 text-red-500" />
+                            <div className="flex items-center gap-1.5">
+                              <XCircle className="w-3.5 h-3.5 text-red-500" />
                               <span className="text-red-600">{log.recipients_failed} falha</span>
                             </div>
                           )}
                         </div>
 
                         {log.error_message && (
-                          <div className="p-2 bg-destructive/10 rounded text-sm text-destructive">
+                          <div className="p-2 bg-destructive/10 rounded text-xs sm:text-sm text-destructive">
                             <p className="text-xs mb-1">Erro:</p>
                             <p>{log.error_message}</p>
                           </div>
@@ -917,23 +1076,23 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                             <Button
                               variant="outline"
                               size="sm"
-                              className="flex-1"
+                              className="flex-1 h-8 text-xs sm:text-sm"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 onResend(log);
                               }}
                             >
-                              <RefreshCw className="w-4 h-4 mr-2" />
+                              <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
                               Reenviar
                             </Button>
                           )}
                           <Button
                             variant="outline"
                             size="sm"
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10 h-8"
                             onClick={(e) => handleDeleteClick(log, e)}
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Trash2 className="w-3.5 h-3.5" />
                           </Button>
                         </div>
                       </div>
@@ -947,7 +1106,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
       {/* Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-[95vw] sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir registro</AlertDialogTitle>
             <AlertDialogDescription>
@@ -961,11 +1120,11 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
               )}
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="sm:w-auto w-full">Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 sm:w-auto w-full"
               disabled={deleteMutation.isPending}
             >
               {deleteMutation.isPending ? 'Excluindo...' : 'Excluir'}
@@ -976,7 +1135,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
 
       {/* Batch Delete Confirmation Dialog */}
       <AlertDialog open={batchDeleteDialogOpen} onOpenChange={setBatchDeleteDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-[95vw] sm:max-w-lg">
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir {selectedIds.size} registros</AlertDialogTitle>
             <AlertDialogDescription>
@@ -984,11 +1143,11 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
               Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel className="sm:w-auto w-full">Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={confirmBatchDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 sm:w-auto w-full"
               disabled={batchDeleteMutation.isPending}
             >
               {batchDeleteMutation.isPending ? 'Excluindo...' : `Excluir ${selectedIds.size} registros`}
