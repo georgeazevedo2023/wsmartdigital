@@ -3,17 +3,17 @@ import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import {
   MessageSquareMore,
-  LayoutGrid,
-  Smartphone,
-  UsersRound,
-  SlidersHorizontal,
+  LayoutDashboard,
+  MonitorSmartphone,
+  Users,
+  Settings,
   LogOut,
   ChevronLeft,
   ChevronRight,
   ShieldCheck,
   ChevronDown,
-  CalendarClock,
-  Megaphone,
+  Clock,
+  Send,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -41,13 +41,13 @@ const Sidebar = () => {
   const [instances, setInstances] = useState<Instance[]>([]);
 
   const navItems = [
-    { icon: LayoutGrid, label: 'Dashboard', path: '/dashboard' },
-    { icon: CalendarClock, label: 'Agendamentos', path: '/dashboard/scheduled' },
+    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+    { icon: Clock, label: 'Agendamentos', path: '/dashboard/scheduled' },
   ];
 
   const adminItems = [
-    { icon: UsersRound, label: 'Usuários', path: '/dashboard/users' },
-    { icon: SlidersHorizontal, label: 'Configurações', path: '/dashboard/settings' },
+    { icon: Users, label: 'Usuários', path: '/dashboard/users' },
+    { icon: Settings, label: 'Configurações', path: '/dashboard/settings' },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -86,6 +86,11 @@ const Sidebar = () => {
     };
   }, []);
 
+  // Classe base para links colapsados (centralizado)
+  const collapsedLinkClass = cn(
+    'flex items-center justify-center w-full px-3 py-2.5 rounded-lg transition-all'
+  );
+
   return (
     <aside
       className={cn(
@@ -120,7 +125,7 @@ const Sidebar = () => {
             key={item.path}
             to={item.path}
             className={cn(
-              'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+              collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
               isActive(item.path)
                 ? 'bg-primary/10 text-primary border border-primary/20'
                 : 'text-sidebar-foreground hover:bg-sidebar-accent'
@@ -131,163 +136,153 @@ const Sidebar = () => {
           </Link>
         ))}
 
-        {/* Disparador com submenu */}
-        <Collapsible open={broadcastOpen && !collapsed} onOpenChange={setBroadcastOpen}>
-          <CollapsibleTrigger asChild>
-            <button
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all w-full text-left',
-                isBroadcastActive
-                  ? 'bg-primary/10 text-primary border border-primary/20'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent'
-              )}
-            >
-              <Megaphone className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <>
-                  <span className="font-medium flex-1">Disparador</span>
-                  <ChevronDown
-                    className={cn(
-                      'w-4 h-4 transition-transform',
-                      broadcastOpen && 'transform rotate-180'
-                    )}
-                  />
-                </>
-              )}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pl-5 mt-1 space-y-1">
-            <Link
-              to="/dashboard/broadcast"
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
-                isActive('/dashboard/broadcast')
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
-              )}
-            >
-              <span>Grupos</span>
-            </Link>
-            <Link
-              to="/dashboard/broadcast/history"
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
-                isActive('/dashboard/broadcast/history')
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
-              )}
-            >
-              <span>Histórico</span>
-            </Link>
-            <Link
-              to="/dashboard/broadcast/leads"
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
-                isActive('/dashboard/broadcast/leads')
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
-              )}
-            >
-              <span>Leads</span>
-            </Link>
-          </CollapsibleContent>
-        </Collapsible>
-
-        {/* Link simples para disparador quando colapsado */}
-        {collapsed && (
+        {/* Disparador - Collapsible apenas quando NÃO colapsado */}
+        {!collapsed ? (
+          <Collapsible open={broadcastOpen} onOpenChange={setBroadcastOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all w-full text-left',
+                  isBroadcastActive
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <Send className="w-5 h-5 shrink-0" />
+                <span className="font-medium flex-1">Disparador</span>
+                <ChevronDown
+                  className={cn(
+                    'w-4 h-4 transition-transform',
+                    broadcastOpen && 'transform rotate-180'
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pl-5 mt-1 space-y-1">
+              <Link
+                to="/dashboard/broadcast"
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
+                  isActive('/dashboard/broadcast')
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+                )}
+              >
+                <span>Grupos</span>
+              </Link>
+              <Link
+                to="/dashboard/broadcast/history"
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
+                  isActive('/dashboard/broadcast/history')
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+                )}
+              >
+                <span>Histórico</span>
+              </Link>
+              <Link
+                to="/dashboard/broadcast/leads"
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
+                  isActive('/dashboard/broadcast/leads')
+                    ? 'bg-primary/10 text-primary'
+                    : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+                )}
+              >
+                <span>Leads</span>
+              </Link>
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
           <Link
             to="/dashboard/broadcast"
             className={cn(
-              'flex items-center justify-center px-3 py-2.5 rounded-lg transition-all',
+              collapsedLinkClass,
               isBroadcastActive
                 ? 'bg-primary/10 text-primary border border-primary/20'
                 : 'text-sidebar-foreground hover:bg-sidebar-accent'
             )}
           >
-            <Megaphone className="w-5 h-5" />
+            <Send className="w-5 h-5" />
           </Link>
         )}
 
-        {/* Instâncias com submenu */}
-        <Collapsible open={instancesOpen && !collapsed} onOpenChange={setInstancesOpen}>
-          <CollapsibleTrigger asChild>
-            <button
-              className={cn(
-                'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all w-full text-left',
-                isInstancesActive
-                  ? 'bg-primary/10 text-primary border border-primary/20'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent'
-              )}
-            >
-              <Smartphone className="w-5 h-5 shrink-0" />
-              {!collapsed && (
-                <>
-                  <span className="font-medium flex-1">Instâncias</span>
-                  <ChevronDown
-                    className={cn(
-                      'w-4 h-4 transition-transform',
-                      instancesOpen && 'transform rotate-180'
-                    )}
-                  />
-                </>
-              )}
-            </button>
-          </CollapsibleTrigger>
-          <CollapsibleContent className="pl-5 mt-1 space-y-1">
-            <Link
-              to="/dashboard/instances"
-              className={cn(
-                'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
-                isActive('/dashboard/instances')
-                  ? 'bg-primary/10 text-primary'
-                  : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
-              )}
-            >
-              <span>Todas as instâncias</span>
-            </Link>
-            {instances.slice(0, 5).map((instance) => (
+        {/* Instâncias - Collapsible apenas quando NÃO colapsado */}
+        {!collapsed ? (
+          <Collapsible open={instancesOpen} onOpenChange={setInstancesOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all w-full text-left',
+                  isInstancesActive
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <MonitorSmartphone className="w-5 h-5 shrink-0" />
+                <span className="font-medium flex-1">Instâncias</span>
+                <ChevronDown
+                  className={cn(
+                    'w-4 h-4 transition-transform',
+                    instancesOpen && 'transform rotate-180'
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pl-5 mt-1 space-y-1">
               <Link
-                key={instance.id}
-                to={`/dashboard/instances/${instance.id}`}
+                to="/dashboard/instances"
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
-                  instanceId === instance.id
+                  isActive('/dashboard/instances')
                     ? 'bg-primary/10 text-primary'
                     : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
                 )}
               >
-                <span
+                <span>Todas as instâncias</span>
+              </Link>
+              {instances.slice(0, 5).map((instance) => (
+                <Link
+                  key={instance.id}
+                  to={`/dashboard/instances/${instance.id}`}
                   className={cn(
-                    'w-2 h-2 rounded-full shrink-0',
-                    instance.status === 'connected' ? 'bg-success' : 'bg-muted-foreground'
+                    'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
+                    instanceId === instance.id
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
                   )}
-                />
-                <span className="truncate">{instance.name}</span>
-              </Link>
-            ))}
-            {instances.length > 5 && (
-              <Link
-                to="/dashboard/instances"
-                className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground"
-              >
-                <span>+{instances.length - 5} mais...</span>
-              </Link>
-            )}
-          </CollapsibleContent>
-        </Collapsible>
-
-        {/* Link simples para instâncias quando colapsado */}
-        {collapsed && (
+                >
+                  <span
+                    className={cn(
+                      'w-2 h-2 rounded-full shrink-0',
+                      instance.status === 'connected' ? 'bg-success' : 'bg-muted-foreground'
+                    )}
+                  />
+                  <span className="truncate">{instance.name}</span>
+                </Link>
+              ))}
+              {instances.length > 5 && (
+                <Link
+                  to="/dashboard/instances"
+                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground"
+                >
+                  <span>+{instances.length - 5} mais...</span>
+                </Link>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
           <Link
             to="/dashboard/instances"
             className={cn(
-              'flex items-center justify-center px-3 py-2.5 rounded-lg transition-all',
+              collapsedLinkClass,
               isInstancesActive
                 ? 'bg-primary/10 text-primary border border-primary/20'
                 : 'text-sidebar-foreground hover:bg-sidebar-accent'
             )}
           >
-            <Smartphone className="w-5 h-5" />
+            <MonitorSmartphone className="w-5 h-5" />
           </Link>
         )}
 
@@ -306,7 +301,7 @@ const Sidebar = () => {
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+                  collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
                   isActive(item.path)
                     ? 'bg-primary/10 text-primary border border-primary/20'
                     : 'text-sidebar-foreground hover:bg-sidebar-accent'
@@ -346,7 +341,7 @@ const Sidebar = () => {
           onClick={signOut}
           className={cn(
             'w-full mt-2 text-muted-foreground hover:text-destructive',
-            collapsed ? 'px-0' : 'justify-start'
+            collapsed ? 'px-0 justify-center' : 'justify-start'
           )}
         >
           <LogOut className="w-4 h-4" />
