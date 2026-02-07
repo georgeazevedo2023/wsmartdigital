@@ -1,46 +1,132 @@
 
-## Objetivo
-Fazer com que os tooltips do sidebar (quando colapsado) apareçam sempre na frente dos demais elementos da UI, evitando que fiquem “por trás” de cards, popovers, dialogs, etc.
+# Responsividade Mobile-First para o Dashboard
 
-## Diagnóstico (por que está acontecendo)
-Hoje o componente `TooltipContent` (`src/components/ui/tooltip.tsx`) renderiza o conteúdo diretamente no DOM onde o item do sidebar está. Isso pode falhar em duas situações comuns:
+## Problema Identificado
 
-1. **Stacking context (contexto de empilhamento)**: algum elemento “por cima” (ex.: popover/dialog) cria um novo contexto (via `transform`, `filter`, `opacity`, `position + z-index`, etc.), e o tooltip fica preso “atrás” mesmo com `z-index` alto.
-2. **Overflows/containers**: o tooltip pode ser “limitado” pelo container (mesmo sem parecer), e acaba visualmente atrás/recortado.
+Na imagem fornecida, o sidebar fixo ocupa espaço horizontal em dispositivos mobile, comprimindo severamente o conteudo principal. O layout atual (`flex h-screen`) mantém o sidebar sempre visível, independente do tamanho da tela.
 
-A solução padrão do Radix/shadcn para isso é renderizar o tooltip em **Portal** (no `body`), e então controlar o `z-index` com segurança.
+---
 
-## Mudanças propostas (sem alterar lógica do app, apenas UI/stacking)
-### 1) Renderizar o TooltipContent dentro de um Portal
-- Ajustar `src/components/ui/tooltip.tsx` para envolver o `<TooltipPrimitive.Content />` com:
-  - `<TooltipPrimitive.Portal> ... </TooltipPrimitive.Portal>`
+## Solucao Proposta
 
-Isso garante que o tooltip saia da árvore do sidebar e não “dispute” stacking context com elementos locais.
+Implementar um sistema de navegacao responsivo com duas abordagens:
 
-### 2) Aumentar o z-index do tooltip para um valor bem alto
-- Trocar de `z-[100]` para algo como `z-[9999]` (ou equivalente consistente com o projeto).
-- Motivo: mesmo com Portal, ainda pode existir overlay/popup com z-index alto. Usar `z-[9999]` torna o tooltip dominante.
+1. **Desktop (>= 768px)**: Sidebar fixo lateral (comportamento atual)
+2. **Mobile (< 768px)**: Sidebar oculto por padrao, acessivel via botao hamburguer + Sheet (drawer lateral)
 
-### 3) Verificação de regressões visuais
-Checar tooltips em outros pontos do app (ex.: `MessagePreview`) para garantir que:
-- continuam posicionando corretamente,
-- não ficam atrás de sheets/modals,
-- não sofrem clipping.
+---
 
-## Arquivos envolvidos
-- `src/components/ui/tooltip.tsx`
-  - Adicionar `TooltipPrimitive.Portal`
-  - Ajustar classe de `z-index` para bem alto
+## Arquitetura da Solucao
 
-## Testes manuais (checklist)
-1. Ir para `/dashboard/broadcast`.
-2. Colapsar o sidebar.
-3. Passar o mouse em cada ícone e confirmar:
-   - tooltip aparece na frente do painel “Selecionar Instância” (e outros popovers),
-   - tooltip não fica recortado,
-   - tooltip não “pisca” ou desloca de forma estranha.
-4. Abrir algum modal/popup (se existir no fluxo) e repetir o hover nos ícones do sidebar.
+```text
++------------------+     +------------------+
+|  DESKTOP >= 768  |     |   MOBILE < 768   |
++------------------+     +------------------+
+| [Sidebar] [Main] |     | [Header + Menu]  |
+|                  |     | [Main Content ]  |
++------------------+     +------------------+
+```
 
-## Observações técnicas
-- Usar Portal é a correção mais confiável para problemas de tooltip atrás de elementos, porque remove a dependência de stacking contexts locais.
-- Manteremos a API do componente igual (`Tooltip`, `TooltipTrigger`, `TooltipContent`, `TooltipProvider`) para não quebrar imports existentes.
+---
+
+## Alteracoes Detalhadas
+
+### 1. DashboardLayout.tsx
+
+**Mudancas:**
+- Importar `useIsMobile` e componentes Sheet (drawer)
+- Estado `mobileMenuOpen` para controlar abertura do menu
+- Renderizacao condicional:
+  - Desktop: Sidebar fixo (atual)
+  - Mobile: Header com botao menu + Sheet contendo a navegacao
+
+```text
+Mobile Layout:
++--------------------------------+
+| [Logo] [MENU BTN]              | <- Header fixo
++--------------------------------+
+|                                |
+|        Main Content            | <- Scroll independente
+|        (padding top)           |
+|                                |
++--------------------------------+
+```
+
+### 2. Sidebar.tsx
+
+**Mudancas:**
+- Receber prop `isMobile?: boolean` para ajustar estilos
+- No mobile, remover largura fixa e usar `w-full`
+- Callback `onNavigate` para fechar o menu apos selecao de rota (mobile)
+- Esconder botao de colapsar no mobile (desnecessario em drawer)
+
+### 3. Ajustes de Padding nas Paginas
+
+**Mudancas:**
+- Verificar se as paginas tem padding adequado para mobile
+- Usar classes responsivas como `p-4 md:p-6`
+- Garantir que cards e grids se adaptem (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`)
+
+### 4. Componentes de Broadcast
+
+**Mudancas no Broadcaster.tsx e similares:**
+- Progress steps: empilhar verticalmente no mobile
+- Botoes: usar `flex-col gap-2` no mobile, `flex-row` no desktop
+- Cards: garantir `max-w-full` e sem overflow horizontal
+
+### 5. Header Mobile (novo componente)
+
+**Criar `MobileHeader.tsx`:**
+- Altura fixa (~56px)
+- Logo a esquerda
+- Botao hamburguer a direita
+- Background glassmorphism consistente com o tema
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Tipo | Descricao |
+|---------|------|-----------|
+| `src/components/dashboard/DashboardLayout.tsx` | Modificar | Adicionar logica mobile + Sheet |
+| `src/components/dashboard/Sidebar.tsx` | Modificar | Aceitar props mobile + callback |
+| `src/pages/dashboard/Broadcaster.tsx` | Modificar | Responsividade dos steps e botoes |
+| `src/pages/dashboard/DashboardHome.tsx` | Modificar | Ajustar grid de stats cards |
+| `src/pages/dashboard/Instances.tsx` | Modificar | Ajustar grid e dialogs |
+| `src/components/broadcast/GroupSelector.tsx` | Modificar | Ajustar botoes de selecao |
+| `src/components/broadcast/BroadcasterHeader.tsx` | Modificar | Layout responsivo |
+
+---
+
+## Beneficios
+
+1. **Melhor UX mobile**: Conteudo ocupa 100% da largura em dispositivos pequenos
+2. **Navegacao acessivel**: Menu sempre disponivel via botao
+3. **Consistencia visual**: Mesmo tema glassmorphism no drawer mobile
+4. **Performance**: Sidebar nao renderizado desnecessariamente no mobile
+5. **Acessibilidade**: Touch targets maiores, espacamento adequado
+
+---
+
+## Detalhes Tecnicos
+
+### Hook useIsMobile
+
+Ja existe em `src/hooks/use-mobile.tsx` com breakpoint 768px. Sera reutilizado.
+
+### Sheet Component
+
+Ja existe em `src/components/ui/sheet.tsx`. Sera usado para o drawer mobile.
+
+### Classes Tailwind Responsivas
+
+```css
+/* Exemplo de padroes a usar */
+.container { @apply p-4 md:p-6 }
+.grid { @apply grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 }
+.button-group { @apply flex flex-col sm:flex-row gap-2 }
+```
+
+### Animacao de Transicao
+
+O Sheet ja possui animacoes suaves. O header mobile tera transicao de abertura consistente.
