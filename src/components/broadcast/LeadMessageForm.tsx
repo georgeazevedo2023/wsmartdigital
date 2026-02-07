@@ -222,6 +222,28 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
     return `${minHours}h${minMins > 0 ? minMins + 'min' : ''} - ${maxHours}h${maxMins > 0 ? maxMins + 'min' : ''}`;
   };
 
+  // Compress and resize image to a smaller thumbnail for storage
+  const compressImageToThumbnail = (file: File, maxWidth = 200, quality = 0.6): Promise<string> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const img = new window.Image();
+      
+      img.onload = () => {
+        const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+        const objectUrl = img.src;
+        URL.revokeObjectURL(objectUrl);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      
+      img.onerror = () => resolve('');
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const saveBroadcastLog = async (params: {
     messageType: string;
     content: string | null;
@@ -242,6 +264,38 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       const completedAt = Date.now();
       const durationSeconds = Math.round((completedAt - params.startedAt) / 1000);
 
+      // Prepare carousel data for storage (convert files to thumbnails)
+      let storedCarouselData = null;
+      if (params.carouselData) {
+        const processedCards = await Promise.all(
+          params.carouselData.cards.map(async (card) => {
+            let imageForStorage = card.image || '';
+            
+            // If we have a file, compress it to a small thumbnail for preview
+            if (card.imageFile) {
+              imageForStorage = await compressImageToThumbnail(card.imageFile);
+            }
+            
+            return {
+              id: card.id,
+              text: card.text,
+              image: imageForStorage,
+              buttons: card.buttons.map(btn => ({
+                id: btn.id,
+                type: btn.type,
+                label: btn.label,
+                value: btn.url || btn.phone || '',
+              })),
+            };
+          })
+        );
+
+        storedCarouselData = {
+          message: params.carouselData.message,
+          cards: processedCards,
+        };
+      }
+
       await supabase.from('broadcast_logs').insert({
         user_id: session.data.session.user.id,
         instance_id: instance.id,
@@ -261,20 +315,7 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
         duration_seconds: durationSeconds,
         error_message: params.errorMessage || null,
         group_names: params.leadNames,
-        carousel_data: params.carouselData ? {
-          message: params.carouselData.message,
-          cards: params.carouselData.cards.map(card => ({
-            id: card.id,
-            text: card.text,
-            image: card.image || '',
-            buttons: card.buttons.map(btn => ({
-              id: btn.id,
-              type: btn.type,
-              label: btn.label,
-              value: btn.url || btn.phone || '',
-            })),
-          })),
-        } : null,
+        carousel_data: storedCarouselData,
       });
     } catch (err) {
       console.error('Error saving broadcast log:', err);
