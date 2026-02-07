@@ -15,6 +15,8 @@ import { toast } from 'sonner';
 import MessagePreview from './MessagePreview';
 import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor';
 import { CarouselPreview } from './CarouselPreview';
+import { TemplateSelector } from './TemplateSelector';
+import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
 
@@ -297,6 +299,117 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
     setFilename('');
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
+    }
+  };
+
+  // Template handlers
+  const handleSelectTemplate = (template: MessageTemplate) => {
+    if (template.message_type === 'carousel' && template.carousel_data) {
+      setActiveTab('carousel');
+      const data = template.carousel_data as {
+        message?: string;
+        cards?: Array<{
+          id?: string;
+          text?: string;
+          image?: string;
+          buttons?: Array<{
+            id?: string;
+            type: 'URL' | 'REPLY' | 'CALL';
+            label: string;
+            value?: string;
+          }>;
+        }>;
+      };
+      setCarouselData({
+        message: data.message || '',
+        cards: data.cards?.map((card) => ({
+          id: card.id || crypto.randomUUID(),
+          text: card.text || '',
+          image: card.image || '',
+          buttons: card.buttons?.map((btn) => ({
+            id: btn.id || crypto.randomUUID(),
+            type: btn.type,
+            label: btn.label,
+            url: btn.type === 'URL' ? (btn.value || '') : '',
+            phone: btn.type === 'CALL' ? (btn.value || '') : '',
+          })) || [],
+        })) || [createEmptyCard(), createEmptyCard()],
+      });
+    } else if (template.message_type === 'text') {
+      setActiveTab('text');
+      setMessage(template.content || '');
+    } else {
+      setActiveTab('media');
+      const typeMap: Record<string, MediaType> = {
+        'image': 'image',
+        'video': 'video',
+        'audio': 'audio',
+        'ptt': 'audio',
+        'document': 'file',
+      };
+      const newMediaType = typeMap[template.message_type] || 'image';
+      setMediaType(newMediaType);
+      setIsPtt(template.message_type === 'ptt');
+      setMediaUrl(template.media_url || '');
+      setCaption(template.content || '');
+      setFilename(template.filename || '');
+      clearFile();
+    }
+    toast.success(`Template "${template.name}" aplicado`);
+  };
+
+  const handleSaveTemplate = () => {
+    if (activeTab === 'carousel') {
+      if (carouselData.cards.length < 2) {
+        toast.error('O carrossel precisa ter pelo menos 2 cards');
+        return null;
+      }
+      const hasLocalFiles = carouselData.cards.some(card => card.imageFile);
+      if (hasLocalFiles) {
+        toast.error('Para salvar template de carrossel, use URLs para as imagens');
+        return null;
+      }
+      return {
+        name: '',
+        content: carouselData.message || undefined,
+        message_type: 'carousel',
+        carousel_data: {
+          message: carouselData.message,
+          cards: carouselData.cards.map(card => ({
+            ...card,
+            imageFile: undefined,
+          })),
+        },
+      };
+    } else if (activeTab === 'text') {
+      const trimmedMessage = message.trim();
+      if (!trimmedMessage) {
+        toast.error('Digite uma mensagem para salvar');
+        return null;
+      }
+      return {
+        name: '',
+        content: trimmedMessage,
+        message_type: 'text',
+      };
+    } else {
+      const trimmedUrl = mediaUrl.trim();
+      if (!trimmedUrl && !selectedFile) {
+        toast.error('Selecione uma mídia para salvar');
+        return null;
+      }
+      if (!trimmedUrl) {
+        toast.error('Para salvar template de mídia, use uma URL');
+        return null;
+      }
+      const sendType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType === 'file' ? 'document' : mediaType;
+      return {
+        name: '',
+        content: caption.trim() || undefined,
+        message_type: sendType,
+        media_url: trimmedUrl,
+        filename: mediaType === 'file' ? filename.trim() : undefined,
+      };
     }
   };
 
@@ -796,10 +909,17 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       {/* Message Form */}
       <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-lg flex items-center gap-2">
-            <MessageSquare className="w-5 h-5" />
-            Compor Mensagem
-          </CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg flex items-center gap-2">
+              <MessageSquare className="w-5 h-5" />
+              Compor Mensagem
+            </CardTitle>
+            <TemplateSelector
+              onSelect={handleSelectTemplate}
+              onSave={handleSaveTemplate}
+              disabled={isSending}
+            />
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ActiveTab)}>
