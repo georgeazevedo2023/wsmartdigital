@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { useState, useEffect } from 'react';
 import {
   Collapsible,
@@ -92,12 +93,13 @@ const Sidebar = () => {
   );
 
   return (
-    <aside
-      className={cn(
-        'h-screen flex flex-col sidebar-glass transition-all duration-300',
-        collapsed ? 'w-20' : 'w-64'
-      )}
-    >
+    <TooltipProvider>
+      <aside
+        className={cn(
+          'h-screen flex flex-col sidebar-glass transition-all duration-300',
+          collapsed ? 'w-20' : 'w-64'
+        )}
+      >
       {/* Header */}
       <div className="h-16 flex items-center justify-between px-4 border-b border-primary/10">
         {!collapsed && (
@@ -121,19 +123,23 @@ const Sidebar = () => {
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
         {navItems.map((item) => (
-          <Link
-            key={item.path}
-            to={item.path}
-            className={cn(
-              collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
-              isActive(item.path)
-                ? 'bg-primary/10 text-primary border border-primary/20'
-                : 'text-sidebar-foreground hover:bg-sidebar-accent'
-            )}
-          >
-            <item.icon className="w-5 h-5 shrink-0" />
-            {!collapsed && <span className="font-medium">{item.label}</span>}
-          </Link>
+          <Tooltip key={item.path}>
+            <TooltipTrigger asChild>
+              <Link
+                to={item.path}
+                className={cn(
+                  collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+                  isActive(item.path)
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <item.icon className="w-5 h-5 shrink-0" />
+                {!collapsed && <span className="font-medium">{item.label}</span>}
+              </Link>
+            </TooltipTrigger>
+            {collapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
+          </Tooltip>
         ))}
 
         {/* Disparador - Collapsible apenas quando NÃO colapsado */}
@@ -195,17 +201,22 @@ const Sidebar = () => {
             </CollapsibleContent>
           </Collapsible>
         ) : (
-          <Link
-            to="/dashboard/broadcast"
-            className={cn(
-              collapsedLinkClass,
-              isBroadcastActive
-                ? 'bg-primary/10 text-primary border border-primary/20'
-                : 'text-sidebar-foreground hover:bg-sidebar-accent'
-            )}
-          >
-            <Send className="w-5 h-5" />
-          </Link>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                to="/dashboard/broadcast"
+                className={cn(
+                  collapsedLinkClass,
+                  isBroadcastActive
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <Send className="w-5 h-5" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">Disparador</TooltipContent>
+          </Tooltip>
         )}
 
         {/* Instâncias - Collapsible apenas quando NÃO colapsado */}
@@ -273,17 +284,22 @@ const Sidebar = () => {
             </CollapsibleContent>
           </Collapsible>
         ) : (
-          <Link
-            to="/dashboard/instances"
-            className={cn(
-              collapsedLinkClass,
-              isInstancesActive
-                ? 'bg-primary/10 text-primary border border-primary/20'
-                : 'text-sidebar-foreground hover:bg-sidebar-accent'
-            )}
-          >
-            <MonitorSmartphone className="w-5 h-5" />
-          </Link>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                to="/dashboard/instances"
+                className={cn(
+                  collapsedLinkClass,
+                  isInstancesActive
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <MonitorSmartphone className="w-5 h-5" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">Instâncias</TooltipContent>
+          </Tooltip>
         )}
 
         {isSuperAdmin && (
@@ -297,19 +313,23 @@ const Sidebar = () => {
               )}
             </div>
             {adminItems.map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={cn(
-                  collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
-                  isActive(item.path)
-                    ? 'bg-primary/10 text-primary border border-primary/20'
-                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
-                )}
-              >
-                <item.icon className="w-5 h-5 shrink-0" />
-                {!collapsed && <span className="font-medium">{item.label}</span>}
-              </Link>
+              <Tooltip key={item.path}>
+                <TooltipTrigger asChild>
+                  <Link
+                    to={item.path}
+                    className={cn(
+                      collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+                      isActive(item.path)
+                        ? 'bg-primary/10 text-primary border border-primary/20'
+                        : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                    )}
+                  >
+                    <item.icon className="w-5 h-5 shrink-0" />
+                    {!collapsed && <span className="font-medium">{item.label}</span>}
+                  </Link>
+                </TooltipTrigger>
+                {collapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
+              </Tooltip>
             ))}
           </>
         )}
@@ -349,6 +369,7 @@ const Sidebar = () => {
         </Button>
       </div>
     </aside>
+    </TooltipProvider>
   );
 };
 
