@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -8,10 +8,10 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Users, User, ShieldOff, Send } from 'lucide-react';
+import { Users, User, ShieldOff, Send, Check } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface ResendOptionsDialogProps {
   open: boolean;
@@ -33,6 +33,14 @@ const ResendOptionsDialog = ({
 }: ResendOptionsDialogProps) => {
   const [destination, setDestination] = useState<'groups' | 'leads'>(originalTarget);
   const [excludeAdmins, setExcludeAdmins] = useState(false);
+
+  // Reset state when dialog opens
+  useEffect(() => {
+    if (open) {
+      setDestination(originalTarget);
+      setExcludeAdmins(false);
+    }
+  }, [open, originalTarget]);
 
   const handleConfirm = () => {
     onConfirm({ destination, excludeAdmins });
@@ -71,43 +79,51 @@ const ResendOptionsDialog = ({
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Destination Selection */}
+          {/* Destination Selection - Custom buttons instead of RadioGroup */}
           <div className="space-y-3">
             <Label className="text-sm font-medium">Destino</Label>
-            <RadioGroup
-              value={destination}
-              onValueChange={(value) => setDestination(value as 'groups' | 'leads')}
-              className="grid grid-cols-2 gap-3"
-            >
-              <div>
-                <RadioGroupItem
-                  value="groups"
-                  id="groups"
-                  className="peer sr-only"
-                />
-                <Label
-                  htmlFor="groups"
-                  className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer transition-colors"
-                >
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setDestination('groups')}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 transition-colors",
+                  destination === 'groups'
+                    ? "border-primary bg-primary/5"
+                    : "border-muted bg-popover hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                <div className="relative">
                   <Users className="w-6 h-6" />
-                  <span className="font-medium">Grupos</span>
-                </Label>
-              </div>
-              <div>
-                <RadioGroupItem
-                  value="leads"
-                  id="leads"
-                  className="peer sr-only"
-                />
-                <Label
-                  htmlFor="leads"
-                  className="flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer transition-colors"
-                >
+                  {destination === 'groups' && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full flex items-center justify-center">
+                      <Check className="w-2 h-2 text-primary-foreground" />
+                    </div>
+                  )}
+                </div>
+                <span className="font-medium">Grupos</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDestination('leads')}
+                className={cn(
+                  "flex flex-col items-center justify-center gap-2 rounded-lg border-2 p-4 transition-colors",
+                  destination === 'leads'
+                    ? "border-primary bg-primary/5"
+                    : "border-muted bg-popover hover:bg-accent hover:text-accent-foreground"
+                )}
+              >
+                <div className="relative">
                   <User className="w-6 h-6" />
-                  <span className="font-medium">Leads</span>
-                </Label>
-              </div>
-            </RadioGroup>
+                  {destination === 'leads' && (
+                    <div className="absolute -top-1 -right-1 w-3 h-3 bg-primary rounded-full flex items-center justify-center">
+                      <Check className="w-2 h-2 text-primary-foreground" />
+                    </div>
+                  )}
+                </div>
+                <span className="font-medium">Leads</span>
+              </button>
+            </div>
           </div>
 
           {/* Exclude Admins Toggle - Only for Groups */}
