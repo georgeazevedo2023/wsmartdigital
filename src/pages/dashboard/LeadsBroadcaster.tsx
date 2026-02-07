@@ -809,6 +809,7 @@ const LeadsBroadcaster = () => {
               messageType: resendData.messageType,
               content: resendData.content,
               mediaUrl: resendData.mediaUrl,
+              carouselData: resendData.carouselData,
             } : undefined}
           />
         </div>
