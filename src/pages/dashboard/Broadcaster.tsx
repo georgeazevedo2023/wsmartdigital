@@ -79,18 +79,18 @@ const Broadcaster = () => {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl mx-auto">
+    <div className="space-y-4 md:space-y-6 max-w-5xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold">Disparador</h1>
-          <p className="text-muted-foreground">
+          <h1 className="text-xl md:text-2xl font-bold">Disparador</h1>
+          <p className="text-sm text-muted-foreground">
             Envie mensagens para múltiplos grupos de uma vez
           </p>
         </div>
         
         {step !== 'instance' && (
-          <Button variant="ghost" size="sm" onClick={handleBack}>
+          <Button variant="ghost" size="sm" onClick={handleBack} className="self-start sm:self-auto">
             <ArrowLeft className="w-4 h-4 mr-2" />
             Voltar
           </Button>
@@ -130,39 +130,39 @@ const Broadcaster = () => {
       )}
 
       {/* Progress Steps */}
-      <div className="flex items-center gap-2 text-sm">
-        <div className={`flex items-center gap-2 ${selectedInstance ? 'text-primary' : 'text-muted-foreground'}`}>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <div className={`flex items-center gap-1.5 ${selectedInstance ? 'text-primary' : 'text-muted-foreground'}`}>
           {selectedInstance ? (
-            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-              <Check className="w-4 h-4 text-primary-foreground" />
+            <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-primary flex items-center justify-center">
+              <Check className="w-3 h-3 md:w-4 md:h-4 text-primary-foreground" />
             </div>
           ) : (
-            <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">1</div>
+            <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-muted flex items-center justify-center text-xs font-medium">1</div>
           )}
-          <span className="font-medium">Instância</span>
+          <span className="font-medium text-xs md:text-sm">Instância</span>
         </div>
         
-        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        <ChevronRight className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground" />
         
-        <div className={`flex items-center gap-2 ${step === 'message' ? 'text-primary' : step === 'groups' ? 'text-foreground' : 'text-muted-foreground'}`}>
+        <div className={`flex items-center gap-1.5 ${step === 'message' ? 'text-primary' : step === 'groups' ? 'text-foreground' : 'text-muted-foreground'}`}>
           {step === 'message' ? (
-            <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-              <Check className="w-4 h-4 text-primary-foreground" />
+            <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-primary flex items-center justify-center">
+              <Check className="w-3 h-3 md:w-4 md:h-4 text-primary-foreground" />
             </div>
           ) : (
-            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'groups' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
+            <div className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'groups' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>2</div>
           )}
-          <span className="font-medium">Grupos</span>
+          <span className="font-medium text-xs md:text-sm">Grupos</span>
           {selectedGroups.length > 0 && (
-            <Badge variant="secondary" className="text-xs">{selectedGroups.length}</Badge>
+            <Badge variant="secondary" className="text-[10px] md:text-xs px-1.5">{selectedGroups.length}</Badge>
           )}
         </div>
         
-        <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        <ChevronRight className="w-3 h-3 md:w-4 md:h-4 text-muted-foreground" />
         
-        <div className={`flex items-center gap-2 ${step === 'message' ? 'text-foreground' : 'text-muted-foreground'}`}>
-          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'message' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
-          <span className="font-medium">Mensagem</span>
+        <div className={`flex items-center gap-1.5 ${step === 'message' ? 'text-foreground' : 'text-muted-foreground'}`}>
+          <div className={`w-5 h-5 md:w-6 md:h-6 rounded-full flex items-center justify-center text-xs font-medium ${step === 'message' ? 'bg-primary/20 text-primary' : 'bg-muted'}`}>3</div>
+          <span className="font-medium text-xs md:text-sm">Mensagem</span>
         </div>
       </div>
 
@@ -209,16 +209,17 @@ const Broadcaster = () => {
               />
               
               {selectedGroups.length > 0 && (
-                <div className="flex justify-end gap-2 pt-2 border-t">
+                <div className="flex flex-col sm:flex-row justify-end gap-2 pt-2 border-t">
                   <Button 
                     variant="outline" 
                     onClick={() => setShowCreateDatabaseDialog(true)}
+                    className="w-full sm:w-auto"
                   >
                     <Database className="w-4 h-4 mr-2" />
-                    Criar Base de Leads
+                    <span className="sm:inline">Criar Base</span>
                   </Button>
-                  <Button onClick={handleContinueToMessage}>
-                    Continuar com {selectedGroups.length} grupo{selectedGroups.length !== 1 ? 's' : ''}
+                  <Button onClick={handleContinueToMessage} className="w-full sm:w-auto">
+                    Continuar ({selectedGroups.length})
                     <ChevronRight className="w-4 h-4 ml-2" />
                   </Button>
                 </div>
