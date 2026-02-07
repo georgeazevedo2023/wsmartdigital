@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { ArrowRight, Shield, CreditCard, Clock, CheckCircle2 } from 'lucide-react';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const guarantees = [
   { icon: Clock, text: '7 dias grátis' },
@@ -9,14 +11,16 @@ const guarantees = [
 ];
 
 const FinalCTASection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.3 });
+
   return (
-    <section className="relative z-10 py-24 border-t border-border/50 overflow-hidden">
+    <section ref={ref} className="relative z-10 py-24 border-t border-border/50 overflow-hidden">
       {/* Background Effects */}
       <div className="absolute inset-0 bg-gradient-to-t from-primary/10 via-transparent to-transparent" />
       <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-primary/20 rounded-full blur-[120px]" />
       
       <div className="container mx-auto px-4 relative">
-        <div className="max-w-3xl mx-auto text-center animate-fade-in">
+        <div className={cn("max-w-3xl mx-auto text-center transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
           {/* Urgency Badge */}
           <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-primary mb-8">
             <span className="relative flex h-2 w-2">

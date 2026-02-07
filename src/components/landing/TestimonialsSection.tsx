@@ -1,4 +1,6 @@
 import { Star, Quote } from 'lucide-react';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const testimonials = [
   {
@@ -28,8 +30,10 @@ const testimonials = [
 ];
 
 const TestimonialsSection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.1 });
+
   return (
-    <section className="relative z-10 py-20 border-t border-border/50">
+    <section ref={ref} className="relative z-10 py-20 border-t border-border/50">
       <div className="container mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-16 animate-fade-in">
@@ -46,8 +50,8 @@ const TestimonialsSection = () => {
           {testimonials.map((testimonial, index) => (
             <div
               key={index}
-              className="relative p-6 rounded-2xl glass-card animate-fade-in"
-              style={{ animationDelay: `${index * 100}ms` }}
+              className={cn("relative p-6 rounded-2xl glass-card transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}
+              style={{ transitionDelay: isInView ? `${index * 100}ms` : '0ms' }}
             >
               {/* Quote Icon */}
               <Quote className="absolute top-6 right-6 w-8 h-8 text-primary/20" />

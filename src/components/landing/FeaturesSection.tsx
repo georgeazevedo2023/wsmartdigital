@@ -1,6 +1,8 @@
 import { 
   Rocket, Send, Palette, Users, Calendar, BarChart3 
 } from 'lucide-react';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const features = [
   {
@@ -36,8 +38,10 @@ const features = [
 ];
 
 const FeaturesSection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.1 });
+
   return (
-    <section className="relative z-10 py-20 border-t border-border/50">
+    <section ref={ref} className="relative z-10 py-20 border-t border-border/50">
       <div className="container mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-16 animate-fade-in">
@@ -55,8 +59,8 @@ const FeaturesSection = () => {
           {features.map((feature, index) => (
             <div
               key={index}
-              className="group p-6 rounded-2xl glass-card-hover animate-fade-in"
-              style={{ animationDelay: `${index * 80}ms` }}
+              className={cn("group p-6 rounded-2xl glass-card-hover transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}
+              style={{ transitionDelay: isInView ? `${index * 80}ms` : '0ms' }}
             >
               <div className="w-14 h-14 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-5 group-hover:scale-110 transition-transform">
                 <feature.icon className="w-7 h-7 text-primary" />
