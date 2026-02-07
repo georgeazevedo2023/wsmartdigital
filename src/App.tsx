@@ -101,6 +101,8 @@ const AppRoutes = () => {
         <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersManagement /></Suspense>} />
         <Route path="settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
         <Route path="scheduled" element={<Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense>} />
+        {/* Redirect alias for legacy/bookmarked URLs */}
+        <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
