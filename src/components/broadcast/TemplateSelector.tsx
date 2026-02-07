@@ -50,6 +50,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { MessageTemplate, useMessageTemplates } from '@/hooks/useMessageTemplates';
+import type { CarouselData } from './CarouselEditor';
 
 interface TemplateSelectorProps {
   onSelect: (template: MessageTemplate) => void;
@@ -58,7 +59,8 @@ interface TemplateSelectorProps {
     content?: string; 
     message_type: string; 
     media_url?: string; 
-    filename?: string; 
+    filename?: string;
+    carousel_data?: CarouselData;
   } | null;
   disabled?: boolean;
 }
