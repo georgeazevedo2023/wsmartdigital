@@ -43,7 +43,7 @@ const BroadcastHistoryPage = () => {
     
     // Navigate to appropriate broadcaster
     if (options.destination === 'leads') {
-      navigate('/dashboard/leads-broadcast');
+      navigate('/dashboard/broadcast/leads');
     } else {
       navigate('/dashboard/broadcast');
     }
