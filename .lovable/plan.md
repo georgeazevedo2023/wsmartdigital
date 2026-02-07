@@ -1,78 +1,46 @@
 
-# Melhorar Ícones e Alinhamento do Sidebar
+## Objetivo
+Fazer com que os tooltips do sidebar (quando colapsado) apareçam sempre na frente dos demais elementos da UI, evitando que fiquem “por trás” de cards, popovers, dialogs, etc.
 
-## Problemas Identificados
+## Diagnóstico (por que está acontecendo)
+Hoje o componente `TooltipContent` (`src/components/ui/tooltip.tsx`) renderiza o conteúdo diretamente no DOM onde o item do sidebar está. Isso pode falhar em duas situações comuns:
 
-1. **Ícones duplicados**: Disparador e Instâncias aparecem duas vezes no modo colapsado
-2. **Alinhamento inconsistente**: Os ícones não estão perfeitamente centralizados
-3. **Ícones similares**: Alguns ícones são muito parecidos visualmente
+1. **Stacking context (contexto de empilhamento)**: algum elemento “por cima” (ex.: popover/dialog) cria um novo contexto (via `transform`, `filter`, `opacity`, `position + z-index`, etc.), e o tooltip fica preso “atrás” mesmo com `z-index` alto.
+2. **Overflows/containers**: o tooltip pode ser “limitado” pelo container (mesmo sem parecer), e acaba visualmente atrás/recortado.
 
----
+A solução padrão do Radix/shadcn para isso é renderizar o tooltip em **Portal** (no `body`), e então controlar o `z-index` com segurança.
 
-## Solução
+## Mudanças propostas (sem alterar lógica do app, apenas UI/stacking)
+### 1) Renderizar o TooltipContent dentro de um Portal
+- Ajustar `src/components/ui/tooltip.tsx` para envolver o `<TooltipPrimitive.Content />` com:
+  - `<TooltipPrimitive.Portal> ... </TooltipPrimitive.Portal>`
 
-### 1. Remover duplicação de ícones
+Isso garante que o tooltip saia da árvore do sidebar e não “dispute” stacking context com elementos locais.
 
-**Problema**: O código atual renderiza os botões do Collapsible **sempre** e depois adiciona links separados **quando colapsado**. Isso causa duplicação.
+### 2) Aumentar o z-index do tooltip para um valor bem alto
+- Trocar de `z-[100]` para algo como `z-[9999]` (ou equivalente consistente com o projeto).
+- Motivo: mesmo com Portal, ainda pode existir overlay/popup com z-index alto. Usar `z-[9999]` torna o tooltip dominante.
 
-**Solução**: Usar renderização condicional correta - quando colapsado, mostrar apenas os links simples (sem o Collapsible).
+### 3) Verificação de regressões visuais
+Checar tooltips em outros pontos do app (ex.: `MessagePreview`) para garantir que:
+- continuam posicionando corretamente,
+- não ficam atrás de sheets/modals,
+- não sofrem clipping.
 
-```typescript
-// Disparador - apenas quando NÃO colapsado
-{!collapsed && (
-  <Collapsible ...>
-    ...
-  </Collapsible>
-)}
+## Arquivos envolvidos
+- `src/components/ui/tooltip.tsx`
+  - Adicionar `TooltipPrimitive.Portal`
+  - Ajustar classe de `z-index` para bem alto
 
-// Link simples - apenas quando colapsado
-{collapsed && (
-  <Link to="/dashboard/broadcast" ...>
-    <Megaphone />
-  </Link>
-)}
-```
+## Testes manuais (checklist)
+1. Ir para `/dashboard/broadcast`.
+2. Colapsar o sidebar.
+3. Passar o mouse em cada ícone e confirmar:
+   - tooltip aparece na frente do painel “Selecionar Instância” (e outros popovers),
+   - tooltip não fica recortado,
+   - tooltip não “pisca” ou desloca de forma estranha.
+4. Abrir algum modal/popup (se existir no fluxo) e repetir o hover nos ícones do sidebar.
 
----
-
-### 2. Melhorar alinhamento quando colapsado
-
-Centralizar todos os ícones consistentemente:
-
-```typescript
-// Todos os links colapsados terão:
-className={cn(
-  'flex items-center justify-center px-3 py-2.5 rounded-lg transition-all mx-auto',
-  // ...
-)}
-```
-
----
-
-### 3. Trocar ícones para maior distinção visual
-
-| Item | Atual | Novo | Motivo |
-|------|-------|------|--------|
-| Dashboard | `LayoutGrid` | `LayoutDashboard` | Mais reconhecível como dashboard |
-| Agendamentos | `CalendarClock` | `Clock` | Mais clean e distinto |
-| Disparador | `Megaphone` | `Send` | Mais direto para "enviar mensagens" |
-| Instâncias | `Smartphone` | `MonitorSmartphone` | Diferencia de outros ícones |
-| Usuários | `UsersRound` | `Users` | Mais clássico |
-| Configurações | `SlidersHorizontal` | `Settings` | Universalmente reconhecido |
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Alteração |
-|---------|-----------|
-| `src/components/dashboard/Sidebar.tsx` | Corrigir duplicação, alinhamento e ícones |
-
----
-
-## Resultado Esperado
-
-- Cada ícone aparece apenas **uma vez** no sidebar colapsado
-- Ícones perfeitamente centralizados
-- Visual mais limpo e profissional
-- Ícones mais distintos entre si
+## Observações técnicas
+- Usar Portal é a correção mais confiável para problemas de tooltip atrás de elementos, porque remove a dependência de stacking contexts locais.
+- Manteremos a API do componente igual (`Tooltip`, `TooltipTrigger`, `TooltipContent`, `TooltipProvider`) para não quebrar imports existentes.
