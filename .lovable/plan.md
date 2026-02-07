@@ -1,188 +1,162 @@
 
 
-# Adicionar Salvamento de Templates com Carrossel no Disparador de Leads
+# Corrigir Imagens de Carrossel no Histórico de Leads
 
 ## Problema Identificado
 
-O formulário de mensagens para leads (`LeadMessageForm`) não possui a funcionalidade de salvar e carregar templates, incluindo templates de carrossel. Atualmente, apenas o `BroadcastMessageForm` (grupos) possui essa funcionalidade.
+O histórico de envios não exibe as imagens do carrossel porque elas não estão sendo salvas corretamente no banco de dados. 
+
+### Diagnóstico
+
+Ao analisar os dados no banco, encontrei:
+```
+image:     // <- Campo vazio em todos os cards!
+text: Bolo de Milho Grande R$40
+```
+
+### Causa Raiz
+
+O `LeadMessageForm.tsx` **não processa os arquivos locais** (`imageFile`) antes de salvar o log. A lógica atual simplesmente copia `card.image`, que está vazio quando o usuário faz upload de arquivos locais:
+
+```typescript
+// LeadMessageForm.tsx (código atual - problemático)
+carousel_data: params.carouselData ? {
+  cards: params.carouselData.cards.map(card => ({
+    image: card.image || '',  // ❌ Se usou arquivo local, está vazio!
+    ...
+  })),
+} : null,
+```
+
+### Comparação com Grupos
+
+O `BroadcastMessageForm.tsx` (para grupos) funciona corretamente porque:
+1. Possui a função `compressImageToThumbnail(file)` 
+2. Processa cada card antes de salvar
+3. Converte arquivos locais em thumbnails base64 comprimidos
+
+---
+
+## Solução
+
+Adicionar a mesma lógica de processamento de imagens que existe no `BroadcastMessageForm` ao `LeadMessageForm`.
 
 ---
 
 ## Alterações Necessárias
 
-### 1. Atualizar Interface do TemplateSelector
+### Arquivo: `src/components/broadcast/LeadMessageForm.tsx`
 
-O tipo de retorno do callback `onSave` precisa incluir `carousel_data` para suportar salvamento de templates de carrossel.
+#### 1. Adicionar Função de Compressão de Imagem
 
-**Arquivo:** `src/components/broadcast/TemplateSelector.tsx`
+Adicionar após a função `formatDuration` (linha ~202):
 
-**Alteração na interface:**
 ```typescript
-interface TemplateSelectorProps {
-  onSelect: (template: MessageTemplate) => void;
-  onSave: () => { 
-    name: string; 
-    content?: string; 
-    message_type: string; 
-    media_url?: string; 
-    filename?: string;
-    carousel_data?: CarouselData;  // Adicionar esta propriedade
-  } | null;
-  disabled?: boolean;
-}
-```
-
-**Importação adicional:**
-```typescript
-import type { CarouselData } from './CarouselEditor';
-```
-
----
-
-### 2. Adicionar TemplateSelector ao LeadMessageForm
-
-**Arquivo:** `src/components/broadcast/LeadMessageForm.tsx`
-
-**Novos imports:**
-```typescript
-import { TemplateSelector } from './TemplateSelector';
-import type { MessageTemplate } from '@/hooks/useMessageTemplates';
-```
-
-**Nova função handleSelectTemplate:**
-```typescript
-const handleSelectTemplate = (template: MessageTemplate) => {
-  if (template.message_type === 'carousel' && template.carousel_data) {
-    setActiveTab('carousel');
-    setCarouselData(template.carousel_data);
-  } else if (template.message_type === 'text') {
-    setActiveTab('text');
-    setMessage(template.content || '');
-  } else {
-    setActiveTab('media');
-    const typeMap: Record<string, MediaType> = {
-      'image': 'image',
-      'video': 'video',
-      'audio': 'audio',
-      'ptt': 'audio',
-      'document': 'file',
+// Compress and resize image to a smaller thumbnail for storage
+const compressImageToThumbnail = (file: File, maxWidth = 200, quality = 0.6): Promise<string> => {
+  return new Promise((resolve) => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const img = new window.Image();
+    
+    img.onload = () => {
+      const ratio = Math.min(maxWidth / img.width, maxWidth / img.height);
+      canvas.width = img.width * ratio;
+      canvas.height = img.height * ratio;
+      ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
     };
-    const newMediaType = typeMap[template.message_type] || 'image';
-    setMediaType(newMediaType);
-    setIsPtt(template.message_type === 'ptt');
-    setMediaUrl(template.media_url || '');
-    setCaption(template.content || '');
-    setFilename(template.filename || '');
-    clearFile();
-  }
-  toast.success(`Template "${template.name}" aplicado`);
+    
+    img.onerror = () => resolve('');
+    img.src = URL.createObjectURL(file);
+  });
 };
 ```
 
-**Nova função handleSaveTemplate:**
+#### 2. Modificar `saveBroadcastLog` para Processar Imagens
+
+Alterar de síncrono para assíncrono com processamento de imagens:
+
+**Antes:**
 ```typescript
-const handleSaveTemplate = () => {
-  if (activeTab === 'carousel') {
-    if (carouselData.cards.length < 2) {
-      toast.error('O carrossel precisa ter pelo menos 2 cards');
-      return null;
-    }
-    const hasLocalFiles = carouselData.cards.some(card => card.imageFile);
-    if (hasLocalFiles) {
-      toast.error('Para salvar template de carrossel, use URLs para as imagens');
-      return null;
-    }
-    return {
-      name: '',
-      content: carouselData.message || undefined,
-      message_type: 'carousel',
-      carousel_data: {
-        message: carouselData.message,
-        cards: carouselData.cards.map(card => ({
-          ...card,
-          imageFile: undefined,
+carousel_data: params.carouselData ? {
+  message: params.carouselData.message,
+  cards: params.carouselData.cards.map(card => ({
+    id: card.id,
+    text: card.text,
+    image: card.image || '',
+    buttons: card.buttons.map(...),
+  })),
+} : null,
+```
+
+**Depois:**
+```typescript
+// Prepare carousel data for storage (convert files to thumbnails)
+let storedCarouselData = null;
+if (params.carouselData) {
+  const processedCards = await Promise.all(
+    params.carouselData.cards.map(async (card) => {
+      let imageForStorage = card.image || '';
+      
+      // If we have a file, compress it to a small thumbnail for preview
+      if (card.imageFile) {
+        imageForStorage = await compressImageToThumbnail(card.imageFile);
+      }
+      
+      return {
+        id: card.id,
+        text: card.text,
+        image: imageForStorage,
+        buttons: card.buttons.map(btn => ({
+          id: btn.id,
+          type: btn.type,
+          label: btn.label,
+          value: btn.url || btn.phone || '',
         })),
-      },
-    };
-  } else if (activeTab === 'text') {
-    const trimmedMessage = message.trim();
-    if (!trimmedMessage) {
-      toast.error('Digite uma mensagem para salvar');
-      return null;
-    }
-    return {
-      name: '',
-      content: trimmedMessage,
-      message_type: 'text',
-    };
-  } else {
-    const trimmedUrl = mediaUrl.trim();
-    if (!trimmedUrl && !selectedFile) {
-      toast.error('Selecione uma mídia para salvar');
-      return null;
-    }
-    if (!trimmedUrl) {
-      toast.error('Para salvar template de mídia, use uma URL');
-      return null;
-    }
-    const sendType = mediaType === 'audio' && isPtt ? 'ptt' : mediaType === 'file' ? 'document' : mediaType;
-    return {
-      name: '',
-      content: caption.trim() || undefined,
-      message_type: sendType,
-      media_url: trimmedUrl,
-      filename: mediaType === 'file' ? filename.trim() : undefined,
-    };
-  }
-};
-```
+      };
+    })
+  );
 
-**Adicionar o componente no JSX:**
-Dentro do `CardHeader` do formulário de mensagem, adicionar o TemplateSelector:
+  storedCarouselData = {
+    message: params.carouselData.message,
+    cards: processedCards,
+  };
+}
 
-```tsx
-<CardHeader className="pb-3">
-  <div className="flex items-center justify-between">
-    <CardTitle className="text-lg flex items-center gap-2">
-      <MessageSquare className="w-5 h-5" />
-      Compor Mensagem
-    </CardTitle>
-    <TemplateSelector
-      onSelect={handleSelectTemplate}
-      onSave={handleSaveTemplate}
-      disabled={isSending}
-    />
-  </div>
-</CardHeader>
+// Use storedCarouselData no insert
+await supabase.from('broadcast_logs').insert({
+  ...
+  carousel_data: storedCarouselData,
+});
 ```
 
 ---
 
-## Fluxo Visual
+## Fluxo de Dados Corrigido
 
 ```text
-┌─────────────────────────────────────────────┐
-│  Compor Mensagem          [Templates ▼] [💾] │
-├─────────────────────────────────────────────┤
-│  [Texto] [Mídia] [Carrossel]                │
-├─────────────────────────────────────────────┤
-│                                             │
-│  Cards do carrossel (4/10)    [+ Add Card]  │
-│  ┌─────────┐ ┌─────────┐                    │
-│  │ Card 1  │ │ Card 2  │ ...                │
-│  └─────────┘ └─────────┘                    │
-│                                             │
-└─────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  ANTES (Problema)                                       │
+├─────────────────────────────────────────────────────────┤
+│  Card { imageFile: File, image: '' }                    │
+│             ↓                                           │
+│  saveBroadcastLog()                                     │
+│             ↓                                           │
+│  { image: '' }  ← Campo vazio no banco!                 │
+└─────────────────────────────────────────────────────────┘
 
-Ao clicar em [💾]:
-┌───────────────────────────────────┐
-│  Salvar como Template             │
-├───────────────────────────────────┤
-│  Nome: [Promoção Carrossel      ] │
-│  Categoria: [Marketing ▼] [+]    │
-├───────────────────────────────────┤
-│           [Cancelar] [Salvar]     │
-└───────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│  DEPOIS (Solução)                                       │
+├─────────────────────────────────────────────────────────┤
+│  Card { imageFile: File, image: '' }                    │
+│             ↓                                           │
+│  compressImageToThumbnail(imageFile)                    │
+│             ↓                                           │
+│  { image: 'data:image/jpeg;base64,...' }                │
+│             ↓                                           │
+│  Thumbnail exibido no histórico ✓                       │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -191,15 +165,20 @@ Ao clicar em [💾]:
 
 | Arquivo | Alteração |
 |---------|-----------|
-| `src/components/broadcast/TemplateSelector.tsx` | Adicionar `carousel_data` no tipo de retorno do `onSave` |
-| `src/components/broadcast/LeadMessageForm.tsx` | Adicionar `TemplateSelector` com handlers para templates |
+| `src/components/broadcast/LeadMessageForm.tsx` | Adicionar `compressImageToThumbnail` e processar imagens antes de salvar |
 
 ---
 
 ## Resultado Esperado
 
-1. Usuários poderão salvar templates de carrossel no disparador de leads
-2. Templates salvos poderão ser reutilizados em futuros envios
-3. Interface consistente entre os dois disparadores (grupos e leads)
-4. Carrosséis com URLs de imagem podem ser salvos como templates reutilizáveis
+1. **Novos envios**: Imagens de carrossel serão salvas como thumbnails comprimidos
+2. **Histórico**: Exibirá as imagens corretamente no preview do carrossel
+3. **Performance**: Thumbnails pequenos (200px) não sobrecarregam o banco
+4. **Paridade**: Comportamento idêntico entre disparador de Grupos e Leads
+
+---
+
+## Observação sobre Dados Existentes
+
+Os registros de carrossel já enviados pelo Disparador de Leads **não serão corrigidos automaticamente** pois as imagens originais não foram salvas. Apenas novos envios terão as imagens preservadas no histórico.
 
