@@ -59,6 +59,7 @@ interface ResendData {
   };
 }
 
+// Leads Broadcaster Component
 const LeadsBroadcaster = () => {
   const { user } = useAuth();
   // Optimized: 3 steps instead of 4
