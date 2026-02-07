@@ -203,13 +203,13 @@ const DashboardHome = () => {
   }
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-4 md:space-y-6 max-w-7xl mx-auto">
       {/* Header */}
       <div className="animate-fade-in">
-        <h1 className="text-2xl font-display font-bold">
+        <h1 className="text-xl md:text-2xl font-display font-bold">
           Olá, {profile?.full_name?.split(' ')[0] || 'Usuário'}! 👋
         </h1>
-        <p className="text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           {isSuperAdmin
             ? 'Visão geral de todas as instâncias do sistema'
             : 'Gerencie suas instâncias do WhatsApp'}
@@ -217,7 +217,7 @@ const DashboardHome = () => {
       </div>
 
       {/* Main Stats Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-fade-in" style={{ animationDelay: '100ms' }}>
+      <div className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-4 animate-fade-in" style={{ animationDelay: '100ms' }}>
         <StatsCard
           title="Total de Instâncias"
           value={instances.length}
@@ -241,7 +241,7 @@ const DashboardHome = () => {
       </div>
 
       {/* Secondary Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4 animate-fade-in" style={{ animationDelay: '150ms' }}>
+      <div className="grid gap-3 md:gap-4 grid-cols-2 lg:grid-cols-4 animate-fade-in" style={{ animationDelay: '150ms' }}>
         <StatsCard
           title="Instâncias Offline"
           value={disconnectedInstances.length}
@@ -294,7 +294,7 @@ const DashboardHome = () => {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {instanceStats.map((stat) => (
               <Card 
                 key={stat.instanceId} 
@@ -353,7 +353,7 @@ const DashboardHome = () => {
             )}
           </div>
         ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {instances.slice(0, 6).map((instance) => (
               <InstanceCard
                 key={instance.id}

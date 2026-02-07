@@ -32,7 +32,12 @@ interface Instance {
   status: string;
 }
 
-const Sidebar = () => {
+interface SidebarProps {
+  isMobile?: boolean;
+  onNavigate?: () => void;
+}
+
+const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
   const location = useLocation();
   const { id: instanceId } = useParams<{ id: string }>();
   const { profile, isSuperAdmin, signOut, user } = useAuth();
@@ -40,6 +45,9 @@ const Sidebar = () => {
   const [instancesOpen, setInstancesOpen] = useState(true);
   const [broadcastOpen, setBroadcastOpen] = useState(true);
   const [instances, setInstances] = useState<Instance[]>([]);
+
+  // No mobile, nunca está colapsado
+  const isCollapsed = isMobile ? false : collapsed;
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
@@ -92,17 +100,27 @@ const Sidebar = () => {
     'flex items-center justify-center w-full px-3 py-2.5 rounded-lg transition-all'
   );
 
+  const handleLinkClick = () => {
+    if (onNavigate) {
+      onNavigate();
+    }
+  };
+
   return (
     <TooltipProvider>
       <aside
         className={cn(
-          'h-screen flex flex-col sidebar-glass transition-all duration-300',
-          collapsed ? 'w-20' : 'w-64'
+          'h-full flex flex-col transition-all duration-300',
+          isMobile ? 'w-full sidebar-glass' : 'sidebar-glass',
+          !isMobile && (isCollapsed ? 'w-20' : 'w-64')
         )}
       >
       {/* Header */}
-      <div className="h-16 flex items-center justify-between px-4 border-b border-primary/10">
-        {!collapsed && (
+      <div className={cn(
+        'h-16 flex items-center justify-between px-4 border-b border-primary/10',
+        isMobile && 'hidden' // No mobile, o header está no MobileHeader
+      )}>
+        {!isCollapsed && (
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
               <MessageSquareMore className="w-5 h-5 text-primary" />
@@ -110,14 +128,16 @@ const Sidebar = () => {
             <span className="font-display font-bold text-lg">WsmartQR</span>
           </div>
         )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={() => setCollapsed(!collapsed)}
-          className={cn('shrink-0', collapsed && 'mx-auto')}
-        >
-          {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
-        </Button>
+        {!isMobile && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setCollapsed(!collapsed)}
+            className={cn('shrink-0', isCollapsed && 'mx-auto')}
+          >
+            {isCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </Button>
+        )}
       </div>
 
       {/* Navigation */}
@@ -127,23 +147,24 @@ const Sidebar = () => {
             <TooltipTrigger asChild>
               <Link
                 to={item.path}
+                onClick={handleLinkClick}
                 className={cn(
-                  collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+                  isCollapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
                   isActive(item.path)
                     ? 'bg-primary/10 text-primary border border-primary/20'
                     : 'text-sidebar-foreground hover:bg-sidebar-accent'
                 )}
               >
                 <item.icon className="w-5 h-5 shrink-0" />
-                {!collapsed && <span className="font-medium">{item.label}</span>}
+                {!isCollapsed && <span className="font-medium">{item.label}</span>}
               </Link>
             </TooltipTrigger>
-            {collapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
+            {isCollapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
           </Tooltip>
         ))}
 
         {/* Disparador - Collapsible apenas quando NÃO colapsado */}
-        {!collapsed ? (
+        {!isCollapsed ? (
           <Collapsible open={broadcastOpen} onOpenChange={setBroadcastOpen}>
             <CollapsibleTrigger asChild>
               <button
@@ -167,6 +188,7 @@ const Sidebar = () => {
             <CollapsibleContent className="pl-5 mt-1 space-y-1">
               <Link
                 to="/dashboard/broadcast"
+                onClick={handleLinkClick}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
                   isActive('/dashboard/broadcast')
@@ -178,6 +200,7 @@ const Sidebar = () => {
               </Link>
               <Link
                 to="/dashboard/broadcast/history"
+                onClick={handleLinkClick}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
                   isActive('/dashboard/broadcast/history')
@@ -189,6 +212,7 @@ const Sidebar = () => {
               </Link>
               <Link
                 to="/dashboard/broadcast/leads"
+                onClick={handleLinkClick}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
                   isActive('/dashboard/broadcast/leads')
@@ -205,6 +229,7 @@ const Sidebar = () => {
             <TooltipTrigger asChild>
               <Link
                 to="/dashboard/broadcast"
+                onClick={handleLinkClick}
                 className={cn(
                   collapsedLinkClass,
                   isBroadcastActive
@@ -220,7 +245,7 @@ const Sidebar = () => {
         )}
 
         {/* Instâncias - Collapsible apenas quando NÃO colapsado */}
-        {!collapsed ? (
+        {!isCollapsed ? (
           <Collapsible open={instancesOpen} onOpenChange={setInstancesOpen}>
             <CollapsibleTrigger asChild>
               <button
@@ -244,6 +269,7 @@ const Sidebar = () => {
             <CollapsibleContent className="pl-5 mt-1 space-y-1">
               <Link
                 to="/dashboard/instances"
+                onClick={handleLinkClick}
                 className={cn(
                   'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
                   isActive('/dashboard/instances')
@@ -257,6 +283,7 @@ const Sidebar = () => {
                 <Link
                   key={instance.id}
                   to={`/dashboard/instances/${instance.id}`}
+                  onClick={handleLinkClick}
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-sm',
                     instanceId === instance.id
@@ -276,6 +303,7 @@ const Sidebar = () => {
               {instances.length > 5 && (
                 <Link
                   to="/dashboard/instances"
+                  onClick={handleLinkClick}
                   className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground"
                 >
                   <span>+{instances.length - 5} mais...</span>
@@ -288,6 +316,7 @@ const Sidebar = () => {
             <TooltipTrigger asChild>
               <Link
                 to="/dashboard/instances"
+                onClick={handleLinkClick}
                 className={cn(
                   collapsedLinkClass,
                   isInstancesActive
@@ -305,7 +334,7 @@ const Sidebar = () => {
         {isSuperAdmin && (
           <>
             <div className="pt-4 pb-2">
-              {!collapsed && (
+              {!isCollapsed && (
                 <div className="flex items-center gap-2 px-3 text-xs text-muted-foreground uppercase tracking-wider">
                   <ShieldCheck className="w-3 h-3" />
                   <span>Admin</span>
@@ -317,18 +346,19 @@ const Sidebar = () => {
                 <TooltipTrigger asChild>
                   <Link
                     to={item.path}
+                    onClick={handleLinkClick}
                     className={cn(
-                      collapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+                      isCollapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
                       isActive(item.path)
                         ? 'bg-primary/10 text-primary border border-primary/20'
                         : 'text-sidebar-foreground hover:bg-sidebar-accent'
                     )}
                   >
                     <item.icon className="w-5 h-5 shrink-0" />
-                    {!collapsed && <span className="font-medium">{item.label}</span>}
+                    {!isCollapsed && <span className="font-medium">{item.label}</span>}
                   </Link>
                 </TooltipTrigger>
-                {collapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
+                {isCollapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
               </Tooltip>
             ))}
           </>
@@ -340,7 +370,7 @@ const Sidebar = () => {
         <div
           className={cn(
             'flex items-center gap-3 p-2 rounded-lg',
-            collapsed && 'justify-center'
+            isCollapsed && 'justify-center'
           )}
         >
           <Avatar className="w-10 h-10 shrink-0">
@@ -349,7 +379,7 @@ const Sidebar = () => {
               {profile?.full_name?.charAt(0)?.toUpperCase() || 'U'}
             </AvatarFallback>
           </Avatar>
-          {!collapsed && (
+          {!isCollapsed && (
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">{profile?.full_name || 'Usuário'}</p>
               <p className="text-xs text-muted-foreground truncate">{profile?.email}</p>
@@ -361,11 +391,11 @@ const Sidebar = () => {
           onClick={signOut}
           className={cn(
             'w-full mt-2 text-muted-foreground hover:text-destructive',
-            collapsed ? 'px-0 justify-center' : 'justify-start'
+            isCollapsed ? 'px-0 justify-center' : 'justify-start'
           )}
         >
           <LogOut className="w-4 h-4" />
-          {!collapsed && <span className="ml-2">Sair</span>}
+          {!isCollapsed && <span className="ml-2">Sair</span>}
         </Button>
       </div>
     </aside>
