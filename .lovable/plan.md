@@ -1,62 +1,78 @@
 
-## Objetivo
-Corrigir o erro ao clicar em **Histórico → Reenviar → Leads**, que hoje leva para uma rota inexistente (**/dashboard/leads-broadcast**) e cai em **404**. Garantir também compatibilidade com links antigos/bookmarks.
+# Melhorar Ícones e Alinhamento do Sidebar
+
+## Problemas Identificados
+
+1. **Ícones duplicados**: Disparador e Instâncias aparecem duas vezes no modo colapsado
+2. **Alinhamento inconsistente**: Os ícones não estão perfeitamente centralizados
+3. **Ícones similares**: Alguns ícones são muito parecidos visualmente
 
 ---
 
-## Diagnóstico (o que está acontecendo)
-- O app tem a rota de Leads configurada como: **/dashboard/broadcast/leads** (confirmado no roteamento).
-- Porém, no fluxo de “Reenviar”, o código navega para **/dashboard/leads-broadcast**.
-- Resultado: abre a página **NotFound (404)**, exatamente como aparece no console:
-  - “User attempted to access non-existent route: /dashboard/leads-broadcast”.
+## Solução
+
+### 1. Remover duplicação de ícones
+
+**Problema**: O código atual renderiza os botões do Collapsible **sempre** e depois adiciona links separados **quando colapsado**. Isso causa duplicação.
+
+**Solução**: Usar renderização condicional correta - quando colapsado, mostrar apenas os links simples (sem o Collapsible).
+
+```typescript
+// Disparador - apenas quando NÃO colapsado
+{!collapsed && (
+  <Collapsible ...>
+    ...
+  </Collapsible>
+)}
+
+// Link simples - apenas quando colapsado
+{collapsed && (
+  <Link to="/dashboard/broadcast" ...>
+    <Megaphone />
+  </Link>
+)}
+```
 
 ---
 
-## Mudanças planejadas (mínimas e seguras)
+### 2. Melhorar alinhamento quando colapsado
 
-### 1) Corrigir a navegação do “Reenviar → Leads”
-**Arquivo:** `src/pages/dashboard/BroadcastHistoryPage.tsx`
+Centralizar todos os ícones consistentemente:
 
-- Trocar:
-  - `navigate('/dashboard/leads-broadcast')`
-- Por:
-  - `navigate('/dashboard/broadcast/leads')`
-
-Isso resolve o erro imediatamente no fluxo.
-
----
-
-### 2) Adicionar rota “alias” (redirect) para não quebrar links antigos
-**Arquivo:** `src/App.tsx`
-
-- Dentro das rotas de `/dashboard`, adicionar uma rota:
-  - `path="leads-broadcast"` → `<Navigate to="/dashboard/broadcast/leads" replace />`
-
-Com isso, mesmo que alguém tenha salvo/compartilhado **/dashboard/leads-broadcast**, a aplicação redireciona corretamente.
+```typescript
+// Todos os links colapsados terão:
+className={cn(
+  'flex items-center justify-center px-3 py-2.5 rounded-lg transition-all mx-auto',
+  // ...
+)}
+```
 
 ---
 
-## Como validar (checklist de teste)
-1. Acesse **/dashboard/broadcast/history**.
-2. Clique em **Reenviar** em um envio qualquer.
-3. Selecione **Leads** e confirme.
-4. Verifique que:
-   - Não aparece mais 404.
-   - A URL vira **/dashboard/broadcast/leads**.
-   - O banner de “Reenviando mensagem” aparece no Leads Broadcaster.
-   - O formulário vem preenchido com `content/media/carousel` (quando aplicável).
+### 3. Trocar ícones para maior distinção visual
 
-Teste extra:
-- Acesse manualmente **/dashboard/leads-broadcast** no navegador e confirme que redireciona para **/dashboard/broadcast/leads**.
+| Item | Atual | Novo | Motivo |
+|------|-------|------|--------|
+| Dashboard | `LayoutGrid` | `LayoutDashboard` | Mais reconhecível como dashboard |
+| Agendamentos | `CalendarClock` | `Clock` | Mais clean e distinto |
+| Disparador | `Megaphone` | `Send` | Mais direto para "enviar mensagens" |
+| Instâncias | `Smartphone` | `MonitorSmartphone` | Diferencia de outros ícones |
+| Usuários | `UsersRound` | `Users` | Mais clássico |
+| Configurações | `SlidersHorizontal` | `Settings` | Universalmente reconhecido |
 
 ---
 
-## Risco / Impacto
-- Baixíssimo: altera apenas uma URL de navegação e adiciona um redirect de compatibilidade.
-- Não afeta banco, autenticação, nem envio de mensagens.
+## Arquivos a Modificar
+
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/components/dashboard/Sidebar.tsx` | Corrigir duplicação, alinhamento e ícones |
 
 ---
 
-## Arquivos que serão alterados
-- `src/pages/dashboard/BroadcastHistoryPage.tsx` (ajuste do navigate)
-- `src/App.tsx` (rota de redirect/alias)
+## Resultado Esperado
+
+- Cada ícone aparece apenas **uma vez** no sidebar colapsado
+- Ícones perfeitamente centralizados
+- Visual mais limpo e profissional
+- Ícones mais distintos entre si
