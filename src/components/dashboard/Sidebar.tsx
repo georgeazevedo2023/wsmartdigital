@@ -2,18 +2,18 @@ import { Link, useLocation, useParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import {
-  MessageSquare,
-  LayoutDashboard,
-  Server,
-  Users,
-  Settings,
+  MessageSquareMore,
+  LayoutGrid,
+  Smartphone,
+  UsersRound,
+  SlidersHorizontal,
   LogOut,
   ChevronLeft,
   ChevronRight,
-  Shield,
+  ShieldCheck,
   ChevronDown,
-  Calendar,
-  Send,
+  CalendarClock,
+  Megaphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -41,13 +41,13 @@ const Sidebar = () => {
   const [instances, setInstances] = useState<Instance[]>([]);
 
   const navItems = [
-    { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Calendar, label: 'Agendamentos', path: '/dashboard/scheduled' },
+    { icon: LayoutGrid, label: 'Dashboard', path: '/dashboard' },
+    { icon: CalendarClock, label: 'Agendamentos', path: '/dashboard/scheduled' },
   ];
 
   const adminItems = [
-    { icon: Users, label: 'Usuários', path: '/dashboard/users' },
-    { icon: Settings, label: 'Configurações', path: '/dashboard/settings' },
+    { icon: UsersRound, label: 'Usuários', path: '/dashboard/users' },
+    { icon: SlidersHorizontal, label: 'Configurações', path: '/dashboard/settings' },
   ];
 
   const isActive = (path: string) => location.pathname === path;
@@ -98,7 +98,7 @@ const Sidebar = () => {
         {!collapsed && (
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-              <MessageSquare className="w-5 h-5 text-primary" />
+              <MessageSquareMore className="w-5 h-5 text-primary" />
             </div>
             <span className="font-display font-bold text-lg">WsmartQR</span>
           </div>
@@ -142,7 +142,7 @@ const Sidebar = () => {
                   : 'text-sidebar-foreground hover:bg-sidebar-accent'
               )}
             >
-              <Send className="w-5 h-5 shrink-0" />
+              <Megaphone className="w-5 h-5 shrink-0" />
               {!collapsed && (
                 <>
                   <span className="font-medium flex-1">Disparador</span>
@@ -204,7 +204,7 @@ const Sidebar = () => {
                 : 'text-sidebar-foreground hover:bg-sidebar-accent'
             )}
           >
-            <Send className="w-5 h-5" />
+            <Megaphone className="w-5 h-5" />
           </Link>
         )}
 
@@ -219,7 +219,7 @@ const Sidebar = () => {
                   : 'text-sidebar-foreground hover:bg-sidebar-accent'
               )}
             >
-              <Server className="w-5 h-5 shrink-0" />
+              <Smartphone className="w-5 h-5 shrink-0" />
               {!collapsed && (
                 <>
                   <span className="font-medium flex-1">Instâncias</span>
@@ -287,7 +287,7 @@ const Sidebar = () => {
                 : 'text-sidebar-foreground hover:bg-sidebar-accent'
             )}
           >
-            <Server className="w-5 h-5" />
+            <Smartphone className="w-5 h-5" />
           </Link>
         )}
 
@@ -296,7 +296,7 @@ const Sidebar = () => {
             <div className="pt-4 pb-2">
               {!collapsed && (
                 <div className="flex items-center gap-2 px-3 text-xs text-muted-foreground uppercase tracking-wider">
-                  <Shield className="w-3 h-3" />
+                  <ShieldCheck className="w-3 h-3" />
                   <span>Admin</span>
                 </div>
               )}
