@@ -1,4 +1,6 @@
 import { Ban, Clock, BarChart3 } from 'lucide-react';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const painPoints = [
   {
@@ -22,8 +24,10 @@ const painPoints = [
 ];
 
 const PainSection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.1 });
+
   return (
-    <section className="relative z-10 py-20 border-t border-border/50">
+    <section ref={ref} className="relative z-10 py-20 border-t border-border/50">
       <div className="container mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-12 animate-fade-in">
@@ -41,8 +45,8 @@ const PainSection = () => {
           {painPoints.map((pain, index) => (
             <div
               key={index}
-              className="group relative p-6 rounded-2xl bg-card/50 border border-border/50 hover:border-destructive/30 transition-all animate-fade-in"
-              style={{ animationDelay: `${index * 100}ms` }}
+              className={cn("group relative p-6 rounded-2xl bg-card/50 border border-border/50 hover:border-destructive/30 transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}
+              style={{ transitionDelay: isInView ? `${index * 100}ms` : '0ms' }}
             >
               {/* Red accent line */}
               <div className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl bg-gradient-to-r from-destructive/50 to-destructive/20" />

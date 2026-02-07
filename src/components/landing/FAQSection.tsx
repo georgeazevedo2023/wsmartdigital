@@ -4,6 +4,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const faqs = [
   {
@@ -33,8 +35,10 @@ const faqs = [
 ];
 
 const FAQSection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.2 });
+
   return (
-    <section className="relative z-10 py-20 border-t border-border/50">
+    <section ref={ref} className="relative z-10 py-20 border-t border-border/50">
       <div className="container mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-12 animate-fade-in">
@@ -47,7 +51,7 @@ const FAQSection = () => {
         </div>
 
         {/* FAQ Accordion */}
-        <div className="max-w-3xl mx-auto animate-fade-in">
+        <div className={cn("max-w-3xl mx-auto transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
           <Accordion type="single" collapsible className="space-y-3">
             {faqs.map((faq, index) => (
               <AccordionItem

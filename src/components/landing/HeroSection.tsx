@@ -2,14 +2,18 @@ import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ArrowRight, Zap, CheckCircle2, Shield, Play } from 'lucide-react';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const HeroSection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.2 });
+
   return (
-    <section className="relative z-10 py-20 lg:py-28 overflow-hidden">
+    <section ref={ref} className="relative z-10 py-20 lg:py-28 overflow-hidden">
       <div className="container mx-auto px-4">
         <div className="grid lg:grid-cols-2 gap-12 lg:gap-16 items-center">
           {/* Left Content */}
-          <div className="animate-fade-in text-center lg:text-left">
+          <div className={cn("text-center lg:text-left transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
             {/* Social Proof Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-primary mb-6">
               <Zap className="w-4 h-4" />
@@ -62,7 +66,7 @@ const HeroSection = () => {
           </div>
 
           {/* Right - Dashboard Mockup */}
-          <div className="relative animate-fade-in" style={{ animationDelay: '200ms' }}>
+          <div className={cn("relative transition-all duration-700 delay-200", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
             <div className="relative">
               {/* Glow Effect */}
               <div className="absolute -inset-4 bg-primary/20 rounded-3xl blur-3xl opacity-50" />

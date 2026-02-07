@@ -1,4 +1,6 @@
 import { QrCode, MousePointerClick, Rocket } from 'lucide-react';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const steps = [
   {
@@ -22,8 +24,10 @@ const steps = [
 ];
 
 const HowItWorksSection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.2 });
+
   return (
-    <section className="relative z-10 py-20 border-t border-border/50">
+    <section ref={ref} className="relative z-10 py-20 border-t border-border/50">
       <div className="container mx-auto px-4">
         {/* Header */}
         <div className="text-center mb-16 animate-fade-in">
@@ -44,8 +48,8 @@ const HowItWorksSection = () => {
             {steps.map((step, index) => (
               <div
                 key={index}
-                className="relative text-center animate-fade-in"
-                style={{ animationDelay: `${index * 150}ms` }}
+                className={cn("relative text-center transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}
+                style={{ transitionDelay: isInView ? `${index * 150}ms` : '0ms' }}
               >
                 {/* Step Circle */}
                 <div className="relative inline-flex mb-6">

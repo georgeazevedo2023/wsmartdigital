@@ -1,4 +1,6 @@
 import { Check, X, ArrowRight } from 'lucide-react';
+import { useInView } from '@/hooks/useInView';
+import { cn } from '@/lib/utils';
 
 const beforeItems = [
   'Envios manuais, um por um',
@@ -17,8 +19,10 @@ const afterItems = [
 ];
 
 const TransformationSection = () => {
+  const { ref, isInView } = useInView({ threshold: 0.2 });
+
   return (
-    <section className="relative z-10 py-20 border-t border-border/50 overflow-hidden">
+    <section ref={ref} className="relative z-10 py-20 border-t border-border/50 overflow-hidden">
       {/* Background gradient */}
       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-primary/5 to-transparent" />
       
@@ -37,7 +41,7 @@ const TransformationSection = () => {
         {/* Before/After Grid */}
         <div className="grid md:grid-cols-2 gap-6 lg:gap-8 max-w-5xl mx-auto">
           {/* Before */}
-          <div className="animate-fade-in">
+          <div className={cn("transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
             <div className="p-6 rounded-2xl bg-card/50 border border-destructive/20 h-full">
               <div className="flex items-center gap-3 mb-6">
                 <div className="w-10 h-10 rounded-full bg-destructive/10 flex items-center justify-center">
@@ -60,7 +64,7 @@ const TransformationSection = () => {
           </div>
 
           {/* After */}
-          <div className="animate-fade-in" style={{ animationDelay: '100ms' }}>
+          <div className={cn("transition-all duration-700 delay-100", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
             <div className="p-6 rounded-2xl glass-card border-primary/30 h-full relative overflow-hidden">
               {/* Glow effect */}
               <div className="absolute top-0 right-0 w-32 h-32 bg-primary/20 rounded-full blur-3xl" />
@@ -89,7 +93,7 @@ const TransformationSection = () => {
         </div>
 
         {/* Bridge Statement */}
-        <div className="text-center mt-12 animate-fade-in" style={{ animationDelay: '200ms' }}>
+        <div className={cn("text-center mt-12 transition-all duration-700 delay-200", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
           <div className="inline-flex items-center gap-3 px-6 py-3 rounded-full bg-card/50 border border-border/50">
             <span className="text-muted-foreground">O</span>
             <span className="font-display font-bold text-primary">WsmartQR</span>
