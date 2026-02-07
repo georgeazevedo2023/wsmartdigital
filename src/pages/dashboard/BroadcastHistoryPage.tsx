@@ -1,33 +1,48 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import BroadcastHistory from '@/components/broadcast/BroadcastHistory';
+import ResendOptionsDialog from '@/components/broadcast/ResendOptionsDialog';
+
+interface BroadcastLog {
+  id: string;
+  instance_id: string;
+  instance_name: string | null;
+  message_type: string;
+  content: string | null;
+  media_url: string | null;
+  carousel_data: unknown;
+  groups_targeted: number;
+}
 
 const BroadcastHistoryPage = () => {
   const navigate = useNavigate();
+  const [resendDialogOpen, setResendDialogOpen] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<BroadcastLog | null>(null);
 
-  const handleResend = (log: {
-    instance_id: string;
-    instance_name: string | null;
-    message_type: string;
-    content: string | null;
-    media_url: string | null;
-    carousel_data: unknown;
-    groups_targeted: number;
+  const handleResendClick = (log: BroadcastLog) => {
+    setSelectedLog(log);
+    setResendDialogOpen(true);
+  };
+
+  const handleResendConfirm = (options: {
+    destination: 'groups' | 'leads';
+    excludeAdmins: boolean;
   }) => {
-    // Check if it's a lead broadcast (groups_targeted === 0)
-    const isLeadBroadcast = log.groups_targeted === 0;
-    
+    if (!selectedLog) return;
+
     // Store resend data in sessionStorage
     sessionStorage.setItem('resendData', JSON.stringify({
-      messageType: log.message_type,
-      content: log.content,
-      mediaUrl: log.media_url,
-      instanceId: log.instance_id,
-      instanceName: log.instance_name,
-      carouselData: log.carousel_data,
+      messageType: selectedLog.message_type,
+      content: selectedLog.content,
+      mediaUrl: selectedLog.media_url,
+      instanceId: selectedLog.instance_id,
+      instanceName: selectedLog.instance_name,
+      carouselData: selectedLog.carousel_data,
+      excludeAdmins: options.excludeAdmins,
     }));
     
     // Navigate to appropriate broadcaster
-    if (isLeadBroadcast) {
+    if (options.destination === 'leads') {
       navigate('/dashboard/leads-broadcast');
     } else {
       navigate('/dashboard/broadcast');
@@ -42,7 +57,18 @@ const BroadcastHistoryPage = () => {
           Visualize e gerencie o histórico de mensagens enviadas
         </p>
       </div>
-      <BroadcastHistory onResend={handleResend} />
+      <BroadcastHistory onResend={handleResendClick} />
+
+      {/* Resend Options Dialog */}
+      {selectedLog && (
+        <ResendOptionsDialog
+          open={resendDialogOpen}
+          onOpenChange={setResendDialogOpen}
+          onConfirm={handleResendConfirm}
+          messageType={selectedLog.message_type}
+          originalTarget={selectedLog.groups_targeted === 0 ? 'leads' : 'groups'}
+        />
+      )}
     </div>
   );
 };
