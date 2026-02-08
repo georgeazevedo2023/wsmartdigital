@@ -1,118 +1,105 @@
 
-# Correção: Botões URL do Carrossel Não Funcionando no WhatsApp
+## Objetivo
+Corrigir o envio de carrossel para que:
+1) os botões apareçam com texto no WhatsApp (ex: “Comprar Agora”)
+2) botões URL fiquem clicáveis (abram o link)
+3) botões REPLY/CALL/COPY funcionem conforme a documentação da UAZAPI
 
-## Problema Identificado
+## Diagnóstico (causa raiz)
+A documentação oficial do endpoint **POST `/send/carousel`** (UAZAPI) define que cada botão deve ter o formato:
 
-Quando uma mensagem de carrossel é enviada e chega no WhatsApp, os botões do tipo URL (como "Comprar") não são clicáveis.
-
-### Diagnóstico Técnico
-
-Analisando os logs do edge function `uazapi-proxy`:
-
-**Payload enviado (correto):**
 ```json
-{
-  "id": "2",
-  "label": "Comprar",
-  "display_text": "Comprar",
-  "text": "Comprar", 
-  "type": "URL",
-  "url": "https://labolaria.com.br/"
-}
+{ "id": "...", "text": "...", "type": "REPLY|URL|COPY|CALL" }
 ```
 
-**Resposta da UAZAPI (erro):**
-```json
-{
-  "name": "cta_url",
-  "buttonParamsJSON": "{\"display_text\":\"Comprar\",\"id\":\"2\",\"url\":\"2\",\"disabled\":false}"
-}
+E, principalmente:
+- **`text`** é o texto exibido no botão
+- **`id`** é o “valor” do botão:
+  - REPLY: é o texto que será enviado como resposta ao chat
+  - URL: **id deve ser a URL completa**
+  - COPY: id é o texto a ser copiado
+  - CALL: id é o número de telefone
+
+No nosso proxy (`uazapi-proxy`) a última alteração passou a enviar botões com:
+- `label` (em vez de `text`)
+- `url` / `phone` (em vez de usar o `id` como a própria URL/telefone)
+
+Isso faz a UAZAPI montar o payload interno com `display_text` vazio e/ou mapear URL incorretamente, resultando em:
+- botões sem texto
+- URL não clicável
+- REPLY enviando um valor errado (ex.: UUID), quando deveria enviar uma resposta legível
+
+## Solução (alto nível)
+Ajustar o **mapeamento de botões no backend function `uazapi-proxy`** para seguir exatamente o schema do endpoint `/send/carousel`:
+
+- Sempre enviar botões como: `{ id, text, type }`
+- Preencher `text` a partir do que o frontend chama hoje de `label` (e também aceitar `text` para compatibilidade)
+- Preencher `id` conforme o tipo:
+  - URL: `id = btn.url` (ou, se `btn.id` já for uma URL, usar `btn.id`)
+  - CALL: `id = btn.phone` (ou fallback para `btn.id` se vier como número)
+  - COPY: `id = btn.id` (ou um campo que o frontend mandar para cópia; por enquanto aceitar `btn.id`)
+  - REPLY: para evitar enviar UUID como resposta:
+    - se `btn.id` parecer UUID, usar `id = textDoBotao`
+    - caso contrário, manter `id = btn.id` (permite customização quando existir)
+
+## Mudanças detalhadas (técnico)
+### 1) Atualizar `processedButtons` no `send-carousel` do proxy
+Arquivo: `supabase/functions/uazapi-proxy/index.ts`
+
+**Antes (atual, quebrado para UAZAPI):**
+```ts
+{ id, label, type, url?, phone? }
 ```
 
-O problema: A UAZAPI está substituindo o valor da URL pelo ID do botão (`"url":"2"` ao invés de `"url":"https://labolaria.com.br/"`).
-
-### Causa Raiz
-
-O payload está enviando **campos extras** (`display_text`, `text`) que não são documentados pela Z-API para botões de carrossel. A API pode estar confundindo esses campos e mapeando incorretamente.
-
-A documentação oficial da Z-API especifica apenas estes campos para botões:
-- `id` (opcional) - identificador do botão
-- `label` - texto do botão
-- `type` - tipo do botão (URL, CALL, REPLY)
-- `url` - link para botões tipo URL
-- `phone` - telefone para botões tipo CALL
-
----
-
-## Solução Proposta
-
-Simplificar o payload dos botões no edge function para enviar **apenas os campos documentados**, removendo `display_text`, `text` e `phoneNumber`.
-
-### Arquivo a Modificar
-
-`supabase/functions/uazapi-proxy/index.ts`
-
-### Mudanças
-
-**Antes (linhas 364-378):**
-```typescript
-const processedButtons = card.buttons?.map((btn, btnIdx) => {
-  return {
-    id: String(btnIdx + 1),
-    label: btn.label,
-    display_text: btn.label, 
-    text: btn.label,
-    type: btn.type,
-    ...(btn.type === 'URL' && btn.url ? { url: btn.url } : {}),
-    ...(btn.type === 'CALL' && btn.phone ? { phone: btn.phone, phoneNumber: btn.phone } : {}),
-  }
-}) || []
+**Depois (conforme docs UAZAPI):**
+```ts
+{ id, text, type }
 ```
 
-**Depois:**
-```typescript
-const processedButtons = card.buttons?.map((btn, btnIdx) => {
-  // Formato conforme documentação Z-API: apenas id, label, type e url/phone
-  const buttonObj: Record<string, string> = {
-    id: btn.id || String(btnIdx + 1),
-    label: btn.label,
-    type: btn.type,
-  };
-  
-  // Adicionar URL para botões de link
-  if (btn.type === 'URL' && btn.url) {
-    buttonObj.url = btn.url;
-  }
-  
-  // Adicionar telefone para botões de ligação
-  if (btn.type === 'CALL' && btn.phone) {
-    buttonObj.phone = btn.phone;
-  }
-  
-  return buttonObj;
-}) || []
-```
+Regras de mapeamento:
+- `const buttonText = btn.text ?? btn.label ?? ''`
+- `switch (btn.type)`:
+  - `URL`: `id = btn.url ?? btn.id`
+  - `CALL`: `id = btn.phone ?? btn.id`
+  - `COPY`: `id = btn.id` (e `text = buttonText`)
+  - `REPLY`: `id = isUuidLike(btn.id) ? buttonText : (btn.id ?? buttonText)`
 
-### Benefícios da Correção
+Adicionar helper simples `isUuidLike` para detectar UUIDs (regex) e evitar que REPLY retorne UUID no chat.
 
-1. **Payload limpo**: Apenas campos documentados pela API
-2. **IDs únicos**: Preservar ID original do botão em vez de sobrescrever
-3. **Sem campos conflitantes**: Remover `display_text`, `text`, `phoneNumber` que podem causar confusão
+### 2) Compatibilidade com dados existentes
+Hoje o frontend usa `label`. Vamos manter compatibilidade:
+- ler `btn.label` e/ou `btn.text` no proxy
+- não exigir mudança imediata no frontend para o básico voltar a funcionar
 
----
+### 3) (Opcional, mas recomendado) Pass-through de campos comuns do endpoint
+A doc mostra suporte a `delay`, `readchat`, etc.
+Podemos melhorar o proxy para aceitar e repassar (quando vier no body do request):
+- `delay`, `readchat`, `readmessages`, `replyid`, `mentions`, `forward`, `track_source`, `track_id`
 
-## Testes para Validação
+Isso não é necessário para corrigir os botões, mas aumenta compatibilidade e evita surpresas.
 
-1. Criar um carrossel com 2 cards contendo:
-   - Botão tipo REPLY (Resposta)
-   - Botão tipo URL com link real
-   - Botão tipo CALL com telefone
-   
-2. Enviar para um contato de teste
+## Plano de implementação
+1) Ajustar o mapeamento dos botões em `send-carousel` no `uazapi-proxy` para `{id, text, type}` e regras por tipo (URL/CALL/COPY/REPLY).
+2) Manter fallback para `btn.label` (frontend atual) e aceitar `btn.text` (schema oficial).
+3) (Opcional) Repassar campos comuns do endpoint se existirem no body.
+4) Validar via logs do proxy que o payload final enviado para UAZAPI contém `buttons: [{id, text, type}]` e que:
+   - URL tem `id` iniciando com `http`
+   - CALL tem `id` numérico/telefone
+   - REPLY tem `id` legível (não UUID)
 
-3. Verificar no WhatsApp:
-   - Botão URL abre o link corretamente ao clicar
-   - Botão CALL inicia discagem
-   - Botão REPLY retorna resposta
+## Testes manuais (checklist)
+1) Enviar carrossel de teste para um contato com:
+   - REPLY: texto “Aproveitar!”
+   - URL: texto “Comprar Agora” com `https://...`
+   - CALL: texto “Falar no WhatsApp” com telefone
+2) Confirmar no WhatsApp:
+   - botões aparecem com texto correto
+   - URL abre o link ao clicar
+   - REPLY envia uma mensagem legível (idealmente igual ao texto do botão)
+   - CALL abre a ação de ligação
+3) Repetir para envio em grupo (se aplicável ao seu fluxo).
+4) Verificar nos logs do proxy a estrutura do payload e a resposta da UAZAPI.
 
-4. Verificar logs do edge function para confirmar payload simplificado
+## Riscos / Observações
+- Se alguém dependia de REPLY enviar UUID (muito improvável), o novo fallback vai preferir enviar o texto do botão quando detectar UUID.
+- Caso a UAZAPI tenha validação estrita de “number” sem sufixo `@s.whatsapp.net`, podemos ajustar a normalização depois, mas pelos logs atuais o envio está chegando (o problema é o schema dos botões).
