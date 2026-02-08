@@ -351,35 +351,55 @@ Deno.serve(async (req) => {
         console.log('Carousel destination type:', isGroup ? 'GROUP' : 'CONTACT')
         console.log('Normalized destination:', normalizedDestination)
         
+        // Helper para detectar UUID
+        const isUuidLike = (str: string | undefined | null): boolean => {
+          if (!str) return false;
+          return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+        };
+
         // Process carousel cards - handle base64 images
-        const processedCards = body.carousel.map((card: { text: string; image: string; buttons: Array<{ id?: string; label: string; type: string; url?: string; phone?: string }> }, idx: number) => {
+        const processedCards = body.carousel.map((card: { text: string; image: string; buttons: Array<{ id?: string; text?: string; label?: string; type: string; url?: string; phone?: string }> }, idx: number) => {
           // Check if image is base64 and extract just the data
           let imageValue = card.image
           if (card.image && card.image.startsWith('data:')) {
             imageValue = card.image.split(',')[1] || card.image
           }
           
-          // Build buttons array with UAZAPI expected field names
-          // UAZAPI expects: display_text (not label), buttonParamsJSON for some types
-          // Formato conforme documentação Z-API: apenas id, label, type e url/phone
+          // Build buttons array conforme documentação UAZAPI /send/carousel
+          // Schema esperado: { id, text, type }
+          // - text: texto exibido no botão
+          // - id: valor do botão (URL para type=URL, telefone para CALL, texto resposta para REPLY/COPY)
           const processedButtons = card.buttons?.map((btn, btnIdx) => {
-            const buttonObj: Record<string, string> = {
-              id: btn.id || String(btnIdx + 1),
-              label: btn.label,
+            // Aceitar btn.text (schema oficial) ou btn.label (frontend atual)
+            const buttonText = btn.text ?? btn.label ?? '';
+            
+            // Determinar o valor do id conforme o tipo
+            let buttonId: string;
+            switch (btn.type) {
+              case 'URL':
+                // Para URL, o id deve ser a URL completa
+                buttonId = btn.url ?? btn.id ?? '';
+                break;
+              case 'CALL':
+                // Para CALL, o id deve ser o número de telefone
+                buttonId = btn.phone ?? btn.id ?? '';
+                break;
+              case 'COPY':
+                // Para COPY, o id é o texto a ser copiado
+                buttonId = btn.id ?? buttonText;
+                break;
+              case 'REPLY':
+              default:
+                // Para REPLY, evitar enviar UUID como resposta
+                buttonId = isUuidLike(btn.id) ? buttonText : (btn.id ?? buttonText);
+                break;
+            }
+            
+            return {
+              id: buttonId,
+              text: buttonText,
               type: btn.type,
             };
-            
-            // Adicionar URL para botões de link
-            if (btn.type === 'URL' && btn.url) {
-              buttonObj.url = btn.url;
-            }
-            
-            // Adicionar telefone para botões de ligação
-            if (btn.type === 'CALL' && btn.phone) {
-              buttonObj.phone = btn.phone;
-            }
-            
-            return buttonObj;
           }) || []
           
           console.log(`Card ${idx + 1} buttons:`, JSON.stringify(processedButtons))
