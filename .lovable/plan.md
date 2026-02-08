@@ -1,105 +1,170 @@
 
-## Objetivo
-Corrigir o envio de carrossel para que:
-1) os botões apareçam com texto no WhatsApp (ex: “Comprar Agora”)
-2) botões URL fiquem clicáveis (abram o link)
-3) botões REPLY/CALL/COPY funcionem conforme a documentação da UAZAPI
 
-## Diagnóstico (causa raiz)
-A documentação oficial do endpoint **POST `/send/carousel`** (UAZAPI) define que cada botão deve ter o formato:
+# Armazenar Imagens de Carrossel em Alta Resolucao
 
-```json
-{ "id": "...", "text": "...", "type": "REPLY|URL|COPY|CALL" }
+## Problema Identificado
+
+Quando o usuario reenvia um carrossel do historico, as imagens chegam com baixa resolucao (200px) porque o sistema atualmente comprime os arquivos locais para "thumbnails" antes de salvar no banco de dados.
+
+**Codigo atual:**
+```typescript
+const compressImageToThumbnail = (file: File, maxWidth = 200, quality = 0.6)
 ```
 
-E, principalmente:
-- **`text`** é o texto exibido no botão
-- **`id`** é o “valor” do botão:
-  - REPLY: é o texto que será enviado como resposta ao chat
-  - URL: **id deve ser a URL completa**
-  - COPY: id é o texto a ser copiado
-  - CALL: id é o número de telefone
+## Solucao Proposta
 
-No nosso proxy (`uazapi-proxy`) a última alteração passou a enviar botões com:
-- `label` (em vez de `text`)
-- `url` / `phone` (em vez de usar o `id` como a própria URL/telefone)
+Usar o **Storage** (Lovable Cloud) para armazenar as imagens em alta resolucao e salvar apenas a URL no banco de dados.
 
-Isso faz a UAZAPI montar o payload interno com `display_text` vazio e/ou mapear URL incorretamente, resultando em:
-- botões sem texto
-- URL não clicável
-- REPLY enviando um valor errado (ex.: UUID), quando deveria enviar uma resposta legível
+```text
+Fluxo Atual (problematico):
+Arquivo Local -> Compressao 200px -> Base64 -> JSON no banco
 
-## Solução (alto nível)
-Ajustar o **mapeamento de botões no backend function `uazapi-proxy`** para seguir exatamente o schema do endpoint `/send/carousel`:
-
-- Sempre enviar botões como: `{ id, text, type }`
-- Preencher `text` a partir do que o frontend chama hoje de `label` (e também aceitar `text` para compatibilidade)
-- Preencher `id` conforme o tipo:
-  - URL: `id = btn.url` (ou, se `btn.id` já for uma URL, usar `btn.id`)
-  - CALL: `id = btn.phone` (ou fallback para `btn.id` se vier como número)
-  - COPY: `id = btn.id` (ou um campo que o frontend mandar para cópia; por enquanto aceitar `btn.id`)
-  - REPLY: para evitar enviar UUID como resposta:
-    - se `btn.id` parecer UUID, usar `id = textDoBotao`
-    - caso contrário, manter `id = btn.id` (permite customização quando existir)
-
-## Mudanças detalhadas (técnico)
-### 1) Atualizar `processedButtons` no `send-carousel` do proxy
-Arquivo: `supabase/functions/uazapi-proxy/index.ts`
-
-**Antes (atual, quebrado para UAZAPI):**
-```ts
-{ id, label, type, url?, phone? }
+Fluxo Novo:
+Arquivo Local -> Upload Storage (alta res) -> URL publica -> JSON no banco
 ```
 
-**Depois (conforme docs UAZAPI):**
-```ts
-{ id, text, type }
+---
+
+## Arquitetura da Solucao
+
+1. Criar um bucket de storage para imagens de carrossel
+2. No momento do envio, fazer upload das imagens para o storage
+3. Salvar a URL publica no campo `carousel_data`
+4. No reenvio, usar a URL diretamente (ja em alta resolucao)
+
+---
+
+## Alteracoes Detalhadas
+
+### 1. Criar Bucket de Storage (migration)
+
+Criar um bucket publico para armazenar imagens de carrossel:
+
+```sql
+-- Criar bucket para imagens de carrossel
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('carousel-images', 'carousel-images', true);
+
+-- Politica para usuarios autenticados fazerem upload
+CREATE POLICY "Users can upload carousel images"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (bucket_id = 'carousel-images');
+
+-- Politica para leitura publica
+CREATE POLICY "Public can read carousel images"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'carousel-images');
 ```
 
-Regras de mapeamento:
-- `const buttonText = btn.text ?? btn.label ?? ''`
-- `switch (btn.type)`:
-  - `URL`: `id = btn.url ?? btn.id`
-  - `CALL`: `id = btn.phone ?? btn.id`
-  - `COPY`: `id = btn.id` (e `text = buttonText`)
-  - `REPLY`: `id = isUuidLike(btn.id) ? buttonText : (btn.id ?? buttonText)`
+### 2. Criar funcao de upload no BroadcastMessageForm.tsx
 
-Adicionar helper simples `isUuidLike` para detectar UUIDs (regex) e evitar que REPLY retorne UUID no chat.
+Adicionar funcao para fazer upload de imagens para o Storage:
 
-### 2) Compatibilidade com dados existentes
-Hoje o frontend usa `label`. Vamos manter compatibilidade:
-- ler `btn.label` e/ou `btn.text` no proxy
-- não exigir mudança imediata no frontend para o básico voltar a funcionar
+```typescript
+const uploadCarouselImage = async (file: File): Promise<string> => {
+  const session = await supabase.auth.getSession();
+  if (!session.data.session) throw new Error('Nao autenticado');
 
-### 3) (Opcional, mas recomendado) Pass-through de campos comuns do endpoint
-A doc mostra suporte a `delay`, `readchat`, etc.
-Podemos melhorar o proxy para aceitar e repassar (quando vier no body do request):
-- `delay`, `readchat`, `readmessages`, `replyid`, `mentions`, `forward`, `track_source`, `track_id`
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${crypto.randomUUID()}.${fileExt}`;
+  const filePath = `${session.data.session.user.id}/${fileName}`;
 
-Isso não é necessário para corrigir os botões, mas aumenta compatibilidade e evita surpresas.
+  const { error: uploadError } = await supabase.storage
+    .from('carousel-images')
+    .upload(filePath, file);
 
-## Plano de implementação
-1) Ajustar o mapeamento dos botões em `send-carousel` no `uazapi-proxy` para `{id, text, type}` e regras por tipo (URL/CALL/COPY/REPLY).
-2) Manter fallback para `btn.label` (frontend atual) e aceitar `btn.text` (schema oficial).
-3) (Opcional) Repassar campos comuns do endpoint se existirem no body.
-4) Validar via logs do proxy que o payload final enviado para UAZAPI contém `buttons: [{id, text, type}]` e que:
-   - URL tem `id` iniciando com `http`
-   - CALL tem `id` numérico/telefone
-   - REPLY tem `id` legível (não UUID)
+  if (uploadError) throw uploadError;
 
-## Testes manuais (checklist)
-1) Enviar carrossel de teste para um contato com:
-   - REPLY: texto “Aproveitar!”
-   - URL: texto “Comprar Agora” com `https://...`
-   - CALL: texto “Falar no WhatsApp” com telefone
-2) Confirmar no WhatsApp:
-   - botões aparecem com texto correto
-   - URL abre o link ao clicar
-   - REPLY envia uma mensagem legível (idealmente igual ao texto do botão)
-   - CALL abre a ação de ligação
-3) Repetir para envio em grupo (se aplicável ao seu fluxo).
-4) Verificar nos logs do proxy a estrutura do payload e a resposta da UAZAPI.
+  const { data } = supabase.storage
+    .from('carousel-images')
+    .getPublicUrl(filePath);
 
-## Riscos / Observações
-- Se alguém dependia de REPLY enviar UUID (muito improvável), o novo fallback vai preferir enviar o texto do botão quando detectar UUID.
-- Caso a UAZAPI tenha validação estrita de “number” sem sufixo `@s.whatsapp.net`, podemos ajustar a normalização depois, mas pelos logs atuais o envio está chegando (o problema é o schema dos botões).
+  return data.publicUrl;
+};
+```
+
+### 3. Modificar saveBroadcastLog
+
+Atualizar para fazer upload das imagens em vez de comprimir:
+
+**Antes:**
+```typescript
+if (card.imageFile) {
+  imageForStorage = await compressImageToThumbnail(card.imageFile);
+}
+```
+
+**Depois:**
+```typescript
+if (card.imageFile) {
+  // Upload para storage em alta resolucao
+  imageForStorage = await uploadCarouselImage(card.imageFile);
+} else if (card.image && card.image.startsWith('data:')) {
+  // Se for base64, converter para blob e fazer upload
+  const blob = await fetch(card.image).then(r => r.blob());
+  const file = new File([blob], `card-${idx}.jpg`, { type: 'image/jpeg' });
+  imageForStorage = await uploadCarouselImage(file);
+}
+// Se ja for URL externa, manter como esta
+```
+
+### 4. Aplicar mesma logica no LeadMessageForm.tsx
+
+Replicar as alteracoes para o disparador de leads.
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Tipo | Descricao |
+|---------|------|-----------|
+| `supabase/migrations/xxx.sql` | Novo | Criar bucket de storage |
+| `src/components/broadcast/BroadcastMessageForm.tsx` | Modificar | Upload para storage em vez de comprimir |
+| `src/components/broadcast/LeadMessageForm.tsx` | Modificar | Mesmas alteracoes |
+
+---
+
+## Beneficios
+
+1. **Imagens em alta resolucao**: Reenvios mantem qualidade original
+2. **Banco de dados leve**: Apenas URLs sao armazenadas, nao dados binarios
+3. **Performance**: URLs publicas sao servidas diretamente pelo CDN
+4. **Escalabilidade**: Storage e otimizado para arquivos grandes
+
+---
+
+## Detalhes Tecnicos
+
+### Estrutura do Storage
+
+```text
+carousel-images/
+  ├── {user_id}/
+  │   ├── abc123.jpg
+  │   ├── def456.png
+  │   └── ...
+```
+
+### URLs Geradas
+
+Exemplo de URL publica:
+```
+https://tjuokxdkimrtyqsbzskj.supabase.co/storage/v1/object/public/carousel-images/{user_id}/{filename}
+```
+
+### Compatibilidade
+
+- URLs externas (ex: https://...) continuam funcionando normalmente
+- Historico existente com thumbnails continuara funcionando (fallback)
+- Novos envios usarao imagens em alta resolucao
+
+---
+
+## Consideracoes de Seguranca
+
+1. Bucket publico: necessario para que o WhatsApp consiga acessar as imagens
+2. Path por usuario: organiza arquivos e facilita limpeza futura
+3. Politica de insert: apenas usuarios autenticados podem fazer upload
+
