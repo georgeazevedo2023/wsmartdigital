@@ -1,132 +1,118 @@
 
-# Responsividade Mobile-First para o Dashboard
+# Correção: Botões URL do Carrossel Não Funcionando no WhatsApp
 
 ## Problema Identificado
 
-Na imagem fornecida, o sidebar fixo ocupa espaço horizontal em dispositivos mobile, comprimindo severamente o conteudo principal. O layout atual (`flex h-screen`) mantém o sidebar sempre visível, independente do tamanho da tela.
+Quando uma mensagem de carrossel é enviada e chega no WhatsApp, os botões do tipo URL (como "Comprar") não são clicáveis.
 
----
+### Diagnóstico Técnico
 
-## Solucao Proposta
+Analisando os logs do edge function `uazapi-proxy`:
 
-Implementar um sistema de navegacao responsivo com duas abordagens:
-
-1. **Desktop (>= 768px)**: Sidebar fixo lateral (comportamento atual)
-2. **Mobile (< 768px)**: Sidebar oculto por padrao, acessivel via botao hamburguer + Sheet (drawer lateral)
-
----
-
-## Arquitetura da Solucao
-
-```text
-+------------------+     +------------------+
-|  DESKTOP >= 768  |     |   MOBILE < 768   |
-+------------------+     +------------------+
-| [Sidebar] [Main] |     | [Header + Menu]  |
-|                  |     | [Main Content ]  |
-+------------------+     +------------------+
+**Payload enviado (correto):**
+```json
+{
+  "id": "2",
+  "label": "Comprar",
+  "display_text": "Comprar",
+  "text": "Comprar", 
+  "type": "URL",
+  "url": "https://labolaria.com.br/"
+}
 ```
 
----
-
-## Alteracoes Detalhadas
-
-### 1. DashboardLayout.tsx
-
-**Mudancas:**
-- Importar `useIsMobile` e componentes Sheet (drawer)
-- Estado `mobileMenuOpen` para controlar abertura do menu
-- Renderizacao condicional:
-  - Desktop: Sidebar fixo (atual)
-  - Mobile: Header com botao menu + Sheet contendo a navegacao
-
-```text
-Mobile Layout:
-+--------------------------------+
-| [Logo] [MENU BTN]              | <- Header fixo
-+--------------------------------+
-|                                |
-|        Main Content            | <- Scroll independente
-|        (padding top)           |
-|                                |
-+--------------------------------+
+**Resposta da UAZAPI (erro):**
+```json
+{
+  "name": "cta_url",
+  "buttonParamsJSON": "{\"display_text\":\"Comprar\",\"id\":\"2\",\"url\":\"2\",\"disabled\":false}"
+}
 ```
 
-### 2. Sidebar.tsx
+O problema: A UAZAPI está substituindo o valor da URL pelo ID do botão (`"url":"2"` ao invés de `"url":"https://labolaria.com.br/"`).
 
-**Mudancas:**
-- Receber prop `isMobile?: boolean` para ajustar estilos
-- No mobile, remover largura fixa e usar `w-full`
-- Callback `onNavigate` para fechar o menu apos selecao de rota (mobile)
-- Esconder botao de colapsar no mobile (desnecessario em drawer)
+### Causa Raiz
 
-### 3. Ajustes de Padding nas Paginas
+O payload está enviando **campos extras** (`display_text`, `text`) que não são documentados pela Z-API para botões de carrossel. A API pode estar confundindo esses campos e mapeando incorretamente.
 
-**Mudancas:**
-- Verificar se as paginas tem padding adequado para mobile
-- Usar classes responsivas como `p-4 md:p-6`
-- Garantir que cards e grids se adaptem (`grid-cols-1 sm:grid-cols-2 lg:grid-cols-3`)
-
-### 4. Componentes de Broadcast
-
-**Mudancas no Broadcaster.tsx e similares:**
-- Progress steps: empilhar verticalmente no mobile
-- Botoes: usar `flex-col gap-2` no mobile, `flex-row` no desktop
-- Cards: garantir `max-w-full` e sem overflow horizontal
-
-### 5. Header Mobile (novo componente)
-
-**Criar `MobileHeader.tsx`:**
-- Altura fixa (~56px)
-- Logo a esquerda
-- Botao hamburguer a direita
-- Background glassmorphism consistente com o tema
+A documentação oficial da Z-API especifica apenas estes campos para botões:
+- `id` (opcional) - identificador do botão
+- `label` - texto do botão
+- `type` - tipo do botão (URL, CALL, REPLY)
+- `url` - link para botões tipo URL
+- `phone` - telefone para botões tipo CALL
 
 ---
 
-## Arquivos a Modificar
+## Solução Proposta
 
-| Arquivo | Tipo | Descricao |
-|---------|------|-----------|
-| `src/components/dashboard/DashboardLayout.tsx` | Modificar | Adicionar logica mobile + Sheet |
-| `src/components/dashboard/Sidebar.tsx` | Modificar | Aceitar props mobile + callback |
-| `src/pages/dashboard/Broadcaster.tsx` | Modificar | Responsividade dos steps e botoes |
-| `src/pages/dashboard/DashboardHome.tsx` | Modificar | Ajustar grid de stats cards |
-| `src/pages/dashboard/Instances.tsx` | Modificar | Ajustar grid e dialogs |
-| `src/components/broadcast/GroupSelector.tsx` | Modificar | Ajustar botoes de selecao |
-| `src/components/broadcast/BroadcasterHeader.tsx` | Modificar | Layout responsivo |
+Simplificar o payload dos botões no edge function para enviar **apenas os campos documentados**, removendo `display_text`, `text` e `phoneNumber`.
 
----
+### Arquivo a Modificar
 
-## Beneficios
+`supabase/functions/uazapi-proxy/index.ts`
 
-1. **Melhor UX mobile**: Conteudo ocupa 100% da largura em dispositivos pequenos
-2. **Navegacao acessivel**: Menu sempre disponivel via botao
-3. **Consistencia visual**: Mesmo tema glassmorphism no drawer mobile
-4. **Performance**: Sidebar nao renderizado desnecessariamente no mobile
-5. **Acessibilidade**: Touch targets maiores, espacamento adequado
+### Mudanças
 
----
-
-## Detalhes Tecnicos
-
-### Hook useIsMobile
-
-Ja existe em `src/hooks/use-mobile.tsx` com breakpoint 768px. Sera reutilizado.
-
-### Sheet Component
-
-Ja existe em `src/components/ui/sheet.tsx`. Sera usado para o drawer mobile.
-
-### Classes Tailwind Responsivas
-
-```css
-/* Exemplo de padroes a usar */
-.container { @apply p-4 md:p-6 }
-.grid { @apply grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 }
-.button-group { @apply flex flex-col sm:flex-row gap-2 }
+**Antes (linhas 364-378):**
+```typescript
+const processedButtons = card.buttons?.map((btn, btnIdx) => {
+  return {
+    id: String(btnIdx + 1),
+    label: btn.label,
+    display_text: btn.label, 
+    text: btn.label,
+    type: btn.type,
+    ...(btn.type === 'URL' && btn.url ? { url: btn.url } : {}),
+    ...(btn.type === 'CALL' && btn.phone ? { phone: btn.phone, phoneNumber: btn.phone } : {}),
+  }
+}) || []
 ```
 
-### Animacao de Transicao
+**Depois:**
+```typescript
+const processedButtons = card.buttons?.map((btn, btnIdx) => {
+  // Formato conforme documentação Z-API: apenas id, label, type e url/phone
+  const buttonObj: Record<string, string> = {
+    id: btn.id || String(btnIdx + 1),
+    label: btn.label,
+    type: btn.type,
+  };
+  
+  // Adicionar URL para botões de link
+  if (btn.type === 'URL' && btn.url) {
+    buttonObj.url = btn.url;
+  }
+  
+  // Adicionar telefone para botões de ligação
+  if (btn.type === 'CALL' && btn.phone) {
+    buttonObj.phone = btn.phone;
+  }
+  
+  return buttonObj;
+}) || []
+```
 
-O Sheet ja possui animacoes suaves. O header mobile tera transicao de abertura consistente.
+### Benefícios da Correção
+
+1. **Payload limpo**: Apenas campos documentados pela API
+2. **IDs únicos**: Preservar ID original do botão em vez de sobrescrever
+3. **Sem campos conflitantes**: Remover `display_text`, `text`, `phoneNumber` que podem causar confusão
+
+---
+
+## Testes para Validação
+
+1. Criar um carrossel com 2 cards contendo:
+   - Botão tipo REPLY (Resposta)
+   - Botão tipo URL com link real
+   - Botão tipo CALL com telefone
+   
+2. Enviar para um contato de teste
+
+3. Verificar no WhatsApp:
+   - Botão URL abre o link corretamente ao clicar
+   - Botão CALL inicia discagem
+   - Botão REPLY retorna resposta
+
+4. Verificar logs do edge function para confirmar payload simplificado
