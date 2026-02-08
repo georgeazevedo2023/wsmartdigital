@@ -361,20 +361,25 @@ Deno.serve(async (req) => {
           
           // Build buttons array with UAZAPI expected field names
           // UAZAPI expects: display_text (not label), buttonParamsJSON for some types
+          // Formato conforme documentação Z-API: apenas id, label, type e url/phone
           const processedButtons = card.buttons?.map((btn, btnIdx) => {
-            // Try multiple formats that UAZAPI might expect
-            return {
-              id: String(btnIdx + 1),
-              // UAZAPI may use different field names for button text
+            const buttonObj: Record<string, string> = {
+              id: btn.id || String(btnIdx + 1),
               label: btn.label,
-              display_text: btn.label, 
-              text: btn.label,
               type: btn.type,
-              // For URL buttons
-              ...(btn.type === 'URL' && btn.url ? { url: btn.url } : {}),
-              // For CALL buttons
-              ...(btn.type === 'CALL' && btn.phone ? { phone: btn.phone, phoneNumber: btn.phone } : {}),
+            };
+            
+            // Adicionar URL para botões de link
+            if (btn.type === 'URL' && btn.url) {
+              buttonObj.url = btn.url;
             }
+            
+            // Adicionar telefone para botões de ligação
+            if (btn.type === 'CALL' && btn.phone) {
+              buttonObj.phone = btn.phone;
+            }
+            
+            return buttonObj;
           }) || []
           
           console.log(`Card ${idx + 1} buttons:`, JSON.stringify(processedButtons))
