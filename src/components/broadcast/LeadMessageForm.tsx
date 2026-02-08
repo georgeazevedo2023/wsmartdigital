@@ -16,6 +16,7 @@ import MessagePreview from './MessagePreview';
 import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor';
 import { CarouselPreview } from './CarouselPreview';
 import { TemplateSelector } from './TemplateSelector';
+import { uploadCarouselImage, base64ToFile } from '@/lib/uploadCarouselImage';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
@@ -264,16 +265,26 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       const completedAt = Date.now();
       const durationSeconds = Math.round((completedAt - params.startedAt) / 1000);
 
-      // Prepare carousel data for storage (convert files to thumbnails)
+      // Prepare carousel data for storage (upload files to storage for high-res)
       let storedCarouselData = null;
       if (params.carouselData) {
         const processedCards = await Promise.all(
-          params.carouselData.cards.map(async (card) => {
+          params.carouselData.cards.map(async (card, idx) => {
             let imageForStorage = card.image || '';
             
-            // If we have a file, compress it to a small thumbnail for preview
-            if (card.imageFile) {
-              imageForStorage = await compressImageToThumbnail(card.imageFile);
+            try {
+              // If we have a file, upload it to storage in high resolution
+              if (card.imageFile) {
+                imageForStorage = await uploadCarouselImage(card.imageFile);
+              } else if (card.image && card.image.startsWith('data:')) {
+                // If it's base64, convert to blob and upload
+                const file = await base64ToFile(card.image, `card-${idx}.jpg`);
+                imageForStorage = await uploadCarouselImage(file);
+              }
+              // If it's already an external URL (https://...), keep as is
+            } catch (uploadErr) {
+              console.error('Error uploading carousel image:', uploadErr);
+              // Fallback: keep original image (may be low-res or base64)
             }
             
             return {
