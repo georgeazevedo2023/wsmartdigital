@@ -1,105 +1,50 @@
 
-# Corrigir Abas e Implementar Historico Real de Conexoes
+# Corrigir Abas Nao Clicaveis na Pagina de Detalhes da Instancia
 
-## Problema 1: Abas nao funcionando
+## Diagnostico
 
-Nos meus testes, as abas estao funcionando normalmente (cliquei em Grupos, Estatisticas e Historico e todas renderizaram conteudo). O problema pode ser intermitente ou estar relacionado ao carregamento da pagina. Para garantir robustez, vou:
+Nos testes do navegador, as abas estao funcionando normalmente. Porem, o usuario reporta que nao consegue clicar nelas. A causa provavel e que re-renderizacoes causadas pelo `fetchInstance` e `updateInstanceStatus` podem estar interferindo com o estado interno do componente `Tabs` quando usado no modo nao controlado (`defaultValue`).
 
-- Adicionar `forceMount` nos `TabsContent` para pre-renderizar o conteudo (evita problemas de montagem tardia)
-- Ou garantir que o estado `activeTab` esteja sincronizado corretamente
+## Solucao
 
-## Problema 2: Historico com dados mockados
+Trocar de `defaultValue` (nao controlado) para `value` + `onValueChange` (controlado), garantindo que o estado da aba ativa seja mantido mesmo apos re-renderizacoes. Tambem vou garantir que as atualizacoes de status nao causem ciclos de re-render que possam desmontar/remontar os componentes de aba.
 
-Atualmente o `InstanceHistory` usa `getMockEvents()` que gera eventos falsos baseados apenas no `created_at` e `updated_at` da instancia. Para mostrar dados reais, preciso:
+## Alteracoes
 
-### 2.1 Criar tabela `instance_connection_logs`
+### `src/pages/dashboard/InstanceDetails.tsx`
 
-Nova tabela no banco de dados para registrar eventos de conexao/desconexao:
+- Restaurar o estado controlado `activeTab` com `useState('overview')`
+- Usar `value={activeTab}` e `onValueChange={setActiveTab}` no componente `Tabs`
+- Manter `TabsContent` sem `forceMount` (que causou problemas antes)
+- Garantir que `className="mt-6"` esteja presente em todos os `TabsContent`
 
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | Identificador unico |
-| instance_id | text | ID da instancia (referencia instances.id) |
-| event_type | text | Tipo: 'created', 'connected', 'disconnected', 'status_changed' |
-| description | text | Descricao do evento |
-| metadata | jsonb | Dados extras (owner_jid, status anterior, etc) |
-| created_at | timestamptz | Momento do evento |
-| user_id | uuid | Usuario que disparou o evento |
+### Codigo resultante
 
-RLS: usuarios veem logs das suas proprias instancias; super_admins veem tudo.
+```tsx
+const [activeTab, setActiveTab] = useState('overview');
 
-### 2.2 Registrar eventos automaticamente
+// ...
 
-Nos pontos do codigo que alteram o status da instancia, inserir um registro na tabela:
-
-- **`InstanceOverview.tsx`**: Quando conecta via QR Code (evento `connected`)
-- **`InstanceDetails.tsx`**: Quando o polling detecta mudanca de status (evento `connected` ou `disconnected`)
-- **`DashboardHome.tsx`** / polling de status: Quando detecta mudanca de status
-
-Tambem criar um trigger no banco que registra automaticamente quando o campo `status` da tabela `instances` muda.
-
-### 2.3 Atualizar `InstanceHistory.tsx`
-
-- Remover `getMockEvents()` e dados mockados
-- Buscar dados reais da tabela `instance_connection_logs`
-- Manter o layout de timeline existente
-- Adicionar paginacao ou limite de eventos (ex: ultimos 50)
-- Remover o card informativo que diz "historico completo sera implementado"
-
-## Alteracoes por arquivo
-
-| Arquivo | Acao | Descricao |
-|---------|------|-----------|
-| Migration SQL | Criar | Tabela `instance_connection_logs` com RLS |
-| Migration SQL | Criar | Trigger na tabela `instances` para registrar mudancas de status automaticamente |
-| `src/components/instance/InstanceHistory.tsx` | Reescrever | Buscar dados reais do banco em vez de mockados |
-| `src/components/instance/InstanceOverview.tsx` | Modificar | Registrar evento de conexao quando QR code e escaneado |
-| `src/pages/dashboard/InstanceDetails.tsx` | Modificar | Registrar evento quando polling detecta mudanca de status |
-
-## Detalhes Tecnicos
-
-### Trigger SQL para capturar mudancas de status
-
-```sql
-CREATE OR REPLACE FUNCTION log_instance_status_change()
-RETURNS trigger AS $$
-BEGIN
-  IF OLD.status IS DISTINCT FROM NEW.status THEN
-    INSERT INTO instance_connection_logs (instance_id, event_type, description, metadata, user_id)
-    VALUES (
-      NEW.id,
-      CASE WHEN NEW.status = 'connected' THEN 'connected' ELSE 'disconnected' END,
-      CASE WHEN NEW.status = 'connected' 
-        THEN 'Conectado ao WhatsApp'
-        ELSE 'Desconectado do WhatsApp'
-      END,
-      jsonb_build_object(
-        'old_status', OLD.status,
-        'new_status', NEW.status,
-        'owner_jid', NEW.owner_jid
-      ),
-      NEW.user_id
-    );
-  END IF;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+  <TabsList className="grid w-full grid-cols-4">
+    <TabsTrigger value="overview">Visao Geral</TabsTrigger>
+    <TabsTrigger value="groups">Grupos</TabsTrigger>
+    <TabsTrigger value="stats">Estatisticas</TabsTrigger>
+    <TabsTrigger value="history">Historico</TabsTrigger>
+  </TabsList>
+  <TabsContent value="overview" className="mt-6">
+    <InstanceOverview instance={instance} onUpdate={fetchInstance} />
+  </TabsContent>
+  <TabsContent value="groups" className="mt-6">
+    <InstanceGroups instance={instance} />
+  </TabsContent>
+  <TabsContent value="stats" className="mt-6">
+    <InstanceStats instance={instance} />
+  </TabsContent>
+  <TabsContent value="history" className="mt-6">
+    <InstanceHistory instance={instance} />
+  </TabsContent>
+</Tabs>
 ```
 
-### InstanceHistory - busca de dados reais
-
-```typescript
-const fetchLogs = async () => {
-  const { data, error } = await supabase
-    .from('instance_connection_logs')
-    .select('*')
-    .eq('instance_id', instance.id)
-    .order('created_at', { ascending: false })
-    .limit(50);
-  // ...
-};
-```
-
-### Seed inicial
-
-Ao criar a tabela, inserir um registro inicial de "created" para cada instancia existente baseado no `created_at` da instancia, para que o historico nao comece vazio.
+Esta e uma alteracao minima -- apenas restaurar o estado controlado que foi removido na edicao anterior.
