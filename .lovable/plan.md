@@ -1,63 +1,105 @@
 
-# Permitir Salvar Templates de Carrossel com Imagens por Upload
+# Corrigir Abas e Implementar Historico Real de Conexoes
 
-## Problema Atual
+## Problema 1: Abas nao funcionando
 
-Ao tentar salvar um template de carrossel cujas imagens foram adicionadas via upload (arquivo local), o sistema bloqueia e exibe o erro: *"Para salvar template de carrossel, use URLs para as imagens"*. Isso obriga o usuario a trocar todas as imagens para URL antes de salvar.
+Nos meus testes, as abas estao funcionando normalmente (cliquei em Grupos, Estatisticas e Historico e todas renderizaram conteudo). O problema pode ser intermitente ou estar relacionado ao carregamento da pagina. Para garantir robustez, vou:
 
-## Solucao
+- Adicionar `forceMount` nos `TabsContent` para pre-renderizar o conteudo (evita problemas de montagem tardia)
+- Ou garantir que o estado `activeTab` esteja sincronizado corretamente
 
-Antes de salvar o template, fazer upload automatico das imagens locais para o storage (bucket `carousel-images`) e substituir os arquivos pelas URLs publicas resultantes. O usuario nao precisa fazer nada diferente -- basta clicar em salvar.
+## Problema 2: Historico com dados mockados
 
-## Alteracoes
+Atualmente o `InstanceHistory` usa `getMockEvents()` que gera eventos falsos baseados apenas no `created_at` e `updated_at` da instancia. Para mostrar dados reais, preciso:
 
-### 1. `src/components/broadcast/BroadcastMessageForm.tsx`
+### 2.1 Criar tabela `instance_connection_logs`
 
-- Remover o bloqueio que impede salvar quando ha `imageFile` nos cards
-- Tornar `handleSaveTemplate` uma funcao `async`
-- Antes de retornar os dados do template, percorrer os cards e, para cada um que tenha `imageFile`, fazer upload via `uploadCarouselImage` e substituir pelo URL publico
-- Mostrar um toast de "Enviando imagens..." durante o processo
-- Atualizar a interface `onSave` do `TemplateSelector` para aceitar `Promise`
+Nova tabela no banco de dados para registrar eventos de conexao/desconexao:
 
-### 2. `src/components/broadcast/LeadMessageForm.tsx`
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid (PK) | Identificador unico |
+| instance_id | text | ID da instancia (referencia instances.id) |
+| event_type | text | Tipo: 'created', 'connected', 'disconnected', 'status_changed' |
+| description | text | Descricao do evento |
+| metadata | jsonb | Dados extras (owner_jid, status anterior, etc) |
+| created_at | timestamptz | Momento do evento |
+| user_id | uuid | Usuario que disparou o evento |
 
-- Mesma alteracao: remover bloqueio e fazer upload automatico dos arquivos locais antes de salvar
+RLS: usuarios veem logs das suas proprias instancias; super_admins veem tudo.
 
-### 3. `src/components/broadcast/TemplateSelector.tsx`
+### 2.2 Registrar eventos automaticamente
 
-- Atualizar o tipo da prop `onSave` para retornar `Promise<...> | ...` (suportar tanto sincrono quanto assincrono)
-- No `handleSave`, usar `await` no resultado de `onSave()` para lidar com o upload assincrono
-- Mostrar estado de loading adequado no botao de salvar durante o upload
+Nos pontos do codigo que alteram o status da instancia, inserir um registro na tabela:
+
+- **`InstanceOverview.tsx`**: Quando conecta via QR Code (evento `connected`)
+- **`InstanceDetails.tsx`**: Quando o polling detecta mudanca de status (evento `connected` ou `disconnected`)
+- **`DashboardHome.tsx`** / polling de status: Quando detecta mudanca de status
+
+Tambem criar um trigger no banco que registra automaticamente quando o campo `status` da tabela `instances` muda.
+
+### 2.3 Atualizar `InstanceHistory.tsx`
+
+- Remover `getMockEvents()` e dados mockados
+- Buscar dados reais da tabela `instance_connection_logs`
+- Manter o layout de timeline existente
+- Adicionar paginacao ou limite de eventos (ex: ultimos 50)
+- Remover o card informativo que diz "historico completo sera implementado"
+
+## Alteracoes por arquivo
+
+| Arquivo | Acao | Descricao |
+|---------|------|-----------|
+| Migration SQL | Criar | Tabela `instance_connection_logs` com RLS |
+| Migration SQL | Criar | Trigger na tabela `instances` para registrar mudancas de status automaticamente |
+| `src/components/instance/InstanceHistory.tsx` | Reescrever | Buscar dados reais do banco em vez de mockados |
+| `src/components/instance/InstanceOverview.tsx` | Modificar | Registrar evento de conexao quando QR code e escaneado |
+| `src/pages/dashboard/InstanceDetails.tsx` | Modificar | Registrar evento quando polling detecta mudanca de status |
 
 ## Detalhes Tecnicos
 
-### Fluxo de upload no `handleSaveTemplate`
+### Trigger SQL para capturar mudancas de status
 
-```typescript
-// Para cada card com imageFile:
-// 1. Upload para carousel-images bucket
-// 2. Obter URL publica
-// 3. Substituir imageFile pelo URL
-
-const uploadedCards = await Promise.all(
-  carouselData.cards.map(async (card) => {
-    if (card.imageFile) {
-      const url = await uploadCarouselImage(card.imageFile);
-      return { ...card, image: url, imageFile: undefined };
-    }
-    return { ...card, imageFile: undefined };
-  })
-);
+```sql
+CREATE OR REPLACE FUNCTION log_instance_status_change()
+RETURNS trigger AS $$
+BEGIN
+  IF OLD.status IS DISTINCT FROM NEW.status THEN
+    INSERT INTO instance_connection_logs (instance_id, event_type, description, metadata, user_id)
+    VALUES (
+      NEW.id,
+      CASE WHEN NEW.status = 'connected' THEN 'connected' ELSE 'disconnected' END,
+      CASE WHEN NEW.status = 'connected' 
+        THEN 'Conectado ao WhatsApp'
+        ELSE 'Desconectado do WhatsApp'
+      END,
+      jsonb_build_object(
+        'old_status', OLD.status,
+        'new_status', NEW.status,
+        'owner_jid', NEW.owner_jid
+      ),
+      NEW.user_id
+    );
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 ```
 
-### Funcao de upload existente
-
-O projeto ja possui `src/lib/uploadCarouselImage.ts` com as funcoes `uploadCarouselImage` e `base64ToFile`, e o bucket `carousel-images` ja esta configurado como publico. Nao e necessario criar nada novo no backend.
-
-### Tipo do `onSave` no TemplateSelector
+### InstanceHistory - busca de dados reais
 
 ```typescript
-onSave: () => Promise<{ ... } | null> | { ... } | null;
+const fetchLogs = async () => {
+  const { data, error } = await supabase
+    .from('instance_connection_logs')
+    .select('*')
+    .eq('instance_id', instance.id)
+    .order('created_at', { ascending: false })
+    .limit(50);
+  // ...
+};
 ```
 
-O `handleSave` do TemplateSelector passara a fazer `const templateData = await Promise.resolve(onSave())` para suportar ambos os casos.
+### Seed inicial
+
+Ao criar a tabela, inserir um registro inicial de "created" para cada instancia existente baseado no `created_at` da instancia, para que o historico nao comece vazio.
