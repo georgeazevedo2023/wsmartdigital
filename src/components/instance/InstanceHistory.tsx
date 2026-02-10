@@ -1,8 +1,11 @@
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Wifi, WifiOff, QrCode, Clock, Info } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Wifi, WifiOff, QrCode, Clock, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { supabase } from '@/integrations/supabase/client';
 
 interface Instance {
   id: string;
@@ -20,58 +23,94 @@ interface InstanceHistoryProps {
   instance: Instance;
 }
 
-// Eventos mockados - podem ser substituídos por dados reais de uma tabela de logs
-const getMockEvents = (instance: Instance) => {
-  const events = [
-    {
-      id: '1',
-      type: 'created',
-      title: 'Instância Criada',
-      description: `A instância ${instance.name} foi criada no sistema`,
-      timestamp: instance.created_at,
-      icon: QrCode,
-      color: 'text-blue-500',
-      bgColor: 'bg-blue-500/10',
-    },
-  ];
+interface ConnectionLog {
+  id: string;
+  instance_id: string;
+  event_type: string;
+  description: string | null;
+  metadata: Record<string, any> | null;
+  created_at: string;
+  user_id: string | null;
+}
 
-  // Adicionar evento de conexão se estiver conectado
-  if (instance.status === 'connected' && instance.owner_jid) {
-    events.push({
-      id: '2',
-      type: 'connected',
-      title: 'Conectado ao WhatsApp',
-      description: `Conectado ao número +${instance.owner_jid.split('@')[0]}`,
-      timestamp: instance.updated_at,
-      icon: Wifi,
-      color: 'text-success',
-      bgColor: 'bg-success/10',
-    });
-  }
-
-  // Adicionar evento de desconexão se desconectado mas tem owner_jid (já foi conectado antes)
-  if (instance.status === 'disconnected' && instance.owner_jid) {
-    events.push({
-      id: '3',
-      type: 'disconnected',
-      title: 'Desconectado',
-      description: 'A conexão com o WhatsApp foi perdida',
-      timestamp: instance.updated_at,
-      icon: WifiOff,
-      color: 'text-destructive',
-      bgColor: 'bg-destructive/10',
-    });
-  }
-
-  return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+const eventConfig: Record<string, { icon: typeof Wifi; color: string; bgColor: string }> = {
+  connected: { icon: Wifi, color: 'text-success', bgColor: 'bg-success/10' },
+  disconnected: { icon: WifiOff, color: 'text-destructive', bgColor: 'bg-destructive/10' },
+  created: { icon: QrCode, color: 'text-blue-500', bgColor: 'bg-blue-500/10' },
 };
 
+const defaultConfig = { icon: Clock, color: 'text-muted-foreground', bgColor: 'bg-muted' };
+
 const InstanceHistory = ({ instance }: InstanceHistoryProps) => {
-  const events = getMockEvents(instance);
+  const [logs, setLogs] = useState<ConnectionLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [instance.id]);
+
+  const fetchLogs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const { data, error: fetchError } = await supabase
+        .from('instance_connection_logs' as any)
+        .select('*')
+        .eq('instance_id', instance.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (fetchError) throw fetchError;
+
+      setLogs((data as any[] as ConnectionLog[]) || []);
+    } catch (err: any) {
+      console.error('Error fetching connection logs:', err);
+      setError('Erro ao carregar histórico');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              Histórico de Conexões
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <div className="space-y-4">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="flex gap-4 pl-2">
+              <Skeleton className="w-10 h-10 rounded-full shrink-0" />
+              <Skeleton className="h-20 flex-1" />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <Card>
+          <CardContent className="flex items-center gap-3 p-6">
+            <AlertCircle className="w-5 h-5 text-destructive" />
+            <p className="text-sm text-destructive">{error}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Info Card */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -84,57 +123,59 @@ const InstanceHistory = ({ instance }: InstanceHistoryProps) => {
         </CardHeader>
       </Card>
 
-      {/* Timeline */}
-      <div className="relative">
-        {/* Linha vertical */}
-        <div className="absolute left-[22px] top-0 bottom-0 w-px bg-border" />
+      {logs.length === 0 ? (
+        <Card>
+          <CardContent className="flex items-center justify-center p-8">
+            <p className="text-sm text-muted-foreground">Nenhum evento registrado ainda.</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="relative">
+          <div className="absolute left-[22px] top-0 bottom-0 w-px bg-border" />
+          <div className="space-y-4">
+            {logs.map((log) => {
+              const config = eventConfig[log.event_type] || defaultConfig;
+              const Icon = config.icon;
 
-        {/* Eventos */}
-        <div className="space-y-4">
-          {events.map((event, index) => (
-            <div key={event.id} className="relative flex gap-4 pl-2">
-              {/* Ícone do evento */}
-              <div
-                className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-full border-2 border-background ${event.bgColor}`}
-              >
-                <event.icon className={`w-4 h-4 ${event.color}`} />
-              </div>
-
-              {/* Conteúdo do evento */}
-              <Card className="flex-1">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h4 className="font-medium">{event.title}</h4>
-                      <p className="text-sm text-muted-foreground mt-1">
-                        {event.description}
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="shrink-0 text-xs">
-                      {format(new Date(event.timestamp), "dd/MM/yyyy 'às' HH:mm", {
-                        locale: ptBR,
-                      })}
-                    </Badge>
+              return (
+                <div key={log.id} className="relative flex gap-4 pl-2">
+                  <div
+                    className={`relative z-10 flex items-center justify-center w-10 h-10 rounded-full border-2 border-background ${config.bgColor}`}
+                  >
+                    <Icon className={`w-4 h-4 ${config.color}`} />
                   </div>
-                </CardContent>
-              </Card>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Nota informativa */}
-      <Card className="border-dashed">
-        <CardContent className="flex items-start gap-3 p-4">
-          <Info className="w-5 h-5 text-muted-foreground shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm text-muted-foreground">
-              O histórico completo de conexões será implementado em uma próxima atualização.
-              Por enquanto, são exibidos os eventos principais baseados nos dados atuais da instância.
-            </p>
+                  <Card className="flex-1">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <h4 className="font-medium">
+                            {log.description || log.event_type}
+                          </h4>
+                          {log.metadata && (log.metadata as any).owner_jid && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              Número: +{((log.metadata as any).owner_jid as string)?.split('@')[0]}
+                            </p>
+                          )}
+                          {log.metadata && (log.metadata as any).old_status && (
+                            <p className="text-sm text-muted-foreground mt-1">
+                              {(log.metadata as any).old_status} → {(log.metadata as any).new_status}
+                            </p>
+                          )}
+                        </div>
+                        <Badge variant="outline" className="shrink-0 text-xs">
+                          {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", {
+                            locale: ptBR,
+                          })}
+                        </Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              );
+            })}
           </div>
-        </CardContent>
-      </Card>
+        </div>
+      )}
     </div>
   );
 };
