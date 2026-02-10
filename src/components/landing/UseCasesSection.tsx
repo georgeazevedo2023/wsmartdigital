@@ -48,7 +48,7 @@ const useCases: UseCase[] = [
     title: 'Follow-up Automático',
     description: 'Reengaje leads que não responderam',
     type: 'message',
-    message: 'Oi, tudo bem? 😊 Vi que você se interessou pelo nosso plano Pro. Posso te ajudar com alguma dúvida? Estou à disposição!',
+    message: 'Oi! 😊 Enviei um orçamento na semana passada, conseguiu dar uma olhada? Se tiver qualquer dúvida sobre valores ou condições, posso te ajudar!\n\n📋 Ver orçamento: link.wsmart/orcamento',
     time: '14:15',
     color: 'from-blue-500 to-cyan-500',
   },
