@@ -21,12 +21,12 @@ const faqs = [
     answer: 'Sim! Você pode disparar para grupos do WhatsApp (ideal para comunidades) ou importar uma base de leads (telefones) para campanhas de prospecção. Ambos os modos estão inclusos.',
   },
   {
-    question: 'Posso testar antes de pagar?',
-    answer: 'Claro! Oferecemos 7 dias de teste grátis com acesso a todas as funcionalidades. Não pedimos cartão de crédito para começar. Experimente sem compromisso.',
+    question: 'Posso conhecer a plataforma antes de contratar?',
+    answer: 'Claro! Agende uma demonstração gratuita pelo WhatsApp e nosso time mostrará todas as funcionalidades ao vivo, tirando suas dúvidas em tempo real.',
   },
   {
     question: 'E se eu não gostar?',
-    answer: 'Sem problemas. Você pode cancelar a qualquer momento. Durante os 7 dias de teste, não há cobrança. Após assinar, você tem garantia de 7 dias para solicitar reembolso integral.',
+    answer: 'Sem problemas. Você pode cancelar a qualquer momento sem burocracia. Nosso objetivo é que você tenha resultados reais com a ferramenta.',
   },
   {
     question: 'Quantas instâncias posso conectar?',

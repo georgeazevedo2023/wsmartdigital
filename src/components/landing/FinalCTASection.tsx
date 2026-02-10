@@ -1,14 +1,7 @@
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { ArrowRight, Shield, CreditCard, Clock, CheckCircle2 } from 'lucide-react';
+import { Shield, CheckCircle2, MessageCircle } from 'lucide-react';
 import { useInView } from '@/hooks/useInView';
 import { cn } from '@/lib/utils';
-
-const guarantees = [
-  { icon: Clock, text: '7 dias grátis' },
-  { icon: CreditCard, text: 'Sem cartão de crédito' },
-  { icon: Shield, text: 'Cancele quando quiser' },
-];
 
 const FinalCTASection = () => {
   const { ref, isInView } = useInView({ threshold: 0.3 });
@@ -21,15 +14,6 @@ const FinalCTASection = () => {
       
       <div className="container mx-auto px-4 relative">
         <div className={cn("max-w-3xl mx-auto text-center transition-all duration-700", isInView ? "animate-fade-in" : "opacity-0 translate-y-10")}>
-          {/* Urgency Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-sm text-primary mb-8">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span>
-            </span>
-            <span>🔥 Período de testes com acesso ilimitado</span>
-          </div>
-          
           {/* Headline */}
           <h2 className="text-3xl md:text-5xl font-display font-bold mb-6">
             Comece a automatizar suas mensagens{' '}
@@ -42,32 +26,18 @@ const FinalCTASection = () => {
           </p>
           
           {/* CTA Button */}
-          <Link to="/login">
+          <a href="https://wa.me/5581993856099?text=Olá! Gostaria de agendar uma demonstração do WsmartQR." target="_blank" rel="noopener noreferrer">
             <Button size="lg" className="glow-primary text-lg px-10 py-7 mb-8">
-              Criar Conta Grátis
-              <ArrowRight className="w-5 h-5 ml-2" />
+              <MessageCircle className="w-5 h-5 mr-2" />
+              Agendar Demonstração
             </Button>
-          </Link>
-          
-          {/* Guarantees */}
-          <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-muted-foreground">
-            {guarantees.map((item, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <item.icon className="w-4 h-4 text-primary" />
-                <span>{item.text}</span>
-              </div>
-            ))}
-          </div>
+          </a>
           
           {/* Trust Elements */}
           <div className="mt-10 pt-10 border-t border-border/30 flex flex-wrap items-center justify-center gap-8">
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Shield className="w-5 h-5 text-primary" />
               <span>Conexão segura SSL</span>
-            </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <CheckCircle2 className="w-5 h-5 text-primary" />
-              <span>Garantia de 7 dias</span>
             </div>
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <CheckCircle2 className="w-5 h-5 text-primary" />
