@@ -1,7 +1,6 @@
-import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowRight, Zap, CheckCircle2, Shield, Play } from 'lucide-react';
+import { Zap, CheckCircle2, MessageCircle } from 'lucide-react';
 import { useInView } from '@/hooks/useInView';
 import { cn } from '@/lib/utils';
 
@@ -34,34 +33,14 @@ const HeroSection = () => {
               carrosséis e leads no WhatsApp — <strong className="text-foreground">sem perder contas</strong>.
             </p>
             
-            {/* CTAs */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start mb-8">
-              <Link to="/login">
+            {/* CTA */}
+            <div className="flex justify-center lg:justify-start mb-8">
+              <a href="https://wa.me/5581993856099?text=Olá! Gostaria de agendar uma demonstração do WsmartQR." target="_blank" rel="noopener noreferrer">
                 <Button size="lg" className="glow-primary w-full sm:w-auto text-base px-8 py-6">
-                  Testar Grátis por 7 Dias
-                  <ArrowRight className="w-5 h-5 ml-2" />
+                  <MessageCircle className="w-5 h-5 mr-2" />
+                  Agendar Demonstração
                 </Button>
-              </Link>
-              <Button size="lg" variant="outline" className="w-full sm:w-auto text-base px-8 py-6">
-                <Play className="w-5 h-5 mr-2" />
-                Ver Demonstração
-              </Button>
-            </div>
-            
-            {/* Trust Badges */}
-            <div className="flex flex-wrap items-center gap-4 justify-center lg:justify-start text-sm text-muted-foreground">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-primary" />
-                <span>7 dias grátis</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Shield className="w-4 h-4 text-primary" />
-                <span>Sem cartão de crédito</span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4 text-primary" />
-                <span>Cancele quando quiser</span>
-              </div>
+              </a>
             </div>
           </div>
 
