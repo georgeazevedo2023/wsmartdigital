@@ -34,7 +34,6 @@ const InstanceDetails = () => {
   const navigate = useNavigate();
   const [instance, setInstance] = useState<Instance | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     if (id) {
@@ -222,23 +221,23 @@ const InstanceDetails = () => {
       </div>
 
       {/* Tabs de navegação */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs defaultValue="overview" className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="groups">Grupos</TabsTrigger>
           <TabsTrigger value="stats">Estatísticas</TabsTrigger>
           <TabsTrigger value="history">Histórico</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" forceMount className={activeTab !== 'overview' ? 'hidden' : 'mt-6'}>
+        <TabsContent value="overview" className="mt-6">
           <InstanceOverview instance={instance} onUpdate={fetchInstance} />
         </TabsContent>
-        <TabsContent value="groups" forceMount className={activeTab !== 'groups' ? 'hidden' : 'mt-6'}>
+        <TabsContent value="groups" className="mt-6">
           <InstanceGroups instance={instance} />
         </TabsContent>
-        <TabsContent value="stats" forceMount className={activeTab !== 'stats' ? 'hidden' : 'mt-6'}>
+        <TabsContent value="stats" className="mt-6">
           <InstanceStats instance={instance} />
         </TabsContent>
-        <TabsContent value="history" forceMount className={activeTab !== 'history' ? 'hidden' : 'mt-6'}>
+        <TabsContent value="history" className="mt-6">
           <InstanceHistory instance={instance} />
         </TabsContent>
       </Tabs>
