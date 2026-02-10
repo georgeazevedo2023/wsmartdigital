@@ -34,6 +34,7 @@ const InstanceDetails = () => {
   const navigate = useNavigate();
   const [instance, setInstance] = useState<Instance | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
     if (id) {
@@ -221,7 +222,7 @@ const InstanceDetails = () => {
       </div>
 
       {/* Tabs de navegação */}
-      <Tabs defaultValue="overview" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Visão Geral</TabsTrigger>
           <TabsTrigger value="groups">Grupos</TabsTrigger>
