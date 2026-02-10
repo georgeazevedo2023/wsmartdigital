@@ -410,7 +410,7 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
     toast.success(`Template "${template.name}" aplicado`);
   };
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async () => {
     if (activeTab === 'carousel') {
       if (carouselData.cards.length < 2) {
         toast.error('O carrossel precisa ter pelo menos 2 cards');
@@ -418,21 +418,32 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       }
       const hasLocalFiles = carouselData.cards.some(card => card.imageFile);
       if (hasLocalFiles) {
-        toast.error('Para salvar template de carrossel, use URLs para as imagens');
+        toast.info('Enviando imagens do carrossel...');
+      }
+      try {
+        const uploadedCards = await Promise.all(
+          carouselData.cards.map(async (card) => {
+            if (card.imageFile) {
+              const url = await uploadCarouselImage(card.imageFile);
+              return { ...card, image: url, imageFile: undefined };
+            }
+            return { ...card, imageFile: undefined };
+          })
+        );
+        return {
+          name: '',
+          content: carouselData.message || undefined,
+          message_type: 'carousel',
+          carousel_data: {
+            message: carouselData.message,
+            cards: uploadedCards,
+          },
+        };
+      } catch (err) {
+        console.error('Error uploading carousel images:', err);
+        toast.error('Erro ao enviar imagens. Tente novamente.');
         return null;
       }
-      return {
-        name: '',
-        content: carouselData.message || undefined,
-        message_type: 'carousel',
-        carousel_data: {
-          message: carouselData.message,
-          cards: carouselData.cards.map(card => ({
-            ...card,
-            imageFile: undefined,
-          })),
-        },
-      };
     } else if (activeTab === 'text') {
       const trimmedMessage = message.trim();
       if (!trimmedMessage) {

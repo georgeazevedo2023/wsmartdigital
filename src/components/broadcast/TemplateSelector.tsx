@@ -52,16 +52,18 @@ import {
 import { MessageTemplate, useMessageTemplates } from '@/hooks/useMessageTemplates';
 import type { CarouselData } from './CarouselEditor';
 
+type TemplateData = { 
+  name: string; 
+  content?: string; 
+  message_type: string; 
+  media_url?: string; 
+  filename?: string;
+  carousel_data?: CarouselData;
+} | null;
+
 interface TemplateSelectorProps {
   onSelect: (template: MessageTemplate) => void;
-  onSave: () => { 
-    name: string; 
-    content?: string; 
-    message_type: string; 
-    media_url?: string; 
-    filename?: string;
-    carousel_data?: CarouselData;
-  } | null;
+  onSave: () => TemplateData | Promise<TemplateData>;
   disabled?: boolean;
 }
 
@@ -194,12 +196,15 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
   const handleSave = async () => {
     if (!templateName.trim()) return;
 
-    const templateData = onSave();
-    if (!templateData) return;
+    setIsSaving(true);
+    const templateData = await Promise.resolve(onSave());
+    if (!templateData) {
+      setIsSaving(false);
+      return;
+    }
 
     const finalCategory = showNewCategory ? newCategoryName.trim() : (templateCategory === '__none__' ? '' : templateCategory);
 
-    setIsSaving(true);
     const result = await createTemplate({
       ...templateData,
       name: templateName.trim(),
