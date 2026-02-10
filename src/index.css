@@ -167,6 +167,7 @@
     content: '';
     position: absolute;
     inset: 0;
+    pointer-events: none;
     background: 
       /* Soft magenta flow */
       radial-gradient(ellipse 80% 40% at 70% 50%, hsl(310 50% 45% / 0.06), transparent 50%),
