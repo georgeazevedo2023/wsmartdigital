@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -221,27 +221,35 @@ const InstanceDetails = () => {
         </Badge>
       </div>
 
-      {/* Tabs de navegação */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
-          <TabsTrigger value="overview">Visão Geral</TabsTrigger>
-          <TabsTrigger value="groups">Grupos</TabsTrigger>
-          <TabsTrigger value="stats">Estatísticas</TabsTrigger>
-          <TabsTrigger value="history">Histórico</TabsTrigger>
-        </TabsList>
-        <TabsContent value="overview" className="mt-6">
-          <InstanceOverview instance={instance} onUpdate={fetchInstance} />
-        </TabsContent>
-        <TabsContent value="groups" className="mt-6">
-          <InstanceGroups instance={instance} />
-        </TabsContent>
-        <TabsContent value="stats" className="mt-6">
-          <InstanceStats instance={instance} />
-        </TabsContent>
-        <TabsContent value="history" className="mt-6">
-          <InstanceHistory instance={instance} />
-        </TabsContent>
-      </Tabs>
+      {/* Navegação customizada */}
+      <div className="flex w-full bg-muted rounded-lg p-1 gap-1">
+        {[
+          { id: 'overview', label: 'Visão Geral' },
+          { id: 'groups', label: 'Grupos' },
+          { id: 'stats', label: 'Estatísticas' },
+          { id: 'history', label: 'Histórico' },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={cn(
+              "flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all",
+              activeTab === tab.id
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-6">
+        {activeTab === 'overview' && <InstanceOverview instance={instance} onUpdate={fetchInstance} />}
+        {activeTab === 'groups' && <InstanceGroups instance={instance} />}
+        {activeTab === 'stats' && <InstanceStats instance={instance} />}
+        {activeTab === 'history' && <InstanceHistory instance={instance} />}
+      </div>
     </div>
   );
 };
