@@ -229,16 +229,16 @@ const InstanceDetails = () => {
           <TabsTrigger value="stats">Estatísticas</TabsTrigger>
           <TabsTrigger value="history">Histórico</TabsTrigger>
         </TabsList>
-        <TabsContent value="overview" className="mt-6">
+        <TabsContent value="overview" forceMount className={activeTab !== 'overview' ? 'hidden' : 'mt-6'}>
           <InstanceOverview instance={instance} onUpdate={fetchInstance} />
         </TabsContent>
-        <TabsContent value="groups" className="mt-6">
+        <TabsContent value="groups" forceMount className={activeTab !== 'groups' ? 'hidden' : 'mt-6'}>
           <InstanceGroups instance={instance} />
         </TabsContent>
-        <TabsContent value="stats" className="mt-6">
+        <TabsContent value="stats" forceMount className={activeTab !== 'stats' ? 'hidden' : 'mt-6'}>
           <InstanceStats instance={instance} />
         </TabsContent>
-        <TabsContent value="history" className="mt-6">
+        <TabsContent value="history" forceMount className={activeTab !== 'history' ? 'hidden' : 'mt-6'}>
           <InstanceHistory instance={instance} />
         </TabsContent>
       </Tabs>
