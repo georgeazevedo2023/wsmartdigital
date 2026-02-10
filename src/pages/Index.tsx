@@ -8,6 +8,7 @@ import PainSection from '@/components/landing/PainSection';
 import TransformationSection from '@/components/landing/TransformationSection';
 import SocialProofNumbers from '@/components/landing/SocialProofNumbers';
 import FeaturesSection from '@/components/landing/FeaturesSection';
+import UseCasesSection from '@/components/landing/UseCasesSection';
 import HowItWorksSection from '@/components/landing/HowItWorksSection';
 import TestimonialsSection from '@/components/landing/TestimonialsSection';
 import FAQSection from '@/components/landing/FAQSection';
@@ -46,6 +47,7 @@ const Index = () => {
       <TransformationSection />
       <SocialProofNumbers />
       <FeaturesSection />
+      <UseCasesSection />
       <HowItWorksSection />
       <TestimonialsSection />
       <FAQSection />
