@@ -1,49 +1,87 @@
 
 
-# Substituir CTAs por "Agendar Demonstracao" com Mensagem no WhatsApp
+# Adicionar Secao de Casos de Uso Ilustrados na Landing Page
 
-## Resumo
+## Objetivo
 
-Remover os botoes "Testar Gratis por 7 Dias" e "Ver Demonstracao" (e suas correlacoes como badges de "7 dias gratis", "Sem cartao de credito", etc.) e substituir por um unico botao **"Agendar Demonstracao"** que abre o WhatsApp com uma mensagem pre-definida para o numero **5581993856099**.
+Criar uma nova secao visual na landing page mostrando exemplos concretos de uso do disparador, como ofertas, follow-up, lembretes, etc. Cada caso de uso tera um mockup ilustrado simulando uma conversa/mensagem no WhatsApp.
 
----
+## Posicionamento
 
-## Alteracoes por Arquivo
+A secao ficara entre **FeaturesSection** e **HowItWorksSection**, pois complementa as funcionalidades com exemplos praticos antes de mostrar como comecar.
 
-### 1. `src/components/landing/HeroSection.tsx`
+```text
+FeaturesSection
+    |
+UseCasesSection  <-- NOVA SECAO
+    |
+HowItWorksSection
+```
 
-- **Remover** os dois botoes atuais ("Testar Gratis por 7 Dias" + "Ver Demonstracao")
-- **Adicionar** um unico botao "Agendar Demonstracao" que abre `https://wa.me/5581993856099?text=...` com mensagem pre-definida (ex: "Ola! Gostaria de agendar uma demonstracao do WsmartQR.")
-- **Remover** os trust badges abaixo dos botoes ("7 dias gratis", "Sem cartao de credito", "Cancele quando quiser")
-- Remover imports nao usados (`Play`, `Shield`, `Link`)
+## Casos de Uso (5 cards)
 
-### 2. `src/components/landing/FinalCTASection.tsx`
+| Caso | Icone | Titulo | Descricao curta | Conteudo do mockup (balao de mensagem) |
+|------|-------|--------|-----------------|---------------------------------------|
+| Ofertas e Promocoes | Tag | "Ofertas Relampago" | Dispare promos segmentadas para sua base | Mockup com mensagem de desconto + emoji + botao "Comprar Agora" |
+| Follow-up de Vendas | MessageSquareReply | "Follow-up Automatico" | Reengaje leads que nao responderam | Mockup com mensagem de acompanhamento pos-contato |
+| Lembretes | Bell | "Lembretes Inteligentes" | Reduza faltas e atrasos com alertas | Mockup com lembrete de agendamento/consulta |
+| Lancamentos | Rocket | "Lancamentos e Novidades" | Gere expectativa e urgencia | Mockup com anuncio de produto novo + carrossel |
+| Cobranca e Avisos | CreditCard | "Cobranca e Avisos" | Recupere pagamentos de forma nao invasiva | Mockup com lembrete amigavel de boleto/pix |
 
-- **Substituir** o botao "Criar Conta Gratis" por "Agendar Demonstracao" com link para WhatsApp
-- **Remover** a secao de garantias ("7 dias gratis", "Sem cartao de credito", "Cancele quando quiser")
-- **Remover** o badge "Periodo de testes com acesso ilimitado"
-- **Atualizar** os trust elements: remover "Garantia de 7 dias", manter "Conexao segura SSL" e "Suporte via WhatsApp"
-- Remover imports nao usados (`Clock`, `CreditCard`, `Link`)
+## Design Visual
 
-### 3. `src/components/landing/FAQSection.tsx`
+Cada card tera:
+1. Um **icone** no topo com fundo colorido
+2. Um **titulo** e **descricao curta**
+3. Um **mockup de mensagem WhatsApp** estilizado com:
+   - Fundo verde escuro simulando um balao de chat
+   - Texto de exemplo da mensagem
+   - Horario ficticio (ex: 09:32)
+   - Badge de "Entregue" (dois checks)
 
-- **Atualizar** a FAQ "Posso testar antes de pagar?" para refletir o novo fluxo (agendar demonstracao em vez de teste gratis)
-- **Atualizar** a FAQ "E se eu nao gostar?" para remover mencoes aos 7 dias de teste gratis
+O layout sera um grid responsivo: 1 coluna no mobile, 2 no tablet, 3 no desktop. As animacoes usarao o hook `useInView` existente com delays escalonados.
 
----
+## Arquivos
+
+| Arquivo | Acao | Descricao |
+|---------|------|-----------|
+| `src/components/landing/UseCasesSection.tsx` | Criar | Nova secao com os 5 cards ilustrados |
+| `src/pages/Index.tsx` | Modificar | Importar e posicionar a secao entre Features e HowItWorks |
 
 ## Detalhes Tecnicos
 
-### Link do WhatsApp
+### Estrutura do componente `UseCasesSection.tsx`
 
-Todos os botoes "Agendar Demonstracao" usarao:
+- Importar icones do `lucide-react` (Tag, MessageSquareReply, Bell, Rocket, CreditCard, Check)
+- Usar `useInView` para animacoes de entrada
+- Usar classes existentes: `glass-card-hover`, `text-gradient`, `animate-fade-in`
+- Mockup do balao de mensagem criado com Tailwind (sem imagens externas):
+  - Container com `bg-[#005C4B]` (verde WhatsApp) e `rounded-xl`
+  - Texto da mensagem em branco
+  - Rodape com horario + checks em cinza claro
+- Grid com `grid md:grid-cols-2 lg:grid-cols-3 gap-6`
+
+### Exemplo de mockup (estrutura JSX)
+
+```tsx
+<div className="mt-4 bg-[#005C4B] rounded-xl p-3 text-white text-sm">
+  <p>Ola! Temos uma oferta exclusiva para voce: 30% OFF em todos os produtos ate sexta!</p>
+  <div className="flex items-center justify-end gap-1 mt-1 text-white/60 text-xs">
+    <span>09:32</span>
+    <Check className="w-3 h-3" />
+    <Check className="w-3 h-3 -ml-1.5" />
+  </div>
+</div>
 ```
-https://wa.me/5581993856099?text=Olá! Gostaria de agendar uma demonstração do WsmartQR.
+
+### Atualizacao em `Index.tsx`
+
+Adicionar import e posicionar entre `<FeaturesSection />` e `<HowItWorksSection />`:
+
+```tsx
+import UseCasesSection from '@/components/landing/UseCasesSection';
+// ...
+<FeaturesSection />
+<UseCasesSection />
+<HowItWorksSection />
 ```
-
-Implementado como `<a>` com `target="_blank"` e `rel="noopener noreferrer"`, envolvendo o componente `Button`.
-
-### Icone
-
-Trocar `ArrowRight` / `Play` pelo icone `MessageCircle` do Lucide (ou `Calendar`) para representar melhor a acao de agendar via WhatsApp.
-
