@@ -1,50 +1,65 @@
 
-# Corrigir Abas Nao Clicaveis na Pagina de Detalhes da Instancia
+# Substituir Tabs por Navegacao com Botoes Customizados
 
-## Diagnostico
+## Problema
 
-Nos testes do navegador, as abas estao funcionando normalmente. Porem, o usuario reporta que nao consegue clicar nelas. A causa provavel e que re-renderizacoes causadas pelo `fetchInstance` e `updateInstanceStatus` podem estar interferindo com o estado interno do componente `Tabs` quando usado no modo nao controlado (`defaultValue`).
+O componente `Tabs` do Radix UI continua com problemas de clique, possivelmente por conflito com re-renderizacoes do polling de status ou algum overlay invisivel na pagina.
 
 ## Solucao
 
-Trocar de `defaultValue` (nao controlado) para `value` + `onValueChange` (controlado), garantindo que o estado da aba ativa seja mantido mesmo apos re-renderizacoes. Tambem vou garantir que as atualizacoes de status nao causem ciclos de re-render que possam desmontar/remontar os componentes de aba.
+Remover completamente o componente `Tabs` do Radix UI e substituir por uma navegacao manual usando botoes estilizados + renderizacao condicional. Isso elimina qualquer dependencia do estado interno do Radix e garante controle total sobre a troca de conteudo.
+
+## Design Visual
+
+A navegacao tera um estilo moderno com botoes pill/segmented, semelhante ao que ja aparece na screenshot do usuario, mas usando elementos HTML simples (`button`) em vez do componente Radix.
 
 ## Alteracoes
 
 ### `src/pages/dashboard/InstanceDetails.tsx`
 
-- Restaurar o estado controlado `activeTab` com `useState('overview')`
-- Usar `value={activeTab}` e `onValueChange={setActiveTab}` no componente `Tabs`
-- Manter `TabsContent` sem `forceMount` (que causou problemas antes)
-- Garantir que `className="mt-6"` esteja presente em todos os `TabsContent`
-
-### Codigo resultante
+1. Remover imports de `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`
+2. Manter o `useState('overview')` para `activeTab`
+3. Criar botoes customizados para navegacao:
 
 ```tsx
-const [activeTab, setActiveTab] = useState('overview');
+const tabs = [
+  { id: 'overview', label: 'Visao Geral' },
+  { id: 'groups', label: 'Grupos' },
+  { id: 'stats', label: 'Estatisticas' },
+  { id: 'history', label: 'Historico' },
+];
 
-// ...
+// Navegacao
+<div className="flex w-full bg-muted rounded-lg p-1 gap-1">
+  {tabs.map(tab => (
+    <button
+      key={tab.id}
+      onClick={() => setActiveTab(tab.id)}
+      className={cn(
+        "flex-1 px-4 py-2 rounded-md text-sm font-medium transition-all",
+        activeTab === tab.id
+          ? "bg-background text-foreground shadow-sm"
+          : "text-muted-foreground hover:text-foreground"
+      )}
+    >
+      {tab.label}
+    </button>
+  ))}
+</div>
 
-<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-  <TabsList className="grid w-full grid-cols-4">
-    <TabsTrigger value="overview">Visao Geral</TabsTrigger>
-    <TabsTrigger value="groups">Grupos</TabsTrigger>
-    <TabsTrigger value="stats">Estatisticas</TabsTrigger>
-    <TabsTrigger value="history">Historico</TabsTrigger>
-  </TabsList>
-  <TabsContent value="overview" className="mt-6">
-    <InstanceOverview instance={instance} onUpdate={fetchInstance} />
-  </TabsContent>
-  <TabsContent value="groups" className="mt-6">
-    <InstanceGroups instance={instance} />
-  </TabsContent>
-  <TabsContent value="stats" className="mt-6">
-    <InstanceStats instance={instance} />
-  </TabsContent>
-  <TabsContent value="history" className="mt-6">
-    <InstanceHistory instance={instance} />
-  </TabsContent>
-</Tabs>
+// Conteudo
+<div className="mt-6">
+  {activeTab === 'overview' && <InstanceOverview ... />}
+  {activeTab === 'groups' && <InstanceGroups ... />}
+  {activeTab === 'stats' && <InstanceStats ... />}
+  {activeTab === 'history' && <InstanceHistory ... />}
+</div>
 ```
 
-Esta e uma alteracao minima -- apenas restaurar o estado controlado que foi removido na edicao anterior.
+4. Importar `cn` de `@/lib/utils` (se nao estiver importado)
+
+Esta abordagem:
+- Nao depende de nenhuma biblioteca de terceiros para a mecanica de abas
+- Usa botoes HTML nativos que sempre sao clicaveis
+- Mantem a mesma aparencia visual (estilo segmented control)
+- Resolve definitivamente o problema de clique
