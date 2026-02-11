@@ -1,111 +1,69 @@
 
 
-# Corrigir Realtime com Broadcast e Eliminar Duplicatas
+# Corrigir Realtime: Usar REST API para Broadcast
 
-## Diagnostico
+## Causa Raiz
 
-### Por que o Realtime nao funciona?
+O webhook usa `supabase.channel('helpdesk-realtime').send()` que depende de uma conexao WebSocket. Em Edge Functions, essa conexao nao e mantida -- o `send()` executa mas a mensagem **nunca chega** aos clientes. Por isso os logs mostram "broadcast sent" mas o frontend nao recebe nada.
 
-O Supabase Realtime usa `postgres_changes` que precisa avaliar as politicas RLS para cada subscriber. A politica de `conversation_messages` faz uma subconsulta cruzada:
+## Solucao
 
-```sql
-EXISTS (SELECT 1 FROM conversations c 
-  WHERE c.id = conversation_messages.conversation_id 
-  AND has_inbox_access(auth.uid(), c.inbox_id))
-```
+Substituir o broadcast via WebSocket pelo **Realtime Broadcast REST API**, que funciona via HTTP POST simples -- perfeito para Edge Functions.
 
-Mesmo com REPLICA IDENTITY FULL, essa avaliacao cruzada entre tabelas no contexto do Realtime e instavel -- o Supabase descarta silenciosamente os eventos quando nao consegue avaliar a politica RLS corretamente.
+### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
 
-### Por que as duplicatas persistem?
+Remover as linhas 253-268 (channel broadcast via WebSocket) e substituir por um HTTP POST direto:
 
-O webhook e o auto-sync (que roda quando a inbox e selecionada) inserem a mesma mensagem simultaneamente com `external_id` diferentes:
-- Webhook: `3A200DD280E1AC1CFFA0`
-- Sync: `558185749970:3A200DD280E1AC1CFFA0`
-
-A verificacao de duplicata no webhook nao acha a entrada do sync porque ambos rodam ao mesmo tempo.
-
----
-
-## Solucao em 3 Partes
-
-### Parte 1: Broadcast para Realtime confiavel
-
-Em vez de depender de `postgres_changes` (que depende de RLS), usar **Supabase Broadcast** -- um canal pub/sub simples que nao passa por RLS.
-
-**Webhook (`whatsapp-webhook/index.ts`):**
-Apos inserir a mensagem com sucesso, enviar um broadcast:
 ```typescript
-await supabase.channel('helpdesk-realtime').send({
-  type: 'broadcast',
-  event: 'new-message',
-  payload: { conversation_id, inbox_id, direction, content, media_type }
-})
+// Broadcast via REST API (reliable from Edge Functions)
+await fetch(
+  `${Deno.env.get('SUPABASE_URL')}/realtime/v1/api/broadcast`,
+  {
+    method: 'POST',
+    headers: {
+      'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages: [{
+        topic: 'helpdesk-realtime',
+        event: 'new-message',
+        payload: {
+          conversation_id: conversation.id,
+          inbox_id: inbox.id,
+          direction,
+          content,
+          media_type: mediaType,
+          media_url: mediaUrl || null,
+          created_at: msgTimestamp,
+        },
+      }],
+    }),
+  }
+)
 ```
 
-**ChatPanel.tsx:**
-Substituir a subscription `postgres_changes` por broadcast:
-```typescript
-supabase.channel('helpdesk-realtime')
-  .on('broadcast', { event: 'new-message' }, (payload) => {
-    if (payload.payload.conversation_id === conversation.id) {
-      fetchMessages() // refetch para garantir dados completos
-    }
-  })
-  .subscribe()
-```
+### Frontend: Nenhuma mudanca necessaria
 
-**HelpDesk.tsx:**
-Adicionar subscription broadcast para atualizar a lista de conversas:
-```typescript
-supabase.channel('helpdesk-list')
-  .on('broadcast', { event: 'new-message' }, (payload) => {
-    fetchConversations() // atualizar lista com nova mensagem
-  })
-  .subscribe()
-```
+O `ChatPanel.tsx` e `HelpDesk.tsx` ja escutam no canal `helpdesk-realtime` via broadcast -- so precisam receber as mensagens que agora serao entregues corretamente.
 
-### Parte 2: Eliminar duplicatas na raiz
+### Sobre a ideia de "mostrar primeiro no frontend"
 
-Criar um indice unico parcial no banco que normaliza o `external_id` para evitar duplicatas independente do formato:
+Nao e recomendado porque:
+- Se o banco rejeitar a mensagem (duplicata, erro), o usuario veria uma mensagem fantasma
+- Nao ha como saber o `conversation_id` correto sem consultar o banco primeiro
+- O fluxo correto e: webhook salva -> broadcast notifica -> frontend atualiza
+- Com o REST API funcionando, a latencia sera de milissegundos
 
-**Migration SQL:**
-```sql
--- Funcao para normalizar external_id (extrair apenas o messageid curto)
-CREATE OR REPLACE FUNCTION normalize_external_id(ext_id text)
-RETURNS text LANGUAGE sql IMMUTABLE AS $$
-  SELECT CASE 
-    WHEN ext_id LIKE '%:%' THEN split_part(ext_id, ':', 2)
-    ELSE ext_id
-  END
-$$;
+### Impacto em midia
 
--- Indice unico funcional que impede duplicatas
-CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_messages_normalized_external_id
-ON conversation_messages (conversation_id, normalize_external_id(external_id))
-WHERE external_id IS NOT NULL;
-```
+Zero impacto. O webhook ja extrai `fileURL`, `mediaType`, `caption` e os envia no payload do broadcast. O `MessageBubble` ja renderiza imagens, videos, audios e documentos.
 
-Isso impede qualquer insercao duplicada no nivel do banco, independente de race conditions.
+## Resumo
 
-**Webhook:** Usar `ON CONFLICT DO NOTHING` no insert para tratar o conflito graciosamente.
+| Componente | Mudanca |
+|-----------|---------|
+| `whatsapp-webhook/index.ts` | Trocar `channel.send()` por HTTP POST ao REST API do Realtime |
+| `ChatPanel.tsx` | Nenhuma |
+| `HelpDesk.tsx` | Nenhuma |
 
-### Parte 3: Remover auto-sync automatico
-
-O auto-sync que roda quando a inbox e selecionada causa race conditions com o webhook. Remover esse comportamento -- as mensagens devem chegar via webhook/broadcast em tempo real. O botao de sync manual continua disponivel para sincronizacoes iniciais.
-
----
-
-## Arquivos a Modificar
-
-| Arquivo | Mudanca |
-|---------|---------|
-| Migration SQL | Indice unico funcional para dedup |
-| `supabase/functions/whatsapp-webhook/index.ts` | Adicionar broadcast apos insert + ON CONFLICT DO NOTHING |
-| `src/components/helpdesk/ChatPanel.tsx` | Trocar postgres_changes por broadcast |
-| `src/pages/dashboard/HelpDesk.tsx` | Trocar postgres_changes por broadcast + remover auto-sync |
-
-## Resultado
-
-1. Mensagens aparecem instantaneamente via broadcast (sem depender de RLS)
-2. Zero duplicatas no banco (protegido por indice unico)
-3. Sem race conditions entre sync e webhook
