@@ -15,6 +15,7 @@ import {
   Clock,
   Send,
   Headphones,
+  Inbox,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -58,6 +59,7 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
 
   const adminItems = [
     { icon: Users, label: 'Usuários', path: '/dashboard/users' },
+    { icon: Inbox, label: 'Caixas de Entrada', path: '/dashboard/inboxes' },
     { icon: Settings, label: 'Configurações', path: '/dashboard/settings' },
   ];
 
