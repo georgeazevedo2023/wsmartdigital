@@ -1,172 +1,121 @@
 
-# Criar Tela de Gestão de Inboxes - Fase 1
+# Sincronizar Conversas do WhatsApp para o Helpdesk
 
-## Análise da Arquitetura Atual
+## Problema
 
-### Banco de Dados Existente
-- **Tabelas criadas**: `inboxes`, `inbox_users`, `contacts`, `conversations`, `conversation_messages`, `labels`
-- **Enums**: `inbox_role` (admin, gestor, agente, vendedor)
-- **Funções SQL**: `has_inbox_access()` para RLS e `get_inbox_role()` para obter o role do usuário
-- **Padrão existente**: Super Admin tem acesso total, usuários têm acesso filtrado por `user_instance_access`
+A tela de atendimento esta vazia porque o sistema so registra conversas quando o webhook recebe mensagens novas. As conversas existentes no WhatsApp da instancia "motorac" nunca foram importadas para o banco de dados.
 
-### Fluxo Esperado
-1. **Super Admin** cria caixa de entrada → vincula a uma instância
-2. **Super Admin** adiciona usuários à inbox com roles específicos
-3. **Gestores** da inbox podem gerenciar usuários/atribuições dentro de sua inbox
-4. **Agentes/Vendedores** acessam conversas de suas inboxes
+## Solucao
+
+Criar um fluxo de sincronizacao que busca os chats existentes na UAZAPI (via `POST /chat/search`) e os importa para o banco de dados, criando contatos e conversas automaticamente. Tambem adicionar um botao "Sincronizar" na interface do helpdesk.
 
 ---
 
-## 1. Implementação da Tela de Gestão de Inboxes
+## 1. Nova action `sync-chats` no uazapi-proxy
 
-### Rota e Página Principal
-**Arquivo**: `src/pages/dashboard/InboxManagement.tsx`
+Adicionar uma nova action na edge function `uazapi-proxy` que:
 
-Estrutura:
-- Header com botão "Nova Caixa de Entrada"
-- Grid/Lista de inboxes com informações:
-  - Nome da inbox
-  - Instância vinculada
-  - Número de usuários
-  - Criado por (nome do super admin)
-  - Botões: Gerenciar Usuários, Editar, Deletar
-
-### Dialog para Criar Inbox
-- Input: Nome da caixa de entrada
-- Select: Selecionar instância (carrega instâncias do banco)
-- Só super admins podem criar
-
-### Dialog para Gerenciar Usuários da Inbox
-Permite:
-- Adicionar usuários existentes com seleção de role (`inbox_role`)
-- Remover usuários
-- Editar role de usuários já membros
-- Listar todos os membros atuais com seus roles
+1. Chama `POST /chat/search` da UAZAPI com o token da instancia para obter a lista de chats individuais (excluindo grupos `@g.us`)
+2. Retorna os chats para o frontend processar
 
 ---
 
-## 2. Componentes Novos
+## 2. Nova Edge Function `sync-conversations`
 
-| Componente | Função |
-|------------|--------|
-| `InboxManagementPage.tsx` | Página principal com lista de inboxes |
-| `InboxCard.tsx` | Card individual de cada inbox (estilo similar a UserManagement) |
-| `CreateInboxDialog.tsx` | Dialog para criar nova inbox |
-| `ManageInboxUsersDialog.tsx` | Dialog para gerenciar membros e roles |
+Criar uma edge function dedicada que recebe o `inbox_id` e executa o fluxo completo:
+
+1. Busca a inbox e a instancia vinculada (com token)
+2. Chama `POST /chat/search` da UAZAPI para listar todos os chats
+3. Para cada chat individual (nao grupo):
+   - Faz upsert do contato na tabela `contacts` (jid, phone, name)
+   - Verifica se ja existe conversa aberta/pendente para este contato nesta inbox
+   - Se nao existir, cria nova conversa com status "aberta"
+   - Busca as ultimas mensagens do chat via UAZAPI (`POST /chat/messages` ou endpoint equivalente)
+   - Insere as mensagens na tabela `conversation_messages` (evitando duplicatas via `external_id`)
+4. Retorna contagem de conversas sincronizadas
+
+**Endpoint**: `POST /functions/v1/sync-conversations`
+**Body**: `{ inbox_id: string }`
+**Auth**: JWT do usuario (verificado)
 
 ---
 
-## 3. Integração com Sidebar
+## 3. Modificacoes na Interface
 
-Adicionar link para "Caixas de Entrada" no sidebar apenas para Super Admins:
-- Ícone: `Package` ou `MessageSquare`
-- Path: `/dashboard/inboxes`
-- Posição: Logo após "Usuários" nas admin items
+### 3.1 HelpDesk.tsx
+
+- Adicionar seletor de inbox no topo (quando o usuario tem acesso a mais de uma)
+- Filtrar conversas pela inbox selecionada
+- Adicionar botao "Sincronizar" que chama a edge function `sync-conversations`
+- Mostrar loading durante a sincronizacao
+
+### 3.2 ConversationList.tsx
+
+- Adicionar botao de sync no header (icone RefreshCw)
+- Exibir contador de conversas
 
 ---
 
-## 4. Permissões e RLS
+## 4. Configuracao
 
-As políticas RLS já estão implementadas:
-- `has_inbox_access()` → verifica se user está em `inbox_users`
-- `get_inbox_role()` → retorna o role do usuário naquela inbox
-- Super Admins têm acesso total via `is_super_admin()`
+### Nova Edge Function no config.toml:
+```
+[functions.sync-conversations]
+verify_jwt = false
+```
 
-**Nenhuma mudança no banco é necessária** — as RLS já suportam o modelo.
+(JWT sera verificado internamente pela funcao)
 
 ---
 
 ## 5. Fluxo de Dados
 
-### Criar Inbox
-```
-Super Admin → Dialog "Nova Inbox" 
-  → Seleciona instância 
-  → Insert em `inboxes` (created_by = auth.uid())
-  → Toast de sucesso
-  → Atualiza lista
-```
-
-### Gerenciar Usuários
-```
-Super Admin clica "Gerenciar Usuários"
-  → Dialog abre com:
-    - Lista de membros atuais (de `inbox_users`)
-    - Input para adicionar novo usuário (select com usuários do banco)
-    - Select de role para o novo usuário
-    - Botões de deletar por membro
-  → Insert/Delete em `inbox_users`
+```text
+Usuario clica "Sincronizar"
+  -> Frontend chama sync-conversations(inbox_id)
+  -> Edge Function busca inbox -> instance -> token
+  -> Chama UAZAPI POST /chat/search (token da instancia)
+  -> Filtra chats individuais (sem @g.us)
+  -> Para cada chat:
+     -> Upsert contato em contacts
+     -> Upsert conversa em conversations
+     -> Busca mensagens recentes via UAZAPI
+     -> Insert mensagens em conversation_messages
+  -> Retorna { synced: N }
+  -> Frontend atualiza lista de conversas
 ```
 
 ---
 
-## 6. Interface Visual
+## 6. Detalhes Tecnicos
 
-**Estilo**: Glassmorphism + cards com badge de status (similar a UsersManagement.tsx)
+### Endpoint UAZAPI para listar chats:
+```
+POST /chat/search
+Header: token: <instance_token>
+Body: { "count": 100, "type": "individual" }
+```
 
-**Grid Layout**:
+### Endpoint UAZAPI para buscar mensagens de um chat:
 ```
-┌─────────────────────────────────────────┐
-│ Caixas de Entrada                       │
-│                          [+ Nova Inbox] │
-├─────────────────────────────────────────┤
-│                                         │
-│  ┌──────────────────┐  ┌──────────────┐ │
-│  │ 📦 Support       │  │ 📦 Sales     │ │
-│  │ Instância: Inst1 │  │ Instância:.. │ │
-│  │ 5 membros        │  │ 3 membros    │ │
-│  │ [Gerenciar] [•]  │  │ [Gerenciar]..│ │
-│  └──────────────────┘  └──────────────┘ │
-│                                         │
-└─────────────────────────────────────────┘
+POST /chat/messages  (ou GET /chat/messages?jid=...)
+Header: token: <instance_token>
+Body: { "chatjid": "5585999999999@s.whatsapp.net", "count": 50 }
 ```
+
+### Prevencao de duplicatas:
+- Contatos: upsert por `jid` (coluna unique)
+- Conversas: busca por `inbox_id + contact_id + status IN (aberta, pendente)`
+- Mensagens: verificar `external_id` antes de inserir
 
 ---
 
-## 7. Detalhes Técnicos
+## 7. Arquivos
 
-### Queries Necessárias
-
-```typescript
-// Listar inboxes com info das instâncias
-SELECT inboxes.*, instances.name as instance_name
-FROM inboxes
-JOIN instances ON inboxes.instance_id = instances.id
-WHERE is_super_admin(auth.uid()) -- RLS policy
-
-// Listar membros de uma inbox
-SELECT inbox_users.*, user_profiles.full_name, user_profiles.email
-FROM inbox_users
-JOIN user_profiles ON inbox_users.user_id = user_profiles.id
-WHERE inbox_id = $1
-
-// Listar usuários disponíveis (para adicionar)
-SELECT * FROM user_profiles
-```
-
-### Edge Function ou Client-Side?
-**Client-side** é suficiente — as queries são simples e as RLS policies protegem tudo. Sem necessidade de edge functions novas.
-
----
-
-## 8. Arquivos a Criar/Modificar
-
-### Novos Arquivos:
-- `src/pages/dashboard/InboxManagement.tsx`
-- `src/components/dashboard/InboxCard.tsx`
-- `src/components/dashboard/CreateInboxDialog.tsx`
-- `src/components/dashboard/ManageInboxUsersDialog.tsx`
+### Novos:
+- `supabase/functions/sync-conversations/index.ts`
 
 ### Modificados:
-- `src/App.tsx` → Adicionar rota `/dashboard/inboxes`
-- `src/components/dashboard/Sidebar.tsx` → Adicionar link "Caixas de Entrada"
-
----
-
-## 9. Fase Futura (Não Incluído Aqui)
-
-- Dashboard de analytics por inbox (conversas, tempo resposta)
-- Auto-assign de conversas por round-robin
-- Transferência entre gestores/equipes
-- Histórico de auditoria (quem criou/deletou inbox)
-
+- `src/pages/dashboard/HelpDesk.tsx` (seletor inbox + botao sync)
+- `src/components/helpdesk/ConversationList.tsx` (botao sync no header)
+- `supabase/functions/uazapi-proxy/index.ts` (action `sync-chats` opcional)
