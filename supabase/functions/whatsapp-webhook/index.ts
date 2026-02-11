@@ -117,7 +117,10 @@ Deno.serve(async (req) => {
 
     // Extract content and media
     const mediaType = normalizeMediaType(message.mediaType || message.type || '')
-    const mediaUrl = message.fileURL || message.mediaUrl || ''
+    let mediaUrl = message.fileURL || message.mediaUrl || ''
+    if (!mediaUrl && message.content && typeof message.content === 'object') {
+      mediaUrl = message.content.URL || message.content.url || ''
+    }
     const rawContent = message.text || message.caption || ''
     let content = typeof rawContent === 'string' ? rawContent : ''
     if (!content && typeof message.content === 'string') {
