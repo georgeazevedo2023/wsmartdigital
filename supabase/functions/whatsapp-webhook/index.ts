@@ -110,7 +110,10 @@ Deno.serve(async (req) => {
     const chatId = message.chatid || message.sender || ''
     const fromMe = message.fromMe === true
     const direction = fromMe ? 'outgoing' : 'incoming'
-    const externalId = message.messageid || message.id || ''
+    const rawExternalId = message.messageid || message.id || ''
+    // Normalize: strip "owner:" prefix if present to use short format consistently
+    const externalId = rawExternalId.includes(':') ? rawExternalId.split(':').pop()! : rawExternalId
+    const owner = payload.owner || chatId.split('@')[0] || ''
 
     // Extract content and media
     const mediaType = normalizeMediaType(message.mediaType || message.type || '')
@@ -129,7 +132,7 @@ Deno.serve(async (req) => {
       const { data: existingMsg } = await supabase
         .from('conversation_messages')
         .select('id')
-        .eq('external_id', externalId)
+        .or(`external_id.eq.${externalId},external_id.eq.${owner}:${externalId}`)
         .maybeSingle()
 
       if (existingMsg) {
