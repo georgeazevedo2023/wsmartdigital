@@ -205,8 +205,8 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Insert message
-    const { error: insertError } = await supabase.from('conversation_messages').insert({
+    // Insert message (ON CONFLICT DO NOTHING for dedup via unique index)
+    const { data: insertedMsg, error: insertError } = await supabase.from('conversation_messages').insert({
       conversation_id: conversation.id,
       direction,
       content,
@@ -214,12 +214,27 @@ Deno.serve(async (req) => {
       media_url: mediaUrl || null,
       external_id: externalId || null,
       created_at: msgTimestamp,
-    })
+    }).select('id').maybeSingle()
 
     if (insertError) {
+      // Check if it's a unique constraint violation (duplicate) - treat as success
+      if (insertError.code === '23505') {
+        console.log('Duplicate detected by unique index, skipping:', externalId)
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'duplicate_index' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
       console.error('Failed to insert message:', insertError)
       return new Response(JSON.stringify({ error: 'Failed to insert message' }), {
         status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // If no row was inserted (shouldn't happen with error check above, but just in case)
+    if (!insertedMsg) {
+      console.log('No row inserted (possible duplicate):', externalId)
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'no_insert' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
@@ -234,7 +249,25 @@ Deno.serve(async (req) => {
       .update(updateData)
       .eq('id', conversation.id)
 
-    console.log('Message processed successfully:', conversation.id, direction, mediaType)
+    // Broadcast the new message for realtime (bypasses RLS issues with postgres_changes)
+    const broadcastChannel = supabase.channel('helpdesk-realtime')
+    await broadcastChannel.send({
+      type: 'broadcast',
+      event: 'new-message',
+      payload: {
+        conversation_id: conversation.id,
+        inbox_id: inbox.id,
+        message_id: insertedMsg.id,
+        direction,
+        content,
+        media_type: mediaType,
+        media_url: mediaUrl || null,
+        created_at: msgTimestamp,
+      },
+    })
+    await supabase.removeChannel(broadcastChannel)
+
+    console.log('Message processed + broadcast sent:', conversation.id, direction, mediaType)
 
     return new Response(JSON.stringify({ ok: true, conversation_id: conversation.id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

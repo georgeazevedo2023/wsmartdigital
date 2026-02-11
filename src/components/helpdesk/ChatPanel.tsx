@@ -39,19 +39,17 @@ export const ChatPanel = ({ conversation, onUpdateConversation }: ChatPanelProps
     fetchMessages();
   }, [conversation?.id]);
 
-  // Realtime for messages
+  // Realtime via broadcast (bypasses RLS evaluation issues with postgres_changes)
   useEffect(() => {
     if (!conversation) return;
 
     const channel = supabase
-      .channel(`chat-${conversation.id}`)
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'conversation_messages',
-        filter: `conversation_id=eq.${conversation.id}`,
-      }, (payload) => {
-        setMessages(prev => [...prev, payload.new as Message]);
+      .channel('helpdesk-realtime')
+      .on('broadcast', { event: 'new-message' }, (payload) => {
+        if (payload.payload?.conversation_id === conversation.id) {
+          // Refetch to get complete message data
+          fetchMessages();
+        }
       })
       .subscribe();
 

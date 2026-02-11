@@ -138,82 +138,37 @@ const HelpDesk = () => {
     }
   }, [user, statusFilter, selectedInboxId]);
 
-  // Auto-sync when inbox is selected (once per session per inbox)
+  // Realtime via broadcast (bypasses RLS issues with postgres_changes)
   useEffect(() => {
-    if (!selectedInboxId || syncedInboxes.has(selectedInboxId)) return;
+    if (!selectedInboxId) return;
 
-    const autoSync = async () => {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) return;
-
-        setSyncing(true);
-        const res = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-conversations`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${session.access_token}`,
-            },
-            body: JSON.stringify({ inbox_id: selectedInboxId }),
-          }
-        );
-
-        if (res.ok) {
-          setSyncedInboxes(prev => new Set(prev).add(selectedInboxId));
-          fetchConversations();
-        }
-      } catch (err) {
-        console.error('Auto-sync error:', err);
-      } finally {
-        setSyncing(false);
-      }
-    };
-
-    autoSync();
-  }, [selectedInboxId]);
-
-  // Realtime subscription
-  useEffect(() => {
     const channel = supabase
-      .channel('helpdesk-conversations')
-      .on('postgres_changes', {
-        event: '*',
-        schema: 'public',
-        table: 'conversations',
-      }, (payload) => {
-        // Update in-place instead of refetching all
-        if (payload.eventType === 'UPDATE' && payload.new) {
-          setConversations(prev => prev.map(c =>
-            c.id === (payload.new as any).id ? { ...c, ...(payload.new as any) } : c
-          ));
-          if (selectedConversation?.id === (payload.new as any).id) {
-            setSelectedConversation(prev => prev ? { ...prev, ...(payload.new as any) } : null);
-          }
-        } else {
-          fetchConversations();
+      .channel('helpdesk-list')
+      .on('broadcast', { event: 'new-message' }, (payload) => {
+        const data = payload.payload;
+        if (data?.inbox_id === selectedInboxId) {
+          // Update last_message preview in-place
+          setConversations(prev => {
+            const exists = prev.some(c => c.id === data.conversation_id);
+            if (exists) {
+              return prev.map(c =>
+                c.id === data.conversation_id
+                  ? { ...c, last_message: data.content || c.last_message, last_message_at: data.created_at, is_read: false }
+                  : c
+              );
+            }
+            // New conversation - refetch to get full data
+            fetchConversations();
+            return prev;
+          });
         }
-      })
-      .on('postgres_changes', {
-        event: 'INSERT',
-        schema: 'public',
-        table: 'conversation_messages',
-      }, (payload) => {
-        const newMsg = payload.new as any;
-        // Update last_message preview in-place
-        setConversations(prev => prev.map(c =>
-          c.id === newMsg.conversation_id
-            ? { ...c, last_message: newMsg.content || c.last_message, last_message_at: newMsg.created_at }
-            : c
-        ));
       })
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [user, selectedInboxId]);
+  }, [selectedInboxId]);
 
   const handleSync = async () => {
     if (!selectedInboxId || syncing) return;
