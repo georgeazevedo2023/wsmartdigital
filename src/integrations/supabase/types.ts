@@ -760,6 +760,7 @@ export type Database = {
         Returns: boolean
       }
       is_super_admin: { Args: { _user_id: string }; Returns: boolean }
+      normalize_external_id: { Args: { ext_id: string }; Returns: string }
     }
     Enums: {
       app_role: "super_admin" | "user"
