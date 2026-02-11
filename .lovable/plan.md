@@ -1,59 +1,97 @@
 
-# Corrigir Realtime e Duplicatas no Helpdesk
 
-## Problemas Identificados
+# Corrigir Realtime com Broadcast e Eliminar Duplicatas
 
-### 1. Realtime NAO funciona por causa do REPLICA IDENTITY
+## Diagnostico
 
-As tabelas `conversations` e `conversation_messages` usam **REPLICA IDENTITY DEFAULT** (apenas chave primaria). As politicas RLS usam subconsultas com `conversation_id` e `inbox_id` (colunas que nao sao chave primaria).
+### Por que o Realtime nao funciona?
 
-O Supabase Realtime precisa de **REPLICA IDENTITY FULL** para avaliar politicas RLS que referenciam colunas alem da chave primaria. Sem isso, os eventos sao silenciosamente descartados -- por isso as mensagens so aparecem ao clicar em sincronizar.
+O Supabase Realtime usa `postgres_changes` que precisa avaliar as politicas RLS para cada subscriber. A politica de `conversation_messages` faz uma subconsulta cruzada:
 
-### 2. Mensagens duplicadas
+```sql
+EXISTS (SELECT 1 FROM conversations c 
+  WHERE c.id = conversation_messages.conversation_id 
+  AND has_inbox_access(auth.uid(), c.inbox_id))
+```
 
-Cada mensagem esta sendo inserida DUAS VEZES:
-- Via **sync**: `external_id = "558185749970:3AF951C9048BFD7DE951"` (usa `message.id`)
-- Via **webhook**: `external_id = "3AF951C9048BFD7DE951"` (usa `message.messageid`)
+Mesmo com REPLICA IDENTITY FULL, essa avaliacao cruzada entre tabelas no contexto do Realtime e instavel -- o Supabase descarta silenciosamente os eventos quando nao consegue avaliar a politica RLS corretamente.
 
-A deduplicacao falha porque os formatos sao diferentes.
+### Por que as duplicatas persistem?
 
-**Evidencia do banco:**
-| content | external_id |
-|---------|------------|
-| Teste10 | 558185749970:3AF951C9048BFD7DE951 |
-| Teste10 | 3AF951C9048BFD7DE951 |
+O webhook e o auto-sync (que roda quando a inbox e selecionada) inserem a mesma mensagem simultaneamente com `external_id` diferentes:
+- Webhook: `3A200DD280E1AC1CFFA0`
+- Sync: `558185749970:3A200DD280E1AC1CFFA0`
+
+A verificacao de duplicata no webhook nao acha a entrada do sync porque ambos rodam ao mesmo tempo.
 
 ---
 
-## Solucao
+## Solucao em 3 Partes
 
-### Parte 1: Migration SQL
+### Parte 1: Broadcast para Realtime confiavel
 
-Executar migracoes para:
+Em vez de depender de `postgres_changes` (que depende de RLS), usar **Supabase Broadcast** -- um canal pub/sub simples que nao passa por RLS.
 
-1. **Habilitar REPLICA IDENTITY FULL** nas duas tabelas -- isso permite que o Supabase Realtime avalie as politicas RLS corretamente e entregue eventos em tempo real
+**Webhook (`whatsapp-webhook/index.ts`):**
+Apos inserir a mensagem com sucesso, enviar um broadcast:
+```typescript
+await supabase.channel('helpdesk-realtime').send({
+  type: 'broadcast',
+  event: 'new-message',
+  payload: { conversation_id, inbox_id, direction, content, media_type }
+})
+```
 
+**ChatPanel.tsx:**
+Substituir a subscription `postgres_changes` por broadcast:
+```typescript
+supabase.channel('helpdesk-realtime')
+  .on('broadcast', { event: 'new-message' }, (payload) => {
+    if (payload.payload.conversation_id === conversation.id) {
+      fetchMessages() // refetch para garantir dados completos
+    }
+  })
+  .subscribe()
+```
+
+**HelpDesk.tsx:**
+Adicionar subscription broadcast para atualizar a lista de conversas:
+```typescript
+supabase.channel('helpdesk-list')
+  .on('broadcast', { event: 'new-message' }, (payload) => {
+    fetchConversations() // atualizar lista com nova mensagem
+  })
+  .subscribe()
+```
+
+### Parte 2: Eliminar duplicatas na raiz
+
+Criar um indice unico parcial no banco que normaliza o `external_id` para evitar duplicatas independente do formato:
+
+**Migration SQL:**
 ```sql
-ALTER TABLE conversation_messages REPLICA IDENTITY FULL;
-ALTER TABLE conversations REPLICA IDENTITY FULL;
+-- Funcao para normalizar external_id (extrair apenas o messageid curto)
+CREATE OR REPLACE FUNCTION normalize_external_id(ext_id text)
+RETURNS text LANGUAGE sql IMMUTABLE AS $$
+  SELECT CASE 
+    WHEN ext_id LIKE '%:%' THEN split_part(ext_id, ':', 2)
+    ELSE ext_id
+  END
+$$;
+
+-- Indice unico funcional que impede duplicatas
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversation_messages_normalized_external_id
+ON conversation_messages (conversation_id, normalize_external_id(external_id))
+WHERE external_id IS NOT NULL;
 ```
 
-2. **Limpar mensagens duplicadas** existentes -- remover as duplicatas mantendo apenas uma copia de cada mensagem
+Isso impede qualquer insercao duplicada no nivel do banco, independente de race conditions.
 
-### Parte 2: Webhook (`whatsapp-webhook/index.ts`)
+**Webhook:** Usar `ON CONFLICT DO NOTHING` no insert para tratar o conflito graciosamente.
 
-Corrigir a deduplicacao para verificar AMBOS os formatos de `external_id`:
+### Parte 3: Remover auto-sync automatico
 
-```text
-Antes:  .eq('external_id', messageid)
-Depois: .or(`external_id.eq.${messageid},external_id.eq.${owner}:${messageid}`)
-```
-
-Tambem normalizar o `external_id` para usar sempre o formato curto (`messageid` sem prefixo), mantendo consistencia com futuras insercoes.
-
-### Parte 3: Suporte a Midia (ja preparado)
-
-O webhook ja extrai `fileURL`, `mediaType`, `caption` e `fileName` do payload UAZAPI e os mapeia para `media_url`, `media_type` e `content` no banco. Nenhuma mudanca adicional necessaria.
+O auto-sync que roda quando a inbox e selecionada causa race conditions com o webhook. Remover esse comportamento -- as mensagens devem chegar via webhook/broadcast em tempo real. O botao de sync manual continua disponivel para sincronizacoes iniciais.
 
 ---
 
@@ -61,12 +99,13 @@ O webhook ja extrai `fileURL`, `mediaType`, `caption` e `fileName` do payload UA
 
 | Arquivo | Mudanca |
 |---------|---------|
-| Migration SQL | REPLICA IDENTITY FULL + limpeza de duplicatas |
-| `supabase/functions/whatsapp-webhook/index.ts` | Corrigir deduplicacao para checar ambos formatos de external_id |
+| Migration SQL | Indice unico funcional para dedup |
+| `supabase/functions/whatsapp-webhook/index.ts` | Adicionar broadcast apos insert + ON CONFLICT DO NOTHING |
+| `src/components/helpdesk/ChatPanel.tsx` | Trocar postgres_changes por broadcast |
+| `src/pages/dashboard/HelpDesk.tsx` | Trocar postgres_changes por broadcast + remover auto-sync |
 
-## Resultado Esperado
+## Resultado
 
-Apos as mudancas:
-1. Mensagens do webhook aparecem **instantaneamente** no chat (Realtime funcional)
-2. Sem duplicatas no banco de dados
-3. Suporte a texto, imagem, video, audio e documentos via webhook
+1. Mensagens aparecem instantaneamente via broadcast (sem depender de RLS)
+2. Zero duplicatas no banco (protegido por indice unico)
+3. Sem race conditions entre sync e webhook
