@@ -1,36 +1,24 @@
 
+# Corrigir Download de Midia: Adicionar chatid e Fallback para Storage
 
-# Baixar Midia via UAZAPI /message/download
+## Problema Identificado
 
-## Problema
+O endpoint `POST /message/download` da UAZAPI retorna **404 "Message not found"** porque o body enviado contem apenas `{ messageid }`, mas o endpoint provavelmente precisa tambem do `chatid` (padrao comum em APIs WhatsApp como green-api).
 
-As URLs de midia do WhatsApp (`mmg.whatsapp.net`) sao temporarias e expiram rapidamente. Mesmo quando o webhook extrai a URL corretamente de `message.content.URL`, ela ja nao funciona quando o usuario tenta visualizar no helpdesk.
+Alem disso, mesmo que o download via UAZAPI funcione, e prudente ter um **fallback**: baixar o arquivo da URL CDN temporaria (`mmg.whatsapp.net`) e armazenar no Supabase Storage para persistencia.
 
-## Solucao
+## Solucao em 2 Partes
 
-No webhook, apos detectar que a mensagem contem midia, chamar o endpoint `POST /message/download` da UAZAPI para obter uma URL persistente (hospedada no servidor UAZAPI) antes de salvar no banco.
+### Parte 1: Corrigir chamada ao /message/download
 
-## Mudancas no Webhook
-
-### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
-
-1. **Buscar o token da instancia** - O webhook ja faz lookup da instancia mas nao seleciona o `token`. Alterar o select para incluir `token`:
-
-```typescript
-const { data: instance } = await supabase
-  .from('instances')
-  .select('id, name, token')  // adicionar token
-  .or(`id.eq.${instanceName},name.eq.${instanceName}`)
-  .maybeSingle()
-```
-
-2. **Adicionar funcao para baixar midia** - Nova funcao que chama `POST /message/download` da UAZAPI:
+No `downloadMedia()`, incluir o `chatid` no body e tambem tentar formatos alternativos de ID:
 
 ```typescript
 async function downloadMedia(
-  uazapiUrl: string, 
-  instanceToken: string, 
-  messageId: string
+  uazapiUrl: string,
+  instanceToken: string,
+  messageId: string,
+  chatId: string   // <-- novo parametro
 ): Promise<string> {
   try {
     const response = await fetch(`${uazapiUrl}/message/download`, {
@@ -39,56 +27,82 @@ async function downloadMedia(
         'Content-Type': 'application/json',
         'token': instanceToken,
       },
-      body: JSON.stringify({ messageid: messageId }),
+      body: JSON.stringify({ 
+        messageid: messageId,
+        chatid: chatId          // <-- campo adicionado
+      }),
     })
-    
-    if (!response.ok) {
-      console.log('Download media failed:', response.status)
-      return ''
-    }
-    
-    const data = await response.json()
-    // UAZAPI retorna a URL persistente do arquivo
-    return data.url || data.URL || data.fileUrl || data.file || ''
-  } catch (err) {
-    console.error('Error downloading media:', err)
-    return ''
+    // ... parse response
   }
 }
 ```
 
-3. **Chamar download quando tiver midia** - Apos extrair `mediaType` e `externalId`, se for midia, chamar o download:
+Passar `chatId` ao chamar a funcao:
 
 ```typescript
-if (mediaType !== 'text' && instance.token) {
-  const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
-  const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId)
-  if (downloadedUrl) {
-    mediaUrl = downloadedUrl
-  }
+const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId, chatId)
+```
+
+### Parte 2: Fallback - Baixar CDN e salvar no Storage
+
+Se o `/message/download` falhar, e a URL CDN existir (`message.content.URL`), baixar o binario e fazer upload para o Supabase Storage:
+
+```typescript
+async function uploadMediaToStorage(
+  supabase: any,
+  cdnUrl: string,
+  messageId: string,
+  mediaType: string
+): Promise<string> {
+  const response = await fetch(cdnUrl)
+  if (!response.ok) return ''
+  
+  const blob = await response.blob()
+  const ext = mediaType === 'image' ? 'jpg' : mediaType === 'video' ? 'mp4' : 'bin'
+  const path = `media/${messageId}.${ext}`
+  
+  await supabase.storage.from('helpdesk-media').upload(path, blob)
+  
+  const { data } = supabase.storage.from('helpdesk-media').getPublicUrl(path)
+  return data.publicUrl
 }
 ```
 
-Nota: Usamos `rawExternalId` (o ID original com prefixo, se houver) pois a UAZAPI pode precisar do formato completo.
+### Fluxo Completo
 
-## Fluxo
-
+```text
+Webhook recebe imagem
+  |
+  +--> Tenta POST /message/download (com chatid + messageid)
+  |     |
+  |     +--> Sucesso? Usa URL persistente da UAZAPI
+  |     |
+  |     +--> Falhou? CDN URL existe?
+  |           |
+  |           +--> Sim: Baixa binario da CDN e salva no Storage
+  |           |
+  |           +--> Nao: Salva mensagem sem media_url
+  |
+  +--> Salva mensagem no banco com media_url persistente
 ```
-Webhook recebe mensagem com imagem
-  -> Detecta mediaType = 'image'
-  -> Chama POST /message/download com messageid
-  -> UAZAPI retorna URL persistente
-  -> Salva URL persistente no campo media_url
-  -> Frontend exibe a imagem normalmente
-```
 
-## Fallback
+## Mudancas Necessarias
 
-Se o download falhar (timeout, erro), o webhook ainda salva a mensagem normalmente, apenas sem `media_url` (melhor do que salvar uma URL expirada).
+### 1. Criar bucket de Storage
 
-## Arquivos a Modificar
+Criar o bucket `helpdesk-media` com politica publica de leitura.
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/whatsapp-webhook/index.ts` | Adicionar funcao downloadMedia, incluir token no select da instancia, chamar download para mensagens de midia |
+### 2. Alterar `supabase/functions/whatsapp-webhook/index.ts`
 
+| Mudanca | Descricao |
+|---------|-----------|
+| `downloadMedia()` | Adicionar parametro `chatId` e enviar no body |
+| Nova funcao `uploadMediaToStorage()` | Baixar CDN e salvar no Storage como fallback |
+| Logica principal | Tentar download UAZAPI primeiro, fallback para Storage se falhar |
+| Chamar com chatId | Passar `chatId` extraido do payload |
+
+## Resultado Esperado
+
+- Se o UAZAPI `/message/download` funcionar com `chatid`: imagens persistentes via UAZAPI
+- Se falhar: imagens persistentes via Supabase Storage (fallback robusto)
+- O frontend nao precisa de mudancas - o `MessageBubble` ja renderiza `<img src={media_url} />`
