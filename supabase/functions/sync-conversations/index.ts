@@ -74,49 +74,49 @@ Deno.serve(async (req) => {
     // Try POST /chat/search first, fallback to GET /chat/list
     let chats: Array<Record<string, unknown>> = []
 
-    try {
-      const searchRes = await fetch(`${uazapiUrl}/chat/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'token': instanceToken },
-        body: JSON.stringify({ count: 200 }),
-      })
+    // Try multiple UAZAPI endpoints to find chats
+    const chatEndpoints = [
+      { url: `${uazapiUrl}/chat/fetchChats`, method: 'POST', body: JSON.stringify({ count: 200 }) },
+      { url: `${uazapiUrl}/chat/getChats`, method: 'POST', body: JSON.stringify({ count: 200 }) },
+      { url: `${uazapiUrl}/chat/search`, method: 'GET', body: null },
+      { url: `${uazapiUrl}/chat/list`, method: 'POST', body: JSON.stringify({}) },
+      { url: `${uazapiUrl}/chat/list`, method: 'GET', body: null },
+    ]
 
-      const searchText = await searchRes.text()
-      console.log('Chat search status:', searchRes.status, 'response length:', searchText.length)
-
-      let searchData: unknown
-      try { searchData = JSON.parse(searchText) } catch { searchData = null }
-
-      if (Array.isArray(searchData)) {
-        chats = searchData
-      } else if (searchData && typeof searchData === 'object') {
-        const obj = searchData as Record<string, unknown>
-        chats = (obj.chats || obj.data || obj.Chats || []) as Array<Record<string, unknown>>
-        if (!Array.isArray(chats)) chats = []
-      }
-    } catch (e) {
-      console.error('chat/search failed, trying chat/list:', e)
-    }
-
-    // Fallback: GET /chat/list
-    if (chats.length === 0) {
+    for (const ep of chatEndpoints) {
+      if (chats.length > 0) break
       try {
-        const listRes = await fetch(`${uazapiUrl}/chat/list`, {
-          method: 'GET',
+        console.log(`Trying ${ep.method} ${ep.url}`)
+        const fetchOpts: RequestInit = {
+          method: ep.method,
           headers: { 'Content-Type': 'application/json', 'token': instanceToken },
-        })
-        const listText = await listRes.text()
-        console.log('Chat list status:', listRes.status)
-        let listData: unknown
-        try { listData = JSON.parse(listText) } catch { listData = null }
-        if (Array.isArray(listData)) {
-          chats = listData
-        } else if (listData && typeof listData === 'object') {
-          const obj = listData as Record<string, unknown>
-          chats = (obj.chats || obj.data || []) as Array<Record<string, unknown>>
+        }
+        if (ep.body && ep.method === 'POST') fetchOpts.body = ep.body
+
+        const res = await fetch(ep.url, fetchOpts)
+        const text = await res.text()
+        console.log(`${ep.url} status: ${res.status}, response (first 300): ${text.substring(0, 300)}`)
+
+        if (!res.ok) continue
+
+        let parsed: unknown
+        try { parsed = JSON.parse(text) } catch { continue }
+
+        let extracted: unknown[] = []
+        if (Array.isArray(parsed)) {
+          extracted = parsed
+        } else if (parsed && typeof parsed === 'object') {
+          const obj = parsed as Record<string, unknown>
+          const candidate = obj.chats || obj.Chats || obj.data || obj.Data || obj.conversations || obj.Conversations
+          if (Array.isArray(candidate)) extracted = candidate
+        }
+
+        if (extracted.length > 0) {
+          chats = extracted as Array<Record<string, unknown>>
+          console.log(`Success with ${ep.url}, got ${chats.length} chats`)
         }
       } catch (e) {
-        console.error('chat/list also failed:', e)
+        console.error(`${ep.url} failed:`, e)
       }
     }
 
