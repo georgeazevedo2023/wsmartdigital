@@ -143,11 +143,11 @@ const HelpDesk = () => {
     if (!selectedInboxId) return;
 
     const channel = supabase
-      .channel('helpdesk-list')
+      .channel('helpdesk-conversations')
       .on('broadcast', { event: 'new-message' }, (payload) => {
+        console.log('[HelpDesk] broadcast received:', payload.payload);
         const data = payload.payload;
         if (data?.inbox_id === selectedInboxId) {
-          // Update last_message preview in-place
           setConversations(prev => {
             const exists = prev.some(c => c.id === data.conversation_id);
             if (exists) {
@@ -157,13 +157,14 @@ const HelpDesk = () => {
                   : c
               );
             }
-            // New conversation - refetch to get full data
             fetchConversations();
             return prev;
           });
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[HelpDesk] channel status:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);

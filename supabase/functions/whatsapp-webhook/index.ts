@@ -249,36 +249,37 @@ Deno.serve(async (req) => {
       .update(updateData)
       .eq('id', conversation.id)
 
-    // Broadcast via REST API (reliable from Edge Functions - no WebSocket needed)
-    const broadcastRes = await fetch(
-      `${Deno.env.get('SUPABASE_URL')}/realtime/v1/api/broadcast`,
-      {
-        method: 'POST',
-        headers: {
-          'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')!}`,
-        },
-        body: JSON.stringify({
-          messages: [{
-            topic: 'helpdesk-realtime',
-            event: 'new-message',
-            payload: {
-              conversation_id: conversation.id,
-              inbox_id: inbox.id,
-              message_id: insertedMsg.id,
-              direction,
-              content,
-              media_type: mediaType,
-              media_url: mediaUrl || null,
-              created_at: msgTimestamp,
-            },
-          }],
-        }),
-      }
+    // Broadcast via REST API to TWO topics (chat panel + conversation list)
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+    const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
+    const broadcastPayload = {
+      conversation_id: conversation.id,
+      inbox_id: inbox.id,
+      message_id: insertedMsg.id,
+      direction,
+      content,
+      media_type: mediaType,
+      media_url: mediaUrl || null,
+      created_at: msgTimestamp,
+    }
+    const topics = ['helpdesk-realtime', 'helpdesk-conversations']
+    const broadcastResults = await Promise.all(
+      topics.map(topic =>
+        fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
+          method: 'POST',
+          headers: {
+            'apikey': ANON_KEY,
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${ANON_KEY}`,
+          },
+          body: JSON.stringify({
+            messages: [{ topic, event: 'new-message', payload: broadcastPayload }],
+          }),
+        })
+      )
     )
 
-    console.log('Message processed + REST broadcast status:', broadcastRes.status, conversation.id, direction, mediaType)
+    console.log('Message processed + REST broadcast status:', broadcastResults.map(r => r.status).join(','), conversation.id, direction, mediaType)
 
     return new Response(JSON.stringify({ ok: true, conversation_id: conversation.id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

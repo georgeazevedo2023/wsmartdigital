@@ -46,12 +46,14 @@ export const ChatPanel = ({ conversation, onUpdateConversation }: ChatPanelProps
     const channel = supabase
       .channel('helpdesk-realtime')
       .on('broadcast', { event: 'new-message' }, (payload) => {
+        console.log('[ChatPanel] broadcast received:', payload.payload?.conversation_id);
         if (payload.payload?.conversation_id === conversation.id) {
-          // Refetch to get complete message data
           fetchMessages();
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log('[ChatPanel] channel status:', status);
+      });
 
     return () => {
       supabase.removeChannel(channel);
