@@ -20,6 +20,36 @@ function extractPhone(jid: string): string {
   return jid.split('@')[0].replace(/\D/g, '')
 }
 
+async function downloadMedia(
+  uazapiUrl: string,
+  instanceToken: string,
+  messageId: string
+): Promise<string> {
+  try {
+    const response = await fetch(`${uazapiUrl}/message/download`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': instanceToken,
+      },
+      body: JSON.stringify({ messageid: messageId }),
+    })
+
+    if (!response.ok) {
+      const errText = await response.text()
+      console.log('Download media failed:', response.status, errText)
+      return ''
+    }
+
+    const data = await response.json()
+    console.log('Download media response keys:', Object.keys(data))
+    return data.url || data.URL || data.fileUrl || data.file || data.base64 || ''
+  } catch (err) {
+    console.error('Error downloading media:', err)
+    return ''
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -80,7 +110,7 @@ Deno.serve(async (req) => {
     // Find instance by name or id
     const { data: instance } = await supabase
       .from('instances')
-      .select('id, name')
+      .select('id, name, token')
       .or(`id.eq.${instanceName},name.eq.${instanceName}`)
       .maybeSingle()
 
@@ -132,7 +162,17 @@ Deno.serve(async (req) => {
       content = message.fileName
     }
 
-    console.log(`Processing: direction=${direction}, mediaType=${mediaType}, externalId=${externalId}, chatId=${chatId}`)
+    // Download persistent media URL from UAZAPI
+    if (mediaType !== 'text' && instance.token) {
+      const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
+      const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId)
+      if (downloadedUrl) {
+        mediaUrl = downloadedUrl
+        console.log('Downloaded persistent media URL:', mediaUrl.substring(0, 80))
+      }
+    }
+
+    console.log(`Processing: direction=${direction}, mediaType=${mediaType}, externalId=${externalId}, chatId=${chatId}, mediaUrl=${mediaUrl ? 'YES' : 'NO'}`)
 
     // Deduplication: check if external_id already exists
     if (externalId) {
