@@ -14,6 +14,7 @@ import {
   ChevronDown,
   Clock,
   Send,
+  Headphones,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -51,6 +52,7 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
+    { icon: Headphones, label: 'Atendimento', path: '/dashboard/helpdesk' },
     { icon: Clock, label: 'Agendamentos', path: '/dashboard/scheduled' },
   ];
 

@@ -86,6 +86,231 @@ export type Database = {
         }
         Relationships: []
       }
+      contacts: {
+        Row: {
+          created_at: string
+          id: string
+          jid: string
+          name: string | null
+          phone: string
+          profile_pic_url: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          jid: string
+          name?: string | null
+          phone: string
+          profile_pic_url?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          jid?: string
+          name?: string | null
+          phone?: string
+          profile_pic_url?: string | null
+        }
+        Relationships: []
+      }
+      conversation_labels: {
+        Row: {
+          conversation_id: string
+          id: string
+          label_id: string
+        }
+        Insert: {
+          conversation_id: string
+          id?: string
+          label_id: string
+        }
+        Update: {
+          conversation_id?: string
+          id?: string
+          label_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_labels_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_labels_label_id_fkey"
+            columns: ["label_id"]
+            isOneToOne: false
+            referencedRelation: "labels"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversation_messages: {
+        Row: {
+          content: string | null
+          conversation_id: string
+          created_at: string
+          direction: string
+          external_id: string | null
+          id: string
+          media_type: string
+          media_url: string | null
+          sender_id: string | null
+        }
+        Insert: {
+          content?: string | null
+          conversation_id: string
+          created_at?: string
+          direction?: string
+          external_id?: string | null
+          id?: string
+          media_type?: string
+          media_url?: string | null
+          sender_id?: string | null
+        }
+        Update: {
+          content?: string | null
+          conversation_id?: string
+          created_at?: string
+          direction?: string
+          external_id?: string | null
+          id?: string
+          media_type?: string
+          media_url?: string | null
+          sender_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      conversations: {
+        Row: {
+          assigned_to: string | null
+          contact_id: string
+          created_at: string
+          id: string
+          inbox_id: string
+          is_read: boolean
+          last_message_at: string | null
+          priority: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          contact_id: string
+          created_at?: string
+          id?: string
+          inbox_id: string
+          is_read?: boolean
+          last_message_at?: string | null
+          priority?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          contact_id?: string
+          created_at?: string
+          id?: string
+          inbox_id?: string
+          is_read?: boolean
+          last_message_at?: string | null
+          priority?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversations_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversations_inbox_id_fkey"
+            columns: ["inbox_id"]
+            isOneToOne: false
+            referencedRelation: "inboxes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inbox_users: {
+        Row: {
+          created_at: string
+          id: string
+          inbox_id: string
+          is_available: boolean
+          role: Database["public"]["Enums"]["inbox_role"]
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inbox_id: string
+          is_available?: boolean
+          role?: Database["public"]["Enums"]["inbox_role"]
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inbox_id?: string
+          is_available?: boolean
+          role?: Database["public"]["Enums"]["inbox_role"]
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inbox_users_inbox_id_fkey"
+            columns: ["inbox_id"]
+            isOneToOne: false
+            referencedRelation: "inboxes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inboxes: {
+        Row: {
+          created_at: string
+          created_by: string
+          id: string
+          instance_id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          id?: string
+          instance_id: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          id?: string
+          instance_id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inboxes_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instance_connection_logs: {
         Row: {
           created_at: string
@@ -151,6 +376,38 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      labels: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          inbox_id: string
+          name: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id?: string
+          inbox_id: string
+          name: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          inbox_id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "labels_inbox_id_fkey"
+            columns: ["inbox_id"]
+            isOneToOne: false
+            referencedRelation: "inboxes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lead_database_entries: {
         Row: {
@@ -487,6 +744,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      get_inbox_role: {
+        Args: { _inbox_id: string; _user_id: string }
+        Returns: Database["public"]["Enums"]["inbox_role"]
+      }
+      has_inbox_access: {
+        Args: { _inbox_id: string; _user_id: string }
+        Returns: boolean
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -498,6 +763,7 @@ export type Database = {
     }
     Enums: {
       app_role: "super_admin" | "user"
+      inbox_role: "admin" | "gestor" | "agente" | "vendedor"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -626,6 +892,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["super_admin", "user"],
+      inbox_role: ["admin", "gestor", "agente", "vendedor"],
     },
   },
 } as const
