@@ -62,8 +62,8 @@ export const ConversationItem = ({ conversation, isSelected, onClick }: Conversa
         </div>
 
         <div className="flex items-center justify-between gap-2 mt-0.5">
-          <p className="text-xs text-muted-foreground truncate">
-            {conversation.inbox?.name || ''}
+          <p className="text-xs text-muted-foreground truncate flex-1">
+            {conversation.last_message || conversation.inbox?.name || ''}
           </p>
           {!conversation.is_read && (
             <span className="w-2 h-2 rounded-full bg-primary shrink-0" />

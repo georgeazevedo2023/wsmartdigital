@@ -11,7 +11,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // Auth
     const authHeader = req.headers.get('Authorization')
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), {
@@ -120,12 +119,14 @@ Deno.serve(async (req) => {
 
     let synced = 0
     let errors = 0
+    let messagesImported = 0
 
     for (const chat of individualChats) {
       try {
         const jid = String(chat.wa_chatid || chat.wa_fastid || chat.jid || chat.id || '')
         const chatName = String(chat.wa_contactName || chat.wa_name || chat.name || chat.pushName || '')
         const phone = jid.split('@')[0]
+        const profilePic = chat.imagePreview || chat.image || null
 
         if (!jid || !phone) continue
 
@@ -140,13 +141,21 @@ Deno.serve(async (req) => {
 
         if (existingContact) {
           contactId = existingContact.id
-          if (chatName) {
-            await supabase.from('contacts').update({ name: chatName }).eq('id', contactId)
+          const updateData: Record<string, unknown> = {}
+          if (chatName) updateData.name = chatName
+          if (profilePic) updateData.profile_pic_url = String(profilePic)
+          if (Object.keys(updateData).length > 0) {
+            await supabase.from('contacts').update(updateData).eq('id', contactId)
           }
         } else {
           const { data: newContact, error: insertErr } = await supabase
             .from('contacts')
-            .insert({ jid, phone, name: chatName || null })
+            .insert({ 
+              jid, 
+              phone, 
+              name: chatName || null,
+              profile_pic_url: profilePic ? String(profilePic) : null,
+            })
             .select('id')
             .single()
 
@@ -158,13 +167,12 @@ Deno.serve(async (req) => {
           contactId = newContact.id
         }
 
-        // 3b. Check if conversation already exists
+        // 3b. Check if conversation already exists for this contact+inbox
         const { data: existingConv } = await supabase
           .from('conversations')
           .select('id')
           .eq('inbox_id', inbox_id)
           .eq('contact_id', contactId)
-          .in('status', ['aberta', 'pendente'])
           .maybeSingle()
 
         let conversationId: string
@@ -174,8 +182,8 @@ Deno.serve(async (req) => {
         } else {
           const lastMsgTimestamp = chat.wa_lastMsgTimestamp || chat.lastMessageTimestamp || chat.timestamp || null
           const lastMsgAt = lastMsgTimestamp
-            ? new Date(typeof lastMsgTimestamp === 'number' 
-                ? (lastMsgTimestamp as number) > 9999999999 ? (lastMsgTimestamp as number) : (lastMsgTimestamp as number) * 1000 
+            ? new Date(typeof lastMsgTimestamp === 'number'
+                ? (lastMsgTimestamp as number) > 9999999999 ? (lastMsgTimestamp as number) : (lastMsgTimestamp as number) * 1000
                 : lastMsgTimestamp as string
               ).toISOString()
             : new Date().toISOString()
@@ -201,8 +209,11 @@ Deno.serve(async (req) => {
           conversationId = newConv.id
         }
 
-        // 3c. Fetch recent messages for this chat
+        // 3c. Fetch recent messages for this chat - try multiple endpoint formats
         try {
+          let messages: Array<Record<string, unknown>> = []
+
+          // Try format 1: direct fields
           const msgsRes = await fetch(`${uazapiUrl}/message/find`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'token': instanceToken },
@@ -210,19 +221,50 @@ Deno.serve(async (req) => {
           })
 
           const msgsText = await msgsRes.text()
+          console.log(`/message/find for ${phone}: status=${msgsRes.status}, length=${msgsText.length}, preview=${msgsText.substring(0, 200)}`)
+
           let msgsData: unknown
           try { msgsData = JSON.parse(msgsText) } catch { msgsData = null }
 
-          let messages: Array<Record<string, unknown>> = []
           if (Array.isArray(msgsData)) {
             messages = msgsData
           } else if (msgsData && typeof msgsData === 'object') {
             const obj = msgsData as Record<string, unknown>
-            messages = (obj.messages || obj.Messages || obj.data || []) as Array<Record<string, unknown>>
+            const candidate = obj.messages || obj.Messages || obj.data || obj.Data || obj.results
+            if (Array.isArray(candidate)) messages = candidate
           }
 
+          // If empty, try format 2: with filter wrapper
+          if (messages.length === 0) {
+            console.log(`Retrying /message/find with filter wrapper for ${phone}`)
+            const msgsRes2 = await fetch(`${uazapiUrl}/message/find`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'token': instanceToken },
+              body: JSON.stringify({
+                filter: { wa_chatid: jid },
+                limit: 30,
+                sort: { wa_timestamp: -1 },
+              }),
+            })
+
+            const msgsText2 = await msgsRes2.text()
+            console.log(`/message/find (filter) for ${phone}: status=${msgsRes2.status}, length=${msgsText2.length}, preview=${msgsText2.substring(0, 200)}`)
+
+            let msgsData2: unknown
+            try { msgsData2 = JSON.parse(msgsText2) } catch { msgsData2 = null }
+
+            if (Array.isArray(msgsData2)) {
+              messages = msgsData2
+            } else if (msgsData2 && typeof msgsData2 === 'object') {
+              const obj2 = msgsData2 as Record<string, unknown>
+              const candidate2 = obj2.messages || obj2.Messages || obj2.data || obj2.Data || obj2.results
+              if (Array.isArray(candidate2)) messages = candidate2
+            }
+          }
+
+          console.log(`Messages found for ${phone}: ${messages.length}`)
+
           if (messages.length > 0) {
-            // Insert messages, skip duplicates by external_id
             const messagesToInsert = []
 
             for (const msg of messages) {
@@ -240,7 +282,7 @@ Deno.serve(async (req) => {
 
               const fromMe = msg.wa_fromMe ?? msg.fromMe ?? false
               const msgContent = String(
-                msg.wa_body || msg.wa_text || msg.body || msg.text || 
+                msg.wa_body || msg.wa_text || msg.body || msg.text ||
                 msg.content || (msg.message as Record<string,unknown>)?.conversation || ''
               )
               const msgTimestamp = msg.wa_timestamp || msg.timestamp || msg.messageTimestamp || Date.now() / 1000
@@ -253,11 +295,16 @@ Deno.serve(async (req) => {
               // Detect media
               let mediaType = 'text'
               let mediaUrl: string | null = null
-              const msgObj = (msg.message || msg.Message || {}) as Record<string, unknown>
-              if (msgObj.imageMessage) { mediaType = 'image'; mediaUrl = String((msgObj.imageMessage as Record<string, unknown>).url || '') }
-              else if (msgObj.videoMessage) { mediaType = 'video'; mediaUrl = String((msgObj.videoMessage as Record<string, unknown>).url || '') }
-              else if (msgObj.audioMessage) { mediaType = 'audio'; mediaUrl = String((msgObj.audioMessage as Record<string, unknown>).url || '') }
-              else if (msgObj.documentMessage) { mediaType = 'document'; mediaUrl = String((msgObj.documentMessage as Record<string, unknown>).url || '') }
+              if (msg.wa_type) {
+                const waType = String(msg.wa_type).toLowerCase()
+                if (waType === 'image') mediaType = 'image'
+                else if (waType === 'video') mediaType = 'video'
+                else if (waType === 'audio' || waType === 'ptt') mediaType = 'audio'
+                else if (waType === 'document') mediaType = 'document'
+              }
+              if (msg.wa_mediaUrl || msg.mediaUrl) {
+                mediaUrl = String(msg.wa_mediaUrl || msg.mediaUrl)
+              }
 
               messagesToInsert.push({
                 conversation_id: conversationId,
@@ -277,16 +324,18 @@ Deno.serve(async (req) => {
 
               if (insertMsgErr) {
                 console.error(`Failed to insert messages for ${jid}:`, insertMsgErr)
+              } else {
+                messagesImported += messagesToInsert.length
               }
             }
 
             // Update last_message_at on conversation
-            const latestMsg = messagesToInsert.sort((a, b) => 
+            const sorted = [...messagesToInsert].sort((a, b) =>
               new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-            )[0]
-            if (latestMsg) {
+            )
+            if (sorted.length > 0) {
               await supabase.from('conversations').update({
-                last_message_at: latestMsg.created_at,
+                last_message_at: sorted[0].created_at,
               }).eq('id', conversationId)
             }
           }
@@ -301,10 +350,10 @@ Deno.serve(async (req) => {
       }
     }
 
-    console.log(`Sync complete: ${synced} synced, ${errors} errors`)
+    console.log(`Sync complete: ${synced} synced, ${messagesImported} messages imported, ${errors} errors`)
 
     return new Response(
-      JSON.stringify({ synced, errors, total: individualChats.length }),
+      JSON.stringify({ synced, errors, messagesImported, total: individualChats.length }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     )
 

@@ -96,10 +96,31 @@ const HelpDesk = () => {
       const { data, error } = await query;
       if (error) throw error;
 
+      const convIds = (data || []).map((c: any) => c.id);
+
+      // Fetch last message for each conversation
+      let lastMsgMap: Record<string, string> = {};
+      if (convIds.length > 0) {
+        const { data: allMsgs } = await supabase
+          .from('conversation_messages')
+          .select('conversation_id, content, created_at')
+          .in('conversation_id', convIds)
+          .order('created_at', { ascending: false });
+
+        if (allMsgs) {
+          for (const msg of allMsgs) {
+            if (!lastMsgMap[msg.conversation_id] && msg.content) {
+              lastMsgMap[msg.conversation_id] = msg.content;
+            }
+          }
+        }
+      }
+
       const mapped: Conversation[] = (data || []).map((c: any) => ({
         ...c,
         contact: c.contacts,
         inbox: c.inboxes,
+        last_message: lastMsgMap[c.id] || null,
       }));
 
       setConversations(mapped);
@@ -124,15 +145,31 @@ const HelpDesk = () => {
         event: '*',
         schema: 'public',
         table: 'conversations',
-      }, () => {
-        fetchConversations();
+      }, (payload) => {
+        // Update in-place instead of refetching all
+        if (payload.eventType === 'UPDATE' && payload.new) {
+          setConversations(prev => prev.map(c =>
+            c.id === (payload.new as any).id ? { ...c, ...(payload.new as any) } : c
+          ));
+          if (selectedConversation?.id === (payload.new as any).id) {
+            setSelectedConversation(prev => prev ? { ...prev, ...(payload.new as any) } : null);
+          }
+        } else {
+          fetchConversations();
+        }
       })
       .on('postgres_changes', {
         event: 'INSERT',
         schema: 'public',
         table: 'conversation_messages',
-      }, () => {
-        fetchConversations();
+      }, (payload) => {
+        const newMsg = payload.new as any;
+        // Update last_message preview in-place
+        setConversations(prev => prev.map(c =>
+          c.id === newMsg.conversation_id
+            ? { ...c, last_message: newMsg.content || c.last_message, last_message_at: newMsg.created_at }
+            : c
+        ));
       })
       .subscribe();
 

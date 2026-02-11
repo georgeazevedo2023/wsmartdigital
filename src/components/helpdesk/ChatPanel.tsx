@@ -85,7 +85,14 @@ export const ChatPanel = ({ conversation, onUpdateConversation }: ChatPanelProps
           <h3 className="font-semibold text-sm truncate">
             {contact?.name || contact?.phone || 'Desconhecido'}
           </h3>
-          <p className="text-xs text-muted-foreground">{contact?.phone}</p>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">{contact?.phone}</p>
+            {contact?.jid && (
+              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-mono">
+                {contact.jid.split('@')[0]}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
