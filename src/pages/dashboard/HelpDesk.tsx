@@ -61,6 +61,7 @@ const HelpDesk = () => {
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
   const [selectedInboxId, setSelectedInboxId] = useState<string>('');
   const [syncing, setSyncing] = useState(false);
+  const [syncedInboxes, setSyncedInboxes] = useState<Set<string>>(new Set());
 
   // Fetch user's inboxes
   useEffect(() => {
@@ -136,6 +137,42 @@ const HelpDesk = () => {
       fetchConversations();
     }
   }, [user, statusFilter, selectedInboxId]);
+
+  // Auto-sync when inbox is selected (once per session per inbox)
+  useEffect(() => {
+    if (!selectedInboxId || syncedInboxes.has(selectedInboxId)) return;
+
+    const autoSync = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        setSyncing(true);
+        const res = await fetch(
+          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-conversations`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${session.access_token}`,
+            },
+            body: JSON.stringify({ inbox_id: selectedInboxId }),
+          }
+        );
+
+        if (res.ok) {
+          setSyncedInboxes(prev => new Set(prev).add(selectedInboxId));
+          fetchConversations();
+        }
+      } catch (err) {
+        console.error('Auto-sync error:', err);
+      } finally {
+        setSyncing(false);
+      }
+    };
+
+    autoSync();
+  }, [selectedInboxId]);
 
   // Realtime subscription
   useEffect(() => {
