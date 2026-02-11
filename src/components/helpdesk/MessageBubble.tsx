@@ -24,8 +24,8 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
           isNote
             ? 'bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 italic'
             : isOutgoing
-              ? 'bg-primary/20 text-foreground rounded-br-sm'
-              : 'bg-secondary text-foreground rounded-bl-sm'
+              ? 'bg-emerald-600/25 border border-emerald-500/20 text-foreground rounded-br-sm'
+              : 'bg-secondary/80 text-foreground rounded-bl-sm'
         )}
       >
         {isNote && (
