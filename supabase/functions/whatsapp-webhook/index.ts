@@ -5,6 +5,21 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+function normalizeMediaType(raw: string): string {
+  if (!raw || raw === '') return 'text'
+  const lower = raw.toLowerCase()
+  if (lower.includes('image')) return 'image'
+  if (lower.includes('video')) return 'video'
+  if (lower.includes('audio') || lower.includes('ptt')) return 'audio'
+  if (lower.includes('document') || lower.includes('pdf')) return 'document'
+  if (lower.includes('sticker')) return 'image'
+  return 'text'
+}
+
+function extractPhone(jid: string): string {
+  return jid.split('@')[0].replace(/\D/g, '')
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -17,22 +32,39 @@ Deno.serve(async (req) => {
     )
 
     const payload = await req.json()
-    console.log('Webhook payload:', JSON.stringify(payload).substring(0, 500))
+    console.log('Webhook received:', JSON.stringify(payload).substring(0, 500))
 
-    // Extract message data from UAZAPI webhook payload
-    // UAZAPI sends different event types - we care about messages
-    const eventType = payload.event || payload.type || payload.Event
-    
-    // Only process incoming messages
-    if (!['messages.upsert', 'message', 'messages'].includes(eventType)) {
+    // UAZAPI sends EventType field
+    const eventType = payload.EventType || payload.eventType || payload.event || ''
+
+    // Only process message events
+    if (eventType !== 'messages') {
       console.log('Ignoring event type:', eventType)
-      return new Response(JSON.stringify({ ok: true, skipped: true }), {
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'not_message_event' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // Extract instance identifier from payload
-    const instanceName = payload.instance || payload.instanceName || payload.Instance
+    const message = payload.message
+    const chat = payload.chat
+
+    if (!message) {
+      console.error('No message object in payload')
+      return new Response(JSON.stringify({ error: 'No message data' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Skip group messages
+    if (message.isGroup === true) {
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'group' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Extract instance name
+    const instanceName = payload.instanceName || payload.instance || ''
     if (!instanceName) {
       console.error('No instance identifier in payload')
       return new Response(JSON.stringify({ error: 'No instance identifier' }), {
@@ -41,7 +73,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Find the instance and inbox
+    // Find instance by name or id
     const { data: instance } = await supabase
       .from('instances')
       .select('id, name')
@@ -65,70 +97,55 @@ Deno.serve(async (req) => {
 
     if (!inbox) {
       console.log('No inbox configured for instance:', instance.id)
-      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'no inbox' }), {
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'no_inbox' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // Extract message details
-    const messageData = payload.data?.message || payload.message || payload.data || payload
-    const key = messageData?.key || payload.key || {}
-    const isFromMe = key.fromMe === true
-    
-    // Skip outgoing messages
-    if (isFromMe) {
-      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'outgoing' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    // Extract message fields from UAZAPI format
+    const chatId = message.chatid || message.sender || ''
+    const fromMe = message.fromMe === true
+    const direction = fromMe ? 'outgoing' : 'incoming'
+    const externalId = message.messageid || message.id || ''
+
+    // Extract content and media
+    const mediaType = normalizeMediaType(message.mediaType || message.type || '')
+    const mediaUrl = message.fileURL || message.mediaUrl || ''
+    let content = message.text || message.content || message.caption || ''
+
+    // Fallback content for media without caption
+    if (mediaType !== 'text' && !content && message.fileName) {
+      content = message.fileName
     }
 
-    // Skip group messages (we only handle individual chats in helpdesk)
-    const remoteJid = key.remoteJid || ''
-    if (remoteJid.endsWith('@g.us')) {
-      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'group' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+    console.log(`Processing: direction=${direction}, mediaType=${mediaType}, externalId=${externalId}, chatId=${chatId}`)
+
+    // Deduplication: check if external_id already exists
+    if (externalId) {
+      const { data: existingMsg } = await supabase
+        .from('conversation_messages')
+        .select('id')
+        .eq('external_id', externalId)
+        .maybeSingle()
+
+      if (existingMsg) {
+        console.log('Duplicate message skipped:', externalId)
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'duplicate' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
     }
 
-    // Extract sender info
-    const senderJid = remoteJid
-    const senderPhone = senderJid.split('@')[0]
-    const pushName = messageData?.pushName || payload.pushName || ''
-
-    // Extract message content
-    const msg = messageData?.message || messageData
-    let content = ''
-    let mediaType = 'text'
-    let mediaUrl = ''
-
-    if (msg?.conversation) {
-      content = msg.conversation
-    } else if (msg?.extendedTextMessage?.text) {
-      content = msg.extendedTextMessage.text
-    } else if (msg?.imageMessage) {
-      mediaType = 'image'
-      content = msg.imageMessage.caption || ''
-      mediaUrl = msg.imageMessage.url || ''
-    } else if (msg?.videoMessage) {
-      mediaType = 'video'
-      content = msg.videoMessage.caption || ''
-      mediaUrl = msg.videoMessage.url || ''
-    } else if (msg?.audioMessage) {
-      mediaType = 'audio'
-      mediaUrl = msg.audioMessage.url || ''
-    } else if (msg?.documentMessage) {
-      mediaType = 'pdf'
-      content = msg.documentMessage.fileName || ''
-      mediaUrl = msg.documentMessage.url || ''
-    }
-
-    const externalId = key.id || ''
+    // Extract contact info
+    const contactJid = fromMe ? chatId : (message.sender_pn || message.sender || chatId)
+    const contactPhone = extractPhone(contactJid)
+    const contactName = chat?.wa_contactName || chat?.name || message.senderName || contactPhone
 
     // Upsert contact
     const { data: contact } = await supabase
       .from('contacts')
       .upsert(
-        { jid: senderJid, phone: senderPhone, name: pushName || senderPhone },
+        { jid: contactJid, phone: contactPhone, name: contactName },
         { onConflict: 'jid' }
       )
       .select('id')
@@ -141,6 +158,11 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
+
+    // Convert timestamp (UAZAPI sends ms)
+    const msgTimestamp = message.messageTimestamp
+      ? new Date(Number(message.messageTimestamp)).toISOString()
+      : new Date().toISOString()
 
     // Find or create conversation
     let { data: conversation } = await supabase
@@ -161,7 +183,7 @@ Deno.serve(async (req) => {
           status: 'aberta',
           priority: 'media',
           is_read: false,
-          last_message_at: new Date().toISOString(),
+          last_message_at: msgTimestamp,
         })
         .select('id')
         .single()
@@ -177,22 +199,35 @@ Deno.serve(async (req) => {
     }
 
     // Insert message
-    await supabase.from('conversation_messages').insert({
+    const { error: insertError } = await supabase.from('conversation_messages').insert({
       conversation_id: conversation.id,
-      direction: 'incoming',
+      direction,
       content,
       media_type: mediaType,
       media_url: mediaUrl || null,
-      external_id: externalId,
+      external_id: externalId || null,
+      created_at: msgTimestamp,
     })
 
+    if (insertError) {
+      console.error('Failed to insert message:', insertError)
+      return new Response(JSON.stringify({ error: 'Failed to insert message' }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // Update conversation
+    const updateData: Record<string, unknown> = { last_message_at: msgTimestamp }
+    if (direction === 'incoming') {
+      updateData.is_read = false
+    }
     await supabase
       .from('conversations')
-      .update({ is_read: false, last_message_at: new Date().toISOString() })
+      .update(updateData)
       .eq('id', conversation.id)
 
-    console.log('Message processed for conversation:', conversation.id)
+    console.log('Message processed successfully:', conversation.id, direction, mediaType)
 
     return new Response(JSON.stringify({ ok: true, conversation_id: conversation.id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
