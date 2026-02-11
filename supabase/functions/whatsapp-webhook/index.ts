@@ -23,7 +23,8 @@ function extractPhone(jid: string): string {
 async function downloadMedia(
   uazapiUrl: string,
   instanceToken: string,
-  messageId: string
+  messageId: string,
+  chatId: string
 ): Promise<string> {
   try {
     const response = await fetch(`${uazapiUrl}/message/download`, {
@@ -32,7 +33,7 @@ async function downloadMedia(
         'Content-Type': 'application/json',
         'token': instanceToken,
       },
-      body: JSON.stringify({ messageid: messageId }),
+      body: JSON.stringify({ messageid: messageId, chatid: chatId }),
     })
 
     if (!response.ok) {
@@ -46,6 +47,43 @@ async function downloadMedia(
     return data.url || data.URL || data.fileUrl || data.file || data.base64 || ''
   } catch (err) {
     console.error('Error downloading media:', err)
+    return ''
+  }
+}
+
+async function uploadMediaToStorage(
+  supabase: any,
+  cdnUrl: string,
+  messageId: string,
+  mediaType: string
+): Promise<string> {
+  try {
+    console.log('Fallback: downloading from CDN:', cdnUrl.substring(0, 80))
+    const response = await fetch(cdnUrl)
+    if (!response.ok) {
+      console.log('CDN download failed:', response.status)
+      return ''
+    }
+
+    const blob = await response.blob()
+    const extMap: Record<string, string> = { image: 'jpg', video: 'mp4', audio: 'ogg', document: 'bin' }
+    const ext = extMap[mediaType] || 'bin'
+    const path = `media/${messageId}.${ext}`
+
+    const { error: uploadError } = await supabase.storage
+      .from('helpdesk-media')
+      .upload(path, blob, { contentType: blob.type || 'application/octet-stream', upsert: true })
+
+    if (uploadError) {
+      console.error('Storage upload error:', uploadError)
+      return ''
+    }
+
+    const { data } = supabase.storage.from('helpdesk-media').getPublicUrl(path)
+    console.log('Uploaded to storage:', data.publicUrl?.substring(0, 80))
+    return data.publicUrl || ''
+  } catch (err) {
+    console.error('Error uploading to storage:', err)
     return ''
   }
 }
@@ -162,13 +200,19 @@ Deno.serve(async (req) => {
       content = message.fileName
     }
 
-    // Download persistent media URL from UAZAPI
+    // Download persistent media URL from UAZAPI, fallback to Storage
     if (mediaType !== 'text' && instance.token) {
       const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
-      const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId)
+      const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId, chatId)
       if (downloadedUrl) {
         mediaUrl = downloadedUrl
         console.log('Downloaded persistent media URL:', mediaUrl.substring(0, 80))
+      } else if (mediaUrl) {
+        // Fallback: download from CDN and upload to Storage
+        const storageUrl = await uploadMediaToStorage(supabase, mediaUrl, externalId || rawExternalId, mediaType)
+        if (storageUrl) {
+          mediaUrl = storageUrl
+        }
       }
     }
 
