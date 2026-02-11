@@ -1,58 +1,94 @@
 
 
-# Corrigir Extração de Media URL do Webhook
+# Baixar Midia via UAZAPI /message/download
 
 ## Problema
 
-A UAZAPI envia a URL da imagem dentro de `message.content.URL` (um objeto), mas o webhook procura em `message.fileURL` ou `message.mediaUrl` — campos que não existem no payload. Resultado: `media_url` é salvo como `null` e a imagem nunca aparece.
+As URLs de midia do WhatsApp (`mmg.whatsapp.net`) sao temporarias e expiram rapidamente. Mesmo quando o webhook extrai a URL corretamente de `message.content.URL`, ela ja nao funciona quando o usuario tenta visualizar no helpdesk.
 
-Dados do banco confirmam: todas as mensagens de imagem têm `media_url: nil`.
+## Solucao
 
-## Causa Raiz
+No webhook, apos detectar que a mensagem contem midia, chamar o endpoint `POST /message/download` da UAZAPI para obter uma URL persistente (hospedada no servidor UAZAPI) antes de salvar no banco.
 
-Linha 120 do webhook:
-```typescript
-const mediaUrl = message.fileURL || message.mediaUrl || ''
-```
-
-A UAZAPI coloca a URL em `message.content.URL` (dentro do objeto de metadados). O campo `message.fileURL` não existe.
-
-## Solução
+## Mudancas no Webhook
 
 ### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
 
-Alterar a extração de `mediaUrl` para também verificar dentro de `message.content` quando for um objeto:
+1. **Buscar o token da instancia** - O webhook ja faz lookup da instancia mas nao seleciona o `token`. Alterar o select para incluir `token`:
 
 ```typescript
-// Extract media URL - UAZAPI puts it inside message.content.URL for media
-let mediaUrl = message.fileURL || message.mediaUrl || ''
-if (!mediaUrl && message.content && typeof message.content === 'object') {
-  mediaUrl = message.content.URL || message.content.url || ''
+const { data: instance } = await supabase
+  .from('instances')
+  .select('id, name, token')  // adicionar token
+  .or(`id.eq.${instanceName},name.eq.${instanceName}`)
+  .maybeSingle()
+```
+
+2. **Adicionar funcao para baixar midia** - Nova funcao que chama `POST /message/download` da UAZAPI:
+
+```typescript
+async function downloadMedia(
+  uazapiUrl: string, 
+  instanceToken: string, 
+  messageId: string
+): Promise<string> {
+  try {
+    const response = await fetch(`${uazapiUrl}/message/download`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': instanceToken,
+      },
+      body: JSON.stringify({ messageid: messageId }),
+    })
+    
+    if (!response.ok) {
+      console.log('Download media failed:', response.status)
+      return ''
+    }
+    
+    const data = await response.json()
+    // UAZAPI retorna a URL persistente do arquivo
+    return data.url || data.URL || data.fileUrl || data.file || ''
+  } catch (err) {
+    console.error('Error downloading media:', err)
+    return ''
+  }
 }
 ```
 
-### Limpeza de dados antigos
+3. **Chamar download quando tiver midia** - Apos extrair `mediaType` e `externalId`, se for midia, chamar o download:
 
-Executar uma query SQL para limpar as mensagens antigas que tiverem content com JSON de mídia e extrair a URL correta:
-
-```sql
-UPDATE conversation_messages
-SET media_url = (content::jsonb->>'URL'),
-    content = ''
-WHERE media_type = 'image'
-  AND content LIKE '{%"URL"%'
-  AND (media_url IS NULL OR media_url = '');
+```typescript
+if (mediaType !== 'text' && instance.token) {
+  const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
+  const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId)
+  if (downloadedUrl) {
+    mediaUrl = downloadedUrl
+  }
+}
 ```
+
+Nota: Usamos `rawExternalId` (o ID original com prefixo, se houver) pois a UAZAPI pode precisar do formato completo.
+
+## Fluxo
+
+```
+Webhook recebe mensagem com imagem
+  -> Detecta mediaType = 'image'
+  -> Chama POST /message/download com messageid
+  -> UAZAPI retorna URL persistente
+  -> Salva URL persistente no campo media_url
+  -> Frontend exibe a imagem normalmente
+```
+
+## Fallback
+
+Se o download falhar (timeout, erro), o webhook ainda salva a mensagem normalmente, apenas sem `media_url` (melhor do que salvar uma URL expirada).
 
 ## Arquivos a Modificar
 
-| Arquivo | Mudança |
+| Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/whatsapp-webhook/index.ts` | Extrair mediaUrl de `message.content.URL` quando content for objeto |
-
-## Resultado Esperado
-
-- Imagens novas: `media_url` preenchido corretamente, `content` vazio
-- Imagens antigas: `media_url` extraído do JSON salvo, `content` limpo
-- O `MessageBubble` já renderiza imagens quando `media_url` existe, então não precisa de mudança no frontend
+| `supabase/functions/whatsapp-webhook/index.ts` | Adicionar funcao downloadMedia, incluir token no select da instancia, chamar download para mensagens de midia |
 
