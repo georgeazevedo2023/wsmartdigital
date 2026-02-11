@@ -1,8 +1,9 @@
-import { Search, Inbox } from 'lucide-react';
+import { Search, Inbox, RefreshCw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { ConversationItem } from './ConversationItem';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
 
 interface ConversationListProps {
@@ -14,6 +15,8 @@ interface ConversationListProps {
   onSearchChange: (q: string) => void;
   onSelect: (c: Conversation) => void;
   loading: boolean;
+  onSync?: () => void;
+  syncing?: boolean;
 }
 
 const statusTabs = [
@@ -32,6 +35,8 @@ export const ConversationList = ({
   onSearchChange,
   onSelect,
   loading,
+  onSync,
+  syncing,
 }: ConversationListProps) => {
   const unreadCount = conversations.filter(c => !c.is_read).length;
 
@@ -41,11 +46,25 @@ export const ConversationList = ({
       <div className="p-3 border-b border-border/50">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display font-bold text-lg">Atendimento</h2>
-          {unreadCount > 0 && (
-            <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">
-              {unreadCount}
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {onSync && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onSync}
+                disabled={syncing}
+                className="h-7 w-7"
+                title="Sincronizar conversas"
+              >
+                <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
+              </Button>
+            )}
+            {unreadCount > 0 && (
+              <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">
+                {unreadCount}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Status tabs */}
