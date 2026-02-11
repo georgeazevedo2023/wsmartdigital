@@ -1,51 +1,58 @@
 
 
-# Corrigir Webhook: Sanitizar Content de Midia
+# Corrigir Extração de Media URL do Webhook
 
 ## Problema
 
-Linha 121 do webhook:
+A UAZAPI envia a URL da imagem dentro de `message.content.URL` (um objeto), mas o webhook procura em `message.fileURL` ou `message.mediaUrl` — campos que não existem no payload. Resultado: `media_url` é salvo como `null` e a imagem nunca aparece.
+
+Dados do banco confirmam: todas as mensagens de imagem têm `media_url: nil`.
+
+## Causa Raiz
+
+Linha 120 do webhook:
 ```typescript
-let content = message.text || message.content || message.caption || ''
+const mediaUrl = message.fileURL || message.mediaUrl || ''
 ```
 
-Quando a UAZAPI envia uma imagem, `message.text` e `undefined` e `message.content` contem o **objeto bruto de metadados** da midia (com chaves como URL, mimetype, fileLength, etc.). O JavaScript avalia o objeto como truthy e o salva no banco como JSON stringificado.
+A UAZAPI coloca a URL em `message.content.URL` (dentro do objeto de metadados). O campo `message.fileURL` não existe.
 
-## Solucao
+## Solução
 
-No arquivo `supabase/functions/whatsapp-webhook/index.ts`, alterar a linha 121 para verificar se `message.content` e uma string antes de usa-lo como conteudo. Se for um objeto, ignorar e usar apenas `message.caption`.
+### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
 
-### Antes:
+Alterar a extração de `mediaUrl` para também verificar dentro de `message.content` quando for um objeto:
+
 ```typescript
-let content = message.text || message.content || message.caption || ''
-```
-
-### Depois:
-```typescript
-const rawContent = message.text || message.caption || ''
-let content = typeof rawContent === 'string' ? rawContent : ''
-// If message.content is a string (plain text), use it as fallback
-if (!content && typeof message.content === 'string') {
-  content = message.content
+// Extract media URL - UAZAPI puts it inside message.content.URL for media
+let mediaUrl = message.fileURL || message.mediaUrl || ''
+if (!mediaUrl && message.content && typeof message.content === 'object') {
+  mediaUrl = message.content.URL || message.content.url || ''
 }
 ```
 
-Isso garante que:
-- `message.text` (texto puro) tem prioridade
-- `message.caption` (legenda de midia) e o segundo fallback
-- `message.content` so e usado se for uma string, nunca um objeto
-- Se nenhum texto existir, o content fica vazio (correto para midia sem legenda)
+### Limpeza de dados antigos
 
-## Arquivo a Modificar
+Executar uma query SQL para limpar as mensagens antigas que tiverem content com JSON de mídia e extrair a URL correta:
 
-| Arquivo | Mudanca |
+```sql
+UPDATE conversation_messages
+SET media_url = (content::jsonb->>'URL'),
+    content = ''
+WHERE media_type = 'image'
+  AND content LIKE '{%"URL"%'
+  AND (media_url IS NULL OR media_url = '');
+```
+
+## Arquivos a Modificar
+
+| Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/whatsapp-webhook/index.ts` | Sanitizar `content` na linha 121 para rejeitar objetos |
+| `supabase/functions/whatsapp-webhook/index.ts` | Extrair mediaUrl de `message.content.URL` quando content for objeto |
 
-## Impacto
+## Resultado Esperado
 
-- Mensagens de texto continuam funcionando normalmente
-- Imagens/videos/audios com legenda mostram a legenda
-- Imagens/videos/audios sem legenda mostram conteudo vazio (e o `MessageBubble` ja renderiza a midia via `media_url`)
-- Nenhuma mudanca no frontend necessaria
+- Imagens novas: `media_url` preenchido corretamente, `content` vazio
+- Imagens antigas: `media_url` extraído do JSON salvo, `content` limpo
+- O `MessageBubble` já renderiza imagens quando `media_url` existe, então não precisa de mudança no frontend
 
