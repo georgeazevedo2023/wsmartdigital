@@ -618,6 +618,45 @@ Deno.serve(async (req) => {
         )
       }
 
+      case 'send-chat': {
+        // Send text message to individual contact (used by helpdesk)
+        if (!instanceToken || !body.jid || !body.message) {
+          return new Response(
+            JSON.stringify({ error: 'Token, jid and message required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const chatEndpoint = `${uazapiUrl}/send/text`
+        const chatBody = {
+          number: body.jid,
+          text: String(body.message).trim(),
+        }
+
+        console.log('Sending chat to:', body.jid)
+        const chatResponse = await fetch(chatEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': body.instanceToken || instanceToken,
+          },
+          body: JSON.stringify(chatBody),
+        })
+
+        const chatRawText = await chatResponse.text()
+        let chatData: unknown
+        try {
+          chatData = JSON.parse(chatRawText)
+        } catch {
+          chatData = { raw: chatRawText }
+        }
+
+        return new Response(
+          JSON.stringify(chatData),
+          { status: chatResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       default:
         return new Response(
           JSON.stringify({ error: 'Invalid action' }),

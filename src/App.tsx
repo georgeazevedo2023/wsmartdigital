@@ -22,6 +22,7 @@ const ScheduledMessages = lazy(() => import("./pages/dashboard/ScheduledMessages
 const Broadcaster = lazy(() => import("./pages/dashboard/Broadcaster"));
 const BroadcastHistoryPage = lazy(() => import("./pages/dashboard/BroadcastHistoryPage"));
 const LeadsBroadcaster = lazy(() => import("./pages/dashboard/LeadsBroadcaster"));
+const HelpDesk = lazy(() => import("./pages/dashboard/HelpDesk"));
 
 const queryClient = new QueryClient();
 
@@ -101,6 +102,7 @@ const AppRoutes = () => {
         <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersManagement /></Suspense>} />
         <Route path="settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
         <Route path="scheduled" element={<Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense>} />
+        <Route path="helpdesk" element={<Suspense fallback={<PageLoader />}><HelpDesk /></Suspense>} />
         {/* Redirect alias for legacy/bookmarked URLs */}
         <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
       </Route>

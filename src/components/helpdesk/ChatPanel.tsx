@@ -1,0 +1,116 @@
+import { useState, useEffect, useRef } from 'react';
+import { supabase } from '@/integrations/supabase/client';
+import { MessageBubble } from './MessageBubble';
+import { ChatInput } from './ChatInput';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { MessageSquare } from 'lucide-react';
+import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
+
+interface ChatPanelProps {
+  conversation: Conversation | null;
+  onUpdateConversation: (id: string, updates: Partial<Conversation>) => void;
+}
+
+export const ChatPanel = ({ conversation, onUpdateConversation }: ChatPanelProps) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  const fetchMessages = async () => {
+    if (!conversation) return;
+    setLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('conversation_messages')
+        .select('*')
+        .eq('conversation_id', conversation.id)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      setMessages((data as Message[]) || []);
+    } catch (err) {
+      console.error('Error fetching messages:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMessages();
+  }, [conversation?.id]);
+
+  // Realtime for messages
+  useEffect(() => {
+    if (!conversation) return;
+
+    const channel = supabase
+      .channel(`chat-${conversation.id}`)
+      .on('postgres_changes', {
+        event: 'INSERT',
+        schema: 'public',
+        table: 'conversation_messages',
+        filter: `conversation_id=eq.${conversation.id}`,
+      }, (payload) => {
+        setMessages(prev => [...prev, payload.new as Message]);
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [conversation?.id]);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  if (!conversation) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+        <MessageSquare className="w-16 h-16 mb-4 opacity-30" />
+        <p className="text-lg font-medium">Selecione uma conversa</p>
+        <p className="text-sm">Escolha uma conversa na lista para começar</p>
+      </div>
+    );
+  }
+
+  const contact = conversation.contact;
+
+  return (
+    <>
+      {/* Header */}
+      <div className="h-14 px-4 flex items-center gap-3 border-b border-border/50 bg-card/50 shrink-0">
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold text-sm truncate">
+            {contact?.name || contact?.phone || 'Desconhecido'}
+          </h3>
+          <p className="text-xs text-muted-foreground">{contact?.phone}</p>
+        </div>
+      </div>
+
+      {/* Messages */}
+      <ScrollArea className="flex-1 p-4">
+        {loading ? (
+          <div className="flex items-center justify-center py-12">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="text-center text-muted-foreground py-12 text-sm">
+            Nenhuma mensagem ainda
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {messages.map(msg => (
+              <MessageBubble key={msg.id} message={msg} />
+            ))}
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </ScrollArea>
+
+      {/* Input */}
+      <ChatInput conversation={conversation} onMessageSent={fetchMessages} />
+    </>
+  );
+};
