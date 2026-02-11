@@ -31,8 +31,12 @@ Deno.serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    const payload = await req.json()
-    console.log('Webhook received:', JSON.stringify(payload).substring(0, 500))
+    const rawPayload = await req.json()
+    console.log('Webhook raw received:', JSON.stringify(rawPayload).substring(0, 500))
+
+    // Unwrap if n8n wraps the UAZAPI payload inside a "Body" key
+    const payload = rawPayload.Body?.EventType ? rawPayload.Body : rawPayload
+    console.log('Webhook unwrapped EventType:', payload.EventType || payload.eventType || 'none')
 
     // UAZAPI sends EventType field
     const eventType = payload.EventType || payload.eventType || payload.event || ''
