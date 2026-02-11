@@ -1,250 +1,172 @@
 
+# Criar Tela de Gestão de Inboxes - Fase 1
 
-# Fase 1: Central de Atendimento - Banco de Dados + UI Basica
+## Análise da Arquitetura Atual
 
-## Visao Geral
+### Banco de Dados Existente
+- **Tabelas criadas**: `inboxes`, `inbox_users`, `contacts`, `conversations`, `conversation_messages`, `labels`
+- **Enums**: `inbox_role` (admin, gestor, agente, vendedor)
+- **Funções SQL**: `has_inbox_access()` para RLS e `get_inbox_role()` para obter o role do usuário
+- **Padrão existente**: Super Admin tem acesso total, usuários têm acesso filtrado por `user_instance_access`
 
-Criar a fundacao do modulo de helpdesk: tabelas no banco de dados com RLS, edge function de webhook para receber mensagens da UAZAPI, e interface basica estilo Chatwoot com lista de conversas e chat.
+### Fluxo Esperado
+1. **Super Admin** cria caixa de entrada → vincula a uma instância
+2. **Super Admin** adiciona usuários à inbox com roles específicos
+3. **Gestores** da inbox podem gerenciar usuários/atribuições dentro de sua inbox
+4. **Agentes/Vendedores** acessam conversas de suas inboxes
 
 ---
 
-## 1. Banco de Dados - Novas Tabelas e Enums
+## 1. Implementação da Tela de Gestão de Inboxes
 
-### 1.1 Enum `inbox_role`
+### Rota e Página Principal
+**Arquivo**: `src/pages/dashboard/InboxManagement.tsx`
 
-```sql
-CREATE TYPE public.inbox_role AS ENUM ('admin', 'gestor', 'agente', 'vendedor');
+Estrutura:
+- Header com botão "Nova Caixa de Entrada"
+- Grid/Lista de inboxes com informações:
+  - Nome da inbox
+  - Instância vinculada
+  - Número de usuários
+  - Criado por (nome do super admin)
+  - Botões: Gerenciar Usuários, Editar, Deletar
+
+### Dialog para Criar Inbox
+- Input: Nome da caixa de entrada
+- Select: Selecionar instância (carrega instâncias do banco)
+- Só super admins podem criar
+
+### Dialog para Gerenciar Usuários da Inbox
+Permite:
+- Adicionar usuários existentes com seleção de role (`inbox_role`)
+- Remover usuários
+- Editar role de usuários já membros
+- Listar todos os membros atuais com seus roles
+
+---
+
+## 2. Componentes Novos
+
+| Componente | Função |
+|------------|--------|
+| `InboxManagementPage.tsx` | Página principal com lista de inboxes |
+| `InboxCard.tsx` | Card individual de cada inbox (estilo similar a UserManagement) |
+| `CreateInboxDialog.tsx` | Dialog para criar nova inbox |
+| `ManageInboxUsersDialog.tsx` | Dialog para gerenciar membros e roles |
+
+---
+
+## 3. Integração com Sidebar
+
+Adicionar link para "Caixas de Entrada" no sidebar apenas para Super Admins:
+- Ícone: `Package` ou `MessageSquare`
+- Path: `/dashboard/inboxes`
+- Posição: Logo após "Usuários" nas admin items
+
+---
+
+## 4. Permissões e RLS
+
+As políticas RLS já estão implementadas:
+- `has_inbox_access()` → verifica se user está em `inbox_users`
+- `get_inbox_role()` → retorna o role do usuário naquela inbox
+- Super Admins têm acesso total via `is_super_admin()`
+
+**Nenhuma mudança no banco é necessária** — as RLS já suportam o modelo.
+
+---
+
+## 5. Fluxo de Dados
+
+### Criar Inbox
+```
+Super Admin → Dialog "Nova Inbox" 
+  → Seleciona instância 
+  → Insert em `inboxes` (created_by = auth.uid())
+  → Toast de sucesso
+  → Atualiza lista
 ```
 
-### 1.2 Tabela `inboxes`
-
-Cada inbox mapeia para uma instancia WhatsApp.
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | ID unico |
-| instance_id | text (FK instances) | Instancia UAZAPI vinculada |
-| name | text | Nome da caixa de entrada |
-| created_by | uuid | Usuario que criou |
-| created_at | timestamptz | Data de criacao |
-
-### 1.3 Tabela `inbox_users`
-
-Relacao muitos-para-muitos entre usuarios e inboxes, com role por inbox.
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | ID unico |
-| inbox_id | uuid (FK inboxes) | Referencia a inbox |
-| user_id | uuid | Referencia ao usuario |
-| role | inbox_role | Papel nesta inbox |
-| is_available | boolean | Status online/offline |
-| created_at | timestamptz | Data de criacao |
-
-### 1.4 Tabela `contacts`
-
-Contatos do WhatsApp (extraidos das conversas).
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | ID unico |
-| phone | text | Numero do telefone |
-| jid | text (unique) | JID do WhatsApp |
-| name | text | Nome do contato |
-| profile_pic_url | text | Foto de perfil |
-| created_at | timestamptz | Data de criacao |
-
-### 1.5 Tabela `conversations`
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | ID unico |
-| inbox_id | uuid (FK inboxes) | Inbox desta conversa |
-| contact_id | uuid (FK contacts) | Contato vinculado |
-| status | text | aberta, pendente, resolvida |
-| priority | text | alta, media, baixa |
-| assigned_to | uuid | Usuario responsavel |
-| is_read | boolean | Se foi lida |
-| last_message_at | timestamptz | Ultima mensagem (para ordenacao) |
-| created_at | timestamptz | Data de criacao |
-| updated_at | timestamptz | Ultima atualizacao |
-
-### 1.6 Tabela `conversation_messages`
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | ID unico |
-| conversation_id | uuid (FK conversations) | Conversa vinculada |
-| direction | text | incoming, outgoing, private_note |
-| content | text | Texto da mensagem |
-| media_type | text | text, audio, image, video, pdf |
-| media_url | text | URL da midia |
-| sender_id | uuid | Usuario que enviou (se outgoing) |
-| external_id | text | ID da mensagem na UAZAPI |
-| created_at | timestamptz | Data de criacao |
-
-### 1.7 Tabela `labels` (etiquetas)
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | ID unico |
-| name | text | Nome da etiqueta |
-| color | text | Cor hex |
-| inbox_id | uuid (FK inboxes) | Inbox vinculada |
-| created_at | timestamptz | Data de criacao |
-
-### 1.8 Tabela `conversation_labels`
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid (PK) | ID unico |
-| conversation_id | uuid (FK conversations) | Conversa |
-| label_id | uuid (FK labels) | Etiqueta |
-
-### 1.9 Realtime
-
-Habilitar realtime para `conversations` e `conversation_messages` para atualizacoes em tempo real.
-
-### 1.10 RLS Policies
-
-Todas as tabelas terao RLS habilitado. As politicas serao baseadas em:
-- **Super admins**: acesso total (via `is_super_admin()`)
-- **Usuarios de inbox**: acesso apenas a dados de inboxes onde tem acesso (via subquery em `inbox_users`)
-- Funcao helper `has_inbox_access(user_id, inbox_id)` SECURITY DEFINER para evitar recursao
-
----
-
-## 2. Edge Function: Webhook de Recebimento
-
-### `supabase/functions/whatsapp-webhook/index.ts`
-
-- Endpoint POST que a UAZAPI chama quando chega mensagem
-- Sem JWT (webhook externo)
-- Validacao por token secreto no header
-- Logica:
-  1. Recebe payload da UAZAPI (mensagem incoming)
-  2. Identifica a instancia pelo token/instanceId
-  3. Busca ou cria o contato na tabela `contacts`
-  4. Busca ou cria a conversa na tabela `conversations`
-  5. Insere a mensagem na tabela `conversation_messages`
-  6. Atualiza `last_message_at` e marca `is_read = false`
-
-### Adicionar action `send-chat` ao `uazapi-proxy`
-
-Nova action no proxy existente para enviar mensagens individuais (texto e midia) a partir do chat do helpdesk.
-
----
-
-## 3. Interface - Paginas e Componentes
-
-### 3.1 Rota `/dashboard/helpdesk`
-
-Pagina principal do helpdesk com layout em 3 colunas:
-
-```text
-+-------------------+-------------------+-------------------+
-| Lista Conversas   | Chat / Mensagens  | Info do Contato   |
-| (coluna esquerda) | (coluna central)  | (coluna direita)  |
-|                   |                   |                   |
-| - Filtros         | - Header conversa | - Nome            |
-| - Busca           | - Lista mensagens | - Telefone        |
-| - Cards conversa  | - Input envio     | - Etiquetas       |
-|   com badge       |   texto/midia     | - Atribuicao      |
-|   status/prioridade|                  | - Status/Prioridade|
-+-------------------+-------------------+-------------------+
+### Gerenciar Usuários
+```
+Super Admin clica "Gerenciar Usuários"
+  → Dialog abre com:
+    - Lista de membros atuais (de `inbox_users`)
+    - Input para adicionar novo usuário (select com usuários do banco)
+    - Select de role para o novo usuário
+    - Botões de deletar por membro
+  → Insert/Delete em `inbox_users`
 ```
 
-### 3.2 Componentes Novos
+---
 
-| Componente | Descricao |
-|------------|-----------|
-| `HelpDeskPage.tsx` | Pagina principal com layout 3 colunas |
-| `ConversationList.tsx` | Lista lateral de conversas com filtros |
-| `ConversationItem.tsx` | Card de cada conversa na lista |
-| `ChatPanel.tsx` | Painel central de mensagens |
-| `MessageBubble.tsx` | Bolha de mensagem (incoming/outgoing/nota) |
-| `ChatInput.tsx` | Area de input com suporte a texto e midia |
-| `ContactInfoPanel.tsx` | Painel lateral direito com info do contato |
+## 6. Interface Visual
 
-### 3.3 Sidebar
+**Estilo**: Glassmorphism + cards com badge de status (similar a UsersManagement.tsx)
 
-Adicionar item "Atendimento" no menu lateral com icone `Headphones`.
-
-### 3.4 Funcionalidades da Fase 1
-
-- Listar conversas com filtro por status (aberta/pendente/resolvida)
-- Visualizar mensagens de uma conversa em tempo real
-- Enviar mensagens de texto via UAZAPI
-- Marcar como lida ao abrir conversa
-- Atribuir conversa a um usuario
-- Alterar status e prioridade
-- Notas privadas (fundo amarelo, apenas agentes veem)
-- Badge de nao lidas no sidebar
-
-### 3.5 Fora da Fase 1 (fases futuras)
-
-- Envio/recepcao de audio, video, PDF
-- Transcricao de audio
-- Round-robin automatico
-- Dashboard com KPIs
-- Gestao de etiquetas
-- Gestao de usuarios do helpdesk
-- Transferencia entre agentes/equipes
+**Grid Layout**:
+```
+┌─────────────────────────────────────────┐
+│ Caixas de Entrada                       │
+│                          [+ Nova Inbox] │
+├─────────────────────────────────────────┤
+│                                         │
+│  ┌──────────────────┐  ┌──────────────┐ │
+│  │ 📦 Support       │  │ 📦 Sales     │ │
+│  │ Instância: Inst1 │  │ Instância:.. │ │
+│  │ 5 membros        │  │ 3 membros    │ │
+│  │ [Gerenciar] [•]  │  │ [Gerenciar]..│ │
+│  └──────────────────┘  └──────────────┘ │
+│                                         │
+└─────────────────────────────────────────┘
+```
 
 ---
 
-## 4. Detalhes Tecnicos
+## 7. Detalhes Técnicos
 
-### Realtime
+### Queries Necessárias
 
 ```typescript
-// Escutar novas mensagens em tempo real
-supabase
-  .channel('helpdesk-messages')
-  .on('postgres_changes', {
-    event: 'INSERT',
-    schema: 'public',
-    table: 'conversation_messages',
-  }, (payload) => { /* atualizar UI */ })
-  .subscribe()
+// Listar inboxes com info das instâncias
+SELECT inboxes.*, instances.name as instance_name
+FROM inboxes
+JOIN instances ON inboxes.instance_id = instances.id
+WHERE is_super_admin(auth.uid()) -- RLS policy
+
+// Listar membros de uma inbox
+SELECT inbox_users.*, user_profiles.full_name, user_profiles.email
+FROM inbox_users
+JOIN user_profiles ON inbox_users.user_id = user_profiles.id
+WHERE inbox_id = $1
+
+// Listar usuários disponíveis (para adicionar)
+SELECT * FROM user_profiles
 ```
 
-### Envio de mensagens
-
-Reutilizar o `uazapi-proxy` existente com nova action `send-chat` que usa o endpoint `/send/text` da UAZAPI, enviando para o JID individual do contato.
-
-### Funcao helper para RLS
-
-```sql
-CREATE OR REPLACE FUNCTION public.has_inbox_access(_user_id uuid, _inbox_id uuid)
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM inbox_users
-    WHERE user_id = _user_id AND inbox_id = _inbox_id
-  )
-$$;
-```
+### Edge Function ou Client-Side?
+**Client-side** é suficiente — as queries são simples e as RLS policies protegem tudo. Sem necessidade de edge functions novas.
 
 ---
 
-## Resumo de Arquivos
+## 8. Arquivos a Criar/Modificar
 
-### Novos arquivos:
-- `src/pages/dashboard/HelpDesk.tsx`
-- `src/components/helpdesk/ConversationList.tsx`
-- `src/components/helpdesk/ConversationItem.tsx`
-- `src/components/helpdesk/ChatPanel.tsx`
-- `src/components/helpdesk/MessageBubble.tsx`
-- `src/components/helpdesk/ChatInput.tsx`
-- `src/components/helpdesk/ContactInfoPanel.tsx`
-- `supabase/functions/whatsapp-webhook/index.ts`
+### Novos Arquivos:
+- `src/pages/dashboard/InboxManagement.tsx`
+- `src/components/dashboard/InboxCard.tsx`
+- `src/components/dashboard/CreateInboxDialog.tsx`
+- `src/components/dashboard/ManageInboxUsersDialog.tsx`
 
-### Arquivos modificados:
-- `src/App.tsx` - adicionar rota `/dashboard/helpdesk`
-- `src/components/dashboard/Sidebar.tsx` - adicionar item "Atendimento"
-- `supabase/functions/uazapi-proxy/index.ts` - adicionar action `send-chat`
-- `supabase/config.toml` - registrar nova edge function
+### Modificados:
+- `src/App.tsx` → Adicionar rota `/dashboard/inboxes`
+- `src/components/dashboard/Sidebar.tsx` → Adicionar link "Caixas de Entrada"
+
+---
+
+## 9. Fase Futura (Não Incluído Aqui)
+
+- Dashboard de analytics por inbox (conversas, tempo resposta)
+- Auto-assign de conversas por round-robin
+- Transferência entre gestores/equipes
+- Histórico de auditoria (quem criou/deletou inbox)
 
