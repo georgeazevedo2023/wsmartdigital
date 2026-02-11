@@ -53,7 +53,12 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
           </video>
         )}
 
-        {message.content && <p className="whitespace-pre-wrap break-words">{message.content}</p>}
+        {message.content && typeof message.content === 'string' && (
+          <p className="whitespace-pre-wrap break-words">{message.content}</p>
+        )}
+        {message.content && typeof message.content === 'object' && (
+          <p className="whitespace-pre-wrap break-words text-muted-foreground italic text-xs">[Mídia]</p>
+        )}
 
         <span className="text-[10px] text-muted-foreground block text-right mt-0.5">
           {format(new Date(message.created_at), 'HH:mm')}
