@@ -249,25 +249,36 @@ Deno.serve(async (req) => {
       .update(updateData)
       .eq('id', conversation.id)
 
-    // Broadcast the new message for realtime (bypasses RLS issues with postgres_changes)
-    const broadcastChannel = supabase.channel('helpdesk-realtime')
-    await broadcastChannel.send({
-      type: 'broadcast',
-      event: 'new-message',
-      payload: {
-        conversation_id: conversation.id,
-        inbox_id: inbox.id,
-        message_id: insertedMsg.id,
-        direction,
-        content,
-        media_type: mediaType,
-        media_url: mediaUrl || null,
-        created_at: msgTimestamp,
-      },
-    })
-    await supabase.removeChannel(broadcastChannel)
+    // Broadcast via REST API (reliable from Edge Functions - no WebSocket needed)
+    const broadcastRes = await fetch(
+      `${Deno.env.get('SUPABASE_URL')}/realtime/v1/api/broadcast`,
+      {
+        method: 'POST',
+        headers: {
+          'apikey': Deno.env.get('SUPABASE_ANON_KEY')!,
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${Deno.env.get('SUPABASE_ANON_KEY')!}`,
+        },
+        body: JSON.stringify({
+          messages: [{
+            topic: 'helpdesk-realtime',
+            event: 'new-message',
+            payload: {
+              conversation_id: conversation.id,
+              inbox_id: inbox.id,
+              message_id: insertedMsg.id,
+              direction,
+              content,
+              media_type: mediaType,
+              media_url: mediaUrl || null,
+              created_at: msgTimestamp,
+            },
+          }],
+        }),
+      }
+    )
 
-    console.log('Message processed + broadcast sent:', conversation.id, direction, mediaType)
+    console.log('Message processed + REST broadcast status:', broadcastRes.status, conversation.id, direction, mediaType)
 
     return new Response(JSON.stringify({ ok: true, conversation_id: conversation.id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
