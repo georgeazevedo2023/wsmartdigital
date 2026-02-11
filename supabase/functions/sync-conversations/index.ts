@@ -70,61 +70,49 @@ Deno.serve(async (req) => {
 
     console.log(`Syncing conversations for inbox ${inbox.name} (instance: ${instance.name})`)
 
-    // 2. Fetch chats from UAZAPI
-    // Try POST /chat/search first, fallback to GET /chat/list
+    // 2. Fetch chats from UAZAPI using POST /chat/find (V2 API)
+    console.log(`Calling POST ${uazapiUrl}/chat/find`)
+    const chatsRes = await fetch(`${uazapiUrl}/chat/find`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'token': instanceToken },
+      body: JSON.stringify({
+        wa_isGroup: false,
+        limit: 200,
+        sort: '-wa_lastMsgTimestamp',
+      }),
+    })
+
+    const chatsText = await chatsRes.text()
+    console.log(`/chat/find status: ${chatsRes.status}, response (first 500): ${chatsText.substring(0, 500)}`)
+
+    if (!chatsRes.ok) {
+      return new Response(JSON.stringify({ error: `UAZAPI /chat/find returned ${chatsRes.status}`, detail: chatsText.substring(0, 300) }), {
+        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    let chatsParsed: unknown
+    try { chatsParsed = JSON.parse(chatsText) } catch {
+      return new Response(JSON.stringify({ error: 'Failed to parse /chat/find response' }), {
+        status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
+    // Extract array from response
     let chats: Array<Record<string, unknown>> = []
-
-    // Try multiple UAZAPI endpoints to find chats
-    const chatEndpoints = [
-      { url: `${uazapiUrl}/chat/fetchChats`, method: 'POST', body: JSON.stringify({ count: 200 }) },
-      { url: `${uazapiUrl}/chat/getChats`, method: 'POST', body: JSON.stringify({ count: 200 }) },
-      { url: `${uazapiUrl}/chat/search`, method: 'GET', body: null },
-      { url: `${uazapiUrl}/chat/list`, method: 'POST', body: JSON.stringify({}) },
-      { url: `${uazapiUrl}/chat/list`, method: 'GET', body: null },
-    ]
-
-    for (const ep of chatEndpoints) {
-      if (chats.length > 0) break
-      try {
-        console.log(`Trying ${ep.method} ${ep.url}`)
-        const fetchOpts: RequestInit = {
-          method: ep.method,
-          headers: { 'Content-Type': 'application/json', 'token': instanceToken },
-        }
-        if (ep.body && ep.method === 'POST') fetchOpts.body = ep.body
-
-        const res = await fetch(ep.url, fetchOpts)
-        const text = await res.text()
-        console.log(`${ep.url} status: ${res.status}, response (first 300): ${text.substring(0, 300)}`)
-
-        if (!res.ok) continue
-
-        let parsed: unknown
-        try { parsed = JSON.parse(text) } catch { continue }
-
-        let extracted: unknown[] = []
-        if (Array.isArray(parsed)) {
-          extracted = parsed
-        } else if (parsed && typeof parsed === 'object') {
-          const obj = parsed as Record<string, unknown>
-          const candidate = obj.chats || obj.Chats || obj.data || obj.Data || obj.conversations || obj.Conversations
-          if (Array.isArray(candidate)) extracted = candidate
-        }
-
-        if (extracted.length > 0) {
-          chats = extracted as Array<Record<string, unknown>>
-          console.log(`Success with ${ep.url}, got ${chats.length} chats`)
-        }
-      } catch (e) {
-        console.error(`${ep.url} failed:`, e)
-      }
+    if (Array.isArray(chatsParsed)) {
+      chats = chatsParsed
+    } else if (chatsParsed && typeof chatsParsed === 'object') {
+      const obj = chatsParsed as Record<string, unknown>
+      const candidate = obj.chats || obj.data || obj.Data || obj.results
+      if (Array.isArray(candidate)) chats = candidate
     }
 
     console.log(`Total chats fetched: ${chats.length}`)
 
-    // 3. Filter individual chats only (exclude groups @g.us and status @broadcast)
+    // 3. Filter individual chats (exclude groups and status broadcast)
     const individualChats = chats.filter((chat) => {
-      const jid = String(chat.jid || chat.Jid || chat.JID || chat.id || chat.Id || '')
+      const jid = String(chat.wa_chatid || chat.wa_fastid || chat.jid || chat.id || '')
       return jid.endsWith('@s.whatsapp.net') && !jid.includes('status')
     })
 
@@ -135,14 +123,13 @@ Deno.serve(async (req) => {
 
     for (const chat of individualChats) {
       try {
-        const jid = String(chat.jid || chat.Jid || chat.JID || chat.id || chat.Id || '')
-        const chatName = String(chat.name || chat.Name || chat.pushName || chat.PushName || '')
+        const jid = String(chat.wa_chatid || chat.wa_fastid || chat.jid || chat.id || '')
+        const chatName = String(chat.wa_contactName || chat.wa_name || chat.name || chat.pushName || '')
         const phone = jid.split('@')[0]
 
         if (!jid || !phone) continue
 
         // 3a. Upsert contact
-        // Check if contact exists first
         const { data: existingContact } = await supabase
           .from('contacts')
           .select('id')
@@ -153,7 +140,6 @@ Deno.serve(async (req) => {
 
         if (existingContact) {
           contactId = existingContact.id
-          // Update name if we have a new one
           if (chatName) {
             await supabase.from('contacts').update({ name: chatName }).eq('id', contactId)
           }
@@ -172,7 +158,7 @@ Deno.serve(async (req) => {
           contactId = newContact.id
         }
 
-        // 3b. Check if conversation already exists for this contact+inbox
+        // 3b. Check if conversation already exists
         const { data: existingConv } = await supabase
           .from('conversations')
           .select('id')
@@ -186,13 +172,11 @@ Deno.serve(async (req) => {
         if (existingConv) {
           conversationId = existingConv.id
         } else {
-          // Get last message timestamp from chat data
-          const lastMsgTimestamp = chat.lastMessageTimestamp || chat.LastMessageTimestamp ||
-            chat.timestamp || chat.Timestamp || null
+          const lastMsgTimestamp = chat.wa_lastMsgTimestamp || chat.lastMessageTimestamp || chat.timestamp || null
           const lastMsgAt = lastMsgTimestamp
             ? new Date(typeof lastMsgTimestamp === 'number' 
-                ? lastMsgTimestamp > 9999999999 ? lastMsgTimestamp : lastMsgTimestamp * 1000 
-                : lastMsgTimestamp
+                ? (lastMsgTimestamp as number) > 9999999999 ? (lastMsgTimestamp as number) : (lastMsgTimestamp as number) * 1000 
+                : lastMsgTimestamp as string
               ).toISOString()
             : new Date().toISOString()
 
@@ -219,10 +203,10 @@ Deno.serve(async (req) => {
 
         // 3c. Fetch recent messages for this chat
         try {
-          const msgsRes = await fetch(`${uazapiUrl}/chat/messages`, {
+          const msgsRes = await fetch(`${uazapiUrl}/message/find`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'token': instanceToken },
-            body: JSON.stringify({ chatjid: jid, count: 30 }),
+            body: JSON.stringify({ wa_chatid: jid, limit: 30, sort: '-wa_timestamp' }),
           })
 
           const msgsText = await msgsRes.text()
@@ -242,7 +226,7 @@ Deno.serve(async (req) => {
             const messagesToInsert = []
 
             for (const msg of messages) {
-              const msgId = String(msg.id || msg.Id || msg.ID || msg.key?.id || '')
+              const msgId = String(msg.wa_id || msg._id || msg.id || (msg.key as Record<string,unknown>)?.id || '')
               if (!msgId) continue
 
               // Check if already exists
@@ -254,17 +238,16 @@ Deno.serve(async (req) => {
 
               if (existing) continue
 
-              const fromMe = msg.fromMe ?? msg.FromMe ?? msg.from_me ?? false
+              const fromMe = msg.wa_fromMe ?? msg.fromMe ?? false
               const msgContent = String(
-                msg.body || msg.Body || msg.text || msg.Text || 
-                msg.message?.conversation || msg.message?.extendedTextMessage?.text || 
-                msg.content || ''
+                msg.wa_body || msg.wa_text || msg.body || msg.text || 
+                msg.content || (msg.message as Record<string,unknown>)?.conversation || ''
               )
-              const msgTimestamp = msg.timestamp || msg.Timestamp || msg.messageTimestamp || Date.now() / 1000
+              const msgTimestamp = msg.wa_timestamp || msg.timestamp || msg.messageTimestamp || Date.now() / 1000
               const createdAt = new Date(
                 typeof msgTimestamp === 'number'
-                  ? msgTimestamp > 9999999999 ? msgTimestamp : msgTimestamp * 1000
-                  : msgTimestamp
+                  ? (msgTimestamp as number) > 9999999999 ? (msgTimestamp as number) : (msgTimestamp as number) * 1000
+                  : msgTimestamp as string
               ).toISOString()
 
               // Detect media
