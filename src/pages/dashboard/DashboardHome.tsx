@@ -62,6 +62,32 @@ const DashboardHome = () => {
     fetchHelpdeskLeadsStats(selectedHelpdeskInstance ?? undefined);
   }, [selectedHelpdeskInstance]);
 
+  // Subscribe to realtime updates for helpdesk leads
+  useEffect(() => {
+    const channel = supabase
+      .channel('helpdesk-leads-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'lead_database_entries',
+          filter: 'source=eq.helpdesk',
+        },
+        (payload) => {
+          // Refresh stats when a new helpdesk lead is added
+          if (payload.eventType === 'INSERT') {
+            fetchHelpdeskLeadsStats(selectedHelpdeskInstance ?? undefined);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [selectedHelpdeskInstance]);
+
   const fetchData = async () => {
     try {
       // Fetch instances
