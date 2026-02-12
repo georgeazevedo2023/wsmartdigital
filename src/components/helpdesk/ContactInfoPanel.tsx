@@ -1,13 +1,15 @@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Phone, User } from 'lucide-react';
+import { Phone, User, ArrowLeft } from 'lucide-react';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
 
 interface ContactInfoPanelProps {
   conversation: Conversation;
   onUpdateConversation: (id: string, updates: Partial<Conversation>) => void;
+  onBack?: () => void;
 }
 
 const statusOptions = [
@@ -22,12 +24,19 @@ const priorityOptions = [
   { value: 'baixa', label: 'Baixa', color: 'bg-primary text-primary-foreground' },
 ];
 
-export const ContactInfoPanel = ({ conversation, onUpdateConversation }: ContactInfoPanelProps) => {
+export const ContactInfoPanel = ({ conversation, onUpdateConversation, onBack }: ContactInfoPanelProps) => {
   const contact = conversation.contact;
   const name = contact?.name || contact?.phone || 'Desconhecido';
 
   return (
     <div className="p-4 space-y-5">
+      {/* Back button (mobile) */}
+      {onBack && (
+        <Button variant="ghost" size="sm" className="gap-1 -ml-2 -mt-2" onClick={onBack}>
+          <ArrowLeft className="w-4 h-4" />
+          Voltar
+        </Button>
+      )}
       {/* Contact */}
       <div className="flex flex-col items-center text-center">
         <Avatar className="w-16 h-16 mb-2">

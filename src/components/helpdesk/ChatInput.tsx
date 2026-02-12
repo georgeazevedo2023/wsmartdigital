@@ -131,7 +131,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isNote ? 'Escrever nota privada...' : 'Escrever mensagem...'}
-          className="min-h-[36px] max-h-32 resize-none text-sm"
+          className="min-h-[40px] max-h-32 resize-none text-sm md:text-sm text-base"
           rows={1}
         />
         <Button

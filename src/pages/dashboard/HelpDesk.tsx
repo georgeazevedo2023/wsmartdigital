@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsMobile } from '@/hooks/use-mobile';
 import { ConversationList } from '@/components/helpdesk/ConversationList';
 import { ChatPanel } from '@/components/helpdesk/ChatPanel';
 import { ContactInfoPanel } from '@/components/helpdesk/ContactInfoPanel';
@@ -63,6 +64,8 @@ interface Inbox {
 
 const HelpDesk = () => {
   const { user } = useAuth();
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState<'list' | 'chat' | 'info'>('list');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('aberta');
@@ -229,6 +232,7 @@ const HelpDesk = () => {
 
   const handleSelectConversation = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
+    if (isMobile) setMobileView('chat');
 
     if (!conversation.is_read) {
       await supabase
@@ -259,27 +263,72 @@ const HelpDesk = () => {
     );
   });
 
+  const inboxSelector = inboxes.length > 0 ? (
+    <div className="flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-card/50 shrink-0">
+      <span className="text-sm text-muted-foreground font-medium">Caixa:</span>
+      <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
+        <SelectTrigger className="w-52 h-8 text-sm">
+          <SelectValue placeholder="Selecionar inbox" />
+        </SelectTrigger>
+        <SelectContent>
+          {inboxes.map(inbox => (
+            <SelectItem key={inbox.id} value={inbox.id}>
+              {inbox.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  ) : null;
+
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+        {mobileView === 'list' && (
+          <>
+            {inboxSelector}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <ConversationList
+                conversations={filteredConversations}
+                selectedId={selectedConversation?.id || null}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onSelect={handleSelectConversation}
+                loading={loading}
+                onSync={handleSync}
+                syncing={syncing}
+              />
+            </div>
+          </>
+        )}
+        {mobileView === 'chat' && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <ChatPanel
+              conversation={selectedConversation}
+              onUpdateConversation={handleUpdateConversation}
+              onBack={() => setMobileView('list')}
+              onShowInfo={() => setMobileView('info')}
+            />
+          </div>
+        )}
+        {mobileView === 'info' && selectedConversation && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <ContactInfoPanel
+              conversation={selectedConversation}
+              onUpdateConversation={handleUpdateConversation}
+              onBack={() => setMobileView('chat')}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
-      {/* Inbox selector bar */}
-      {inboxes.length > 0 && (
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-card/50 shrink-0">
-          <span className="text-sm text-muted-foreground font-medium">Caixa:</span>
-          <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
-            <SelectTrigger className="w-52 h-8 text-sm">
-              <SelectValue placeholder="Selecionar inbox" />
-            </SelectTrigger>
-            <SelectContent>
-              {inboxes.map(inbox => (
-                <SelectItem key={inbox.id} value={inbox.id}>
-                  {inbox.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
+      {inboxSelector}
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
         {/* Left: Conversation List */}
