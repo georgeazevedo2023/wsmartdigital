@@ -4,7 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
@@ -65,7 +66,7 @@ const LeadsBroadcaster = () => {
   // Optimized: 3 steps instead of 4
   const [step, setStep] = useState<'instance' | 'contacts' | 'message'>('instance');
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
-  const [selectedDatabase, setSelectedDatabase] = useState<LeadDatabase | null>(null);
+  const [selectedDatabases, setSelectedDatabases] = useState<LeadDatabase[]>([]);
   const [databases, setDatabases] = useState<LeadDatabase[]>([]);
   const [isLoadingDatabases, setIsLoadingDatabases] = useState(false);
   const [isCreatingNewDatabase, setIsCreatingNewDatabase] = useState(false);
@@ -126,32 +127,31 @@ const LeadsBroadcaster = () => {
     setStep('contacts');
   };
 
-  const handleDatabaseChange = async (value: string) => {
-    if (value === 'new') {
-      setSelectedDatabase(null);
-      setIsCreatingNewDatabase(true);
+  const loadLeadsFromDatabases = async (dbs: LeadDatabase[]) => {
+    if (dbs.length === 0) {
       setLeads([]);
       setSelectedLeads(new Set());
-      setNewDatabaseName('');
       return;
     }
 
-    const database = databases.find(d => d.id === value);
-    if (!database) return;
-
-    setSelectedDatabase(database);
-    setIsCreatingNewDatabase(false);
     setIsLoadingLeads(true);
-
     try {
+      const ids = dbs.map(d => d.id);
       const { data, error } = await supabase
         .from('lead_database_entries')
         .select('*')
-        .eq('database_id', database.id);
+        .in('database_id', ids);
 
       if (error) throw error;
 
-      const loadedLeads: Lead[] = (data || []).map((entry) => ({
+      const seen = new Set<string>();
+      const uniqueEntries = (data || []).filter(entry => {
+        if (seen.has(entry.phone)) return false;
+        seen.add(entry.phone);
+        return true;
+      });
+
+      const loadedLeads: Lead[] = uniqueEntries.map((entry) => ({
         id: entry.id,
         phone: entry.phone,
         name: entry.name || undefined,
@@ -171,6 +171,16 @@ const LeadsBroadcaster = () => {
     } finally {
       setIsLoadingLeads(false);
     }
+  };
+
+  const handleToggleDatabase = async (db: LeadDatabase) => {
+    const isSelected = selectedDatabases.some(d => d.id === db.id);
+    const newSelection = isSelected
+      ? selectedDatabases.filter(d => d.id !== db.id)
+      : [...selectedDatabases, db];
+    setSelectedDatabases(newSelection);
+    setIsCreatingNewDatabase(false);
+    await loadLeadsFromDatabases(newSelection);
   };
 
   const handleSaveDatabase = async () => {
@@ -226,12 +236,12 @@ const LeadsBroadcaster = () => {
         id: db.id,
         name: db.name,
         description: db.description,
-        leads_count: db.leads_count,
-        created_at: db.created_at,
-        updated_at: db.updated_at,
+        leads_count: db.leads_count ?? 0,
+        created_at: db.created_at ?? '',
+        updated_at: db.updated_at ?? '',
       };
 
-      setSelectedDatabase(newDb);
+      setSelectedDatabases([newDb]);
       setDatabases(prev => [newDb, ...prev]);
       setIsCreatingNewDatabase(false);
       toast.success(`Base "${db.name}" salva com ${leads.length} contatos`);
@@ -244,7 +254,8 @@ const LeadsBroadcaster = () => {
   };
 
   const handleUpdateDatabase = async () => {
-    if (!selectedDatabase || !user) return;
+    if (selectedDatabases.length !== 1 || !user) return;
+    const targetDb = selectedDatabases[0];
 
     setIsSavingDatabase(true);
 
@@ -252,10 +263,10 @@ const LeadsBroadcaster = () => {
       await supabase
         .from('lead_database_entries')
         .delete()
-        .eq('database_id', selectedDatabase.id);
+        .eq('database_id', targetDb.id);
 
       const entries = leads.map((l) => ({
-        database_id: selectedDatabase.id,
+        database_id: targetDb.id,
         phone: l.phone,
         name: l.name || null,
         jid: l.jid,
@@ -277,13 +288,13 @@ const LeadsBroadcaster = () => {
       const { error: updateError } = await supabase
         .from('lead_databases')
         .update({ leads_count: leads.length })
-        .eq('id', selectedDatabase.id);
+        .eq('id', targetDb.id);
 
       if (updateError) throw updateError;
 
-      setSelectedDatabase(prev => prev ? { ...prev, leads_count: leads.length } : null);
+      setSelectedDatabases(prev => prev.map(d => d.id === targetDb.id ? { ...d, leads_count: leads.length } : d));
       setDatabases(prev => prev.map(d => 
-        d.id === selectedDatabase.id ? { ...d, leads_count: leads.length } : d
+        d.id === targetDb.id ? { ...d, leads_count: leads.length } : d
       ));
       toast.success('Base atualizada');
     } catch (error) {
@@ -406,7 +417,7 @@ const LeadsBroadcaster = () => {
     setSelectedLeads(new Set());
     setStep('instance');
     setSelectedInstance(null);
-    setSelectedDatabase(null);
+    setSelectedDatabases([]);
     setIsCreatingNewDatabase(false);
     setNewDatabaseName('');
     setResendData(null);
@@ -418,7 +429,7 @@ const LeadsBroadcaster = () => {
     } else if (step === 'contacts') {
       setStep('instance');
       setSelectedInstance(null);
-      setSelectedDatabase(null);
+      setSelectedDatabases([]);
       setLeads([]);
       setSelectedLeads(new Set());
       setIsCreatingNewDatabase(false);
@@ -428,7 +439,7 @@ const LeadsBroadcaster = () => {
   const handleChangeInstance = () => {
     setStep('instance');
     setSelectedInstance(null);
-    setSelectedDatabase(null);
+    setSelectedDatabases([]);
     setLeads([]);
     setSelectedLeads(new Set());
     setIsCreatingNewDatabase(false);
@@ -441,13 +452,11 @@ const LeadsBroadcaster = () => {
 
   const handleDatabaseUpdated = (updated: LeadDatabase) => {
     setDatabases(prev => prev.map(d => d.id === updated.id ? updated : d));
-    if (selectedDatabase?.id === updated.id) {
-      setSelectedDatabase(updated);
-    }
+    setSelectedDatabases(prev => prev.map(d => d.id === updated.id ? updated : d));
   };
 
   const selectedLeadsList = leads.filter(l => selectedLeads.has(l.id));
-  const hasUnsavedChanges = isCreatingNewDatabase && leads.length > 0 && !selectedDatabase;
+  const hasUnsavedChanges = isCreatingNewDatabase && leads.length > 0 && selectedDatabases.length === 0;
   const canSaveDatabase = isCreatingNewDatabase && leads.length > 0 && newDatabaseName.trim();
 
   return (
@@ -562,90 +571,112 @@ const LeadsBroadcaster = () => {
           {/* Compact Header with Instance */}
           <BroadcasterHeader
             instance={selectedInstance}
-            database={selectedDatabase}
+            database={selectedDatabases}
             onChangeInstance={handleChangeInstance}
             showDatabase={false}
           />
 
-          {/* Database Selector - Compact Dropdown */}
+          {/* Database Selector - Multi-select Cards */}
           <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
             <CardContent className="p-4">
-              <div className="flex items-center gap-4">
-                <div className="flex-1">
-                  <Label className="text-sm font-medium mb-2 block">Base de Leads</Label>
-                  <Select
-                    value={isCreatingNewDatabase ? 'new' : (selectedDatabase?.id || '')}
-                    onValueChange={handleDatabaseChange}
-                    disabled={isLoadingDatabases || isLoadingLeads}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue placeholder={isLoadingDatabases ? "Carregando..." : "Selecione ou crie uma base"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="new">
-                        <div className="flex items-center gap-2">
-                          <Plus className="w-4 h-4" />
-                          Criar Nova Base
-                        </div>
-                      </SelectItem>
-                      {databases.map(db => (
-                        <SelectItem key={db.id} value={db.id}>
-                          {db.name} ({db.leads_count} contatos)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <Label className="text-sm font-medium mb-3 block">Bases de Leads</Label>
+              
+              <div className="space-y-2">
+                <Button
+                  variant="outline"
+                  className="w-full border-dashed justify-start gap-2"
+                  onClick={() => {
+                    setIsCreatingNewDatabase(true);
+                    setSelectedDatabases([]);
+                    setLeads([]);
+                    setSelectedLeads(new Set());
+                    setNewDatabaseName('');
+                  }}
+                  disabled={isLoadingDatabases}
+                >
+                  <Plus className="w-4 h-4" />
+                  Criar Nova Base
+                </Button>
 
-                {/* New Database Name Input */}
-                {isCreatingNewDatabase && (
-                  <div className="flex-1">
-                    <Label className="text-sm font-medium mb-2 block">Nome da Nova Base</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Ex: Clientes VIP..."
-                        value={newDatabaseName}
-                        onChange={(e) => setNewDatabaseName(e.target.value)}
-                      />
-                      <Button
-                        onClick={handleSaveDatabase}
-                        disabled={!canSaveDatabase || isSavingDatabase}
-                        size="sm"
-                        className="shrink-0"
-                      >
-                        {isSavingDatabase ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Save className="w-4 h-4" />
-                        )}
-                      </Button>
-                    </div>
+                {isLoadingDatabases ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+                    <span className="ml-2 text-sm text-muted-foreground">Carregando...</span>
                   </div>
+                ) : (
+                  databases.map(db => {
+                    const isSelected = selectedDatabases.some(d => d.id === db.id);
+                    return (
+                      <div
+                        key={db.id}
+                        onClick={() => handleToggleDatabase(db)}
+                        className={cn(
+                          "flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50",
+                          isSelected
+                            ? "border-primary bg-primary/5"
+                            : "border-border/50"
+                        )}
+                      >
+                        <Checkbox checked={isSelected} className="pointer-events-none" />
+                        <Database className="w-4 h-4 text-muted-foreground shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-sm">{db.name}</span>
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">{db.leads_count ?? 0} contatos</span>
+                      </div>
+                    );
+                  })
                 )}
+              </div>
 
-                {/* Update Existing Database Button */}
-                {selectedDatabase && !isCreatingNewDatabase && (
+              {/* New Database Name Input */}
+              {isCreatingNewDatabase && (
+                <div className="mt-3 pt-3 border-t">
+                  <Label className="text-sm font-medium mb-2 block">Nome da Nova Base</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      placeholder="Ex: Clientes VIP..."
+                      value={newDatabaseName}
+                      onChange={(e) => setNewDatabaseName(e.target.value)}
+                    />
+                    <Button
+                      onClick={handleSaveDatabase}
+                      disabled={!canSaveDatabase || isSavingDatabase}
+                      size="sm"
+                      className="shrink-0"
+                    >
+                      {isSavingDatabase ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Save className="w-4 h-4" />
+                      )}
+                    </Button>
+                  </div>
+                  {hasUnsavedChanges && !newDatabaseName.trim() && (
+                    <p className="text-xs text-destructive mt-2">
+                      Digite um nome para salvar a base de leads
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Update Existing Database Button - only when exactly 1 selected */}
+              {selectedDatabases.length === 1 && !isCreatingNewDatabase && (
+                <div className="mt-3 pt-3 border-t flex justify-end">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleUpdateDatabase}
                     disabled={isSavingDatabase}
-                    className="shrink-0 mt-6"
                   >
                     {isSavingDatabase ? (
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                     ) : (
                       <Save className="w-4 h-4 mr-2" />
                     )}
-                    Salvar
+                    Salvar alterações
                   </Button>
-                )}
-              </div>
-
-              {hasUnsavedChanges && !newDatabaseName.trim() && (
-                <p className="text-xs text-amber-600 mt-2">
-                  Digite um nome para salvar a base de leads
-                </p>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -659,7 +690,7 @@ const LeadsBroadcaster = () => {
           )}
 
           {/* Import Section */}
-          {!isLoadingLeads && (selectedDatabase || isCreatingNewDatabase) && (
+          {!isLoadingLeads && (selectedDatabases.length > 0 || isCreatingNewDatabase) && (
             <Card className="border-border/50 bg-card/50 backdrop-blur-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -761,7 +792,7 @@ const LeadsBroadcaster = () => {
           {/* Compact Header */}
           <BroadcasterHeader
             instance={selectedInstance}
-            database={selectedDatabase}
+            database={selectedDatabases}
             onChangeInstance={handleChangeInstance}
             onChangeDatabase={() => setStep('contacts')}
           />
