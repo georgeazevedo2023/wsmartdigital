@@ -67,11 +67,12 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
 
   // Auto-scroll to bottom
   useEffect(() => {
+    if (loading) return;
     const timer = setTimeout(() => {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, 100);
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    }, 150);
     return () => clearTimeout(timer);
-  }, [messages]);
+  }, [messages, loading]);
 
   if (!conversation) {
     return (
