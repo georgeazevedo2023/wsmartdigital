@@ -549,7 +549,7 @@ Deno.serve(async (req) => {
 
       case 'resolve-lids': {
         // Resolve LIDs (Linked Device IDs) to real phone numbers
-        // Uses /chat/check endpoint to find the PhoneNumber for each LID
+        // Uses /group/info endpoint which returns real PhoneNumber for participants
         if (!instanceToken || !body.lids || !Array.isArray(body.lids)) {
           return new Response(
             JSON.stringify({ error: 'Instance token and lids array required' }),
@@ -557,65 +557,65 @@ Deno.serve(async (req) => {
           )
         }
         
-        console.log('Resolving', body.lids.length, 'LIDs to phone numbers')
+        const groupJids: string[] = body.groupJids || []
+        console.log('Resolving', body.lids.length, 'LIDs using /group/info from', groupJids.length, 'groups')
         
-        // Extract just the numeric part from LIDs (remove @lid suffix)
-        const cleanLids = body.lids.map((lid: string) => lid.split('@')[0])
+        // Build a set of LID identifiers to match (without @lid suffix)
+        const lidSet = new Set(body.lids.map((lid: string) => lid.split('@')[0]))
         
-        // UAZAPI expects { numbers: [...] } not { phone: [...] }
-        const resolveResponse = await fetch(`${uazapiUrl}/chat/check`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'token': instanceToken,
-          },
-          body: JSON.stringify({ numbers: cleanLids }),
-        })
-        
-        console.log('Resolve LIDs response status:', resolveResponse.status)
-        
-        const resolveRawText = await resolveResponse.text()
-        console.log('Resolve LIDs raw response (first 500 chars):', resolveRawText.substring(0, 500))
-        
-        let resolveData: unknown
-        try {
-          resolveData = JSON.parse(resolveRawText)
-        } catch {
-          resolveData = { raw: resolveRawText }
-        }
-        
-        // Normalize response - UAZAPI may return { Users: [...] } or other variations
-        const resolvedUsers = (resolveData as Record<string, unknown>)?.Users || 
-                              (resolveData as Record<string, unknown>)?.users || 
-                              (resolveData as Record<string, unknown>)?.data || 
-                              []
-        
-        // Map LIDs to their resolved phone numbers
+        // Map LID -> resolved phone info
         const lidToPhone: Record<string, { phone: string; name?: string; isValid: boolean }> = {}
         
-        if (Array.isArray(resolvedUsers)) {
-          for (const user of resolvedUsers as Array<Record<string, unknown>>) {
-            const originalLid = String(user.Phone || user.phone || user.Number || user.number || '')
-            const jid = String(user.JID || user.jid || '')
-            const name = String(user.VerifiedName || user.verifiedName || user.Name || user.name || '')
-            const isRegistered = user.IsRegistered ?? user.isRegistered ?? true
+        // For each group, fetch full info with real PhoneNumbers
+        for (const gjid of groupJids) {
+          try {
+            const infoResp = await fetch(`${uazapiUrl}/group/info`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'token': instanceToken,
+              },
+              body: JSON.stringify({ groupjid: gjid }),
+            })
             
-            // Extract phone from JID (format: 5581999999999@s.whatsapp.net)
-            const phoneFromJid = jid.split('@')[0]
+            if (!infoResp.ok) {
+              console.log('group/info failed for', gjid, 'status:', infoResp.status)
+              continue
+            }
             
-            if (originalLid) {
-              lidToPhone[originalLid] = {
-                phone: phoneFromJid || originalLid,
-                name: name || undefined,
-                isValid: !!isRegistered,
+            const infoData = await infoResp.json()
+            const participants = infoData?.Participants || infoData?.participants || []
+            
+            for (const p of participants as Array<Record<string, unknown>>) {
+              const pJid = String(p.JID || p.jid || '')
+              const pPhone = String(p.PhoneNumber || p.phoneNumber || '')
+              const pName = String(p.PushName || p.pushName || p.DisplayName || p.Name || p.name || '')
+              
+              // Extract the LID part from the JID
+              const pLidKey = pJid.split('@')[0]
+              
+              // Match: if this participant's JID (LID key) is in our set AND has a real PhoneNumber
+              if (lidSet.has(pLidKey) && pPhone && !pPhone.includes('·')) {
+                const cleanPhone = pPhone.replace(/\D/g, '')
+                if (cleanPhone.length >= 10) {
+                  lidToPhone[pLidKey] = {
+                    phone: cleanPhone,
+                    name: pName || undefined,
+                    isValid: true,
+                  }
+                }
               }
             }
+          } catch (err) {
+            console.error('Error fetching group/info for', gjid, err)
           }
         }
         
+        console.log('Resolved', Object.keys(lidToPhone).length, 'of', body.lids.length, 'LIDs')
+        
         return new Response(
           JSON.stringify({ resolved: lidToPhone }),
-          { status: resolveResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
 
