@@ -3,7 +3,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Phone, User, ArrowLeft } from 'lucide-react';
+import { Phone, ArrowLeft } from 'lucide-react';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
 
 interface ContactInfoPanelProps {
@@ -29,37 +29,37 @@ export const ContactInfoPanel = ({ conversation, onUpdateConversation, onBack }:
   const name = contact?.name || contact?.phone || 'Desconhecido';
 
   return (
-    <div className="p-4 space-y-5">
+    <div className="p-4 space-y-5 overflow-y-auto">
       {/* Back button (mobile) */}
       {onBack && (
-        <Button variant="ghost" size="sm" className="gap-1 -ml-2 -mt-2" onClick={onBack}>
+        <Button variant="ghost" size="sm" className="gap-1.5 -ml-2 -mt-1 h-10" onClick={onBack}>
           <ArrowLeft className="w-4 h-4" />
           Voltar
         </Button>
       )}
       {/* Contact */}
       <div className="flex flex-col items-center text-center">
-        <Avatar className="w-16 h-16 mb-2">
+        <Avatar className={cn('mb-3', onBack ? 'w-20 h-20' : 'w-16 h-16')}>
           <AvatarImage src={contact?.profile_pic_url || undefined} />
-          <AvatarFallback className="bg-primary/10 text-primary text-xl">
+          <AvatarFallback className="bg-primary/10 text-primary text-xl font-semibold">
             {name.charAt(0).toUpperCase()}
           </AvatarFallback>
         </Avatar>
-        <h3 className="font-semibold">{name}</h3>
-        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+        <h3 className="font-semibold text-base">{name}</h3>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
           <Phone className="w-3 h-3" />
           <span>{contact?.phone}</span>
         </div>
       </div>
 
       {/* Status */}
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <label className="text-xs text-muted-foreground font-medium">Status</label>
         <Select
           value={conversation.status}
           onValueChange={(v) => onUpdateConversation(conversation.id, { status: v })}
         >
-          <SelectTrigger className="h-8 text-sm">
+          <SelectTrigger className="h-10 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -73,13 +73,13 @@ export const ContactInfoPanel = ({ conversation, onUpdateConversation, onBack }:
       </div>
 
       {/* Priority */}
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <label className="text-xs text-muted-foreground font-medium">Prioridade</label>
         <Select
           value={conversation.priority}
           onValueChange={(v) => onUpdateConversation(conversation.id, { priority: v })}
         >
-          <SelectTrigger className="h-8 text-sm">
+          <SelectTrigger className="h-10 text-sm">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -96,7 +96,7 @@ export const ContactInfoPanel = ({ conversation, onUpdateConversation, onBack }:
       </div>
 
       {/* Inbox */}
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <label className="text-xs text-muted-foreground font-medium">Caixa de Entrada</label>
         <Badge variant="secondary" className="text-xs">
           {conversation.inbox?.name || 'N/A'}
