@@ -144,19 +144,15 @@ const ParticipantSelector = ({
     [uniqueParticipants]
   );
 
-  // Função para buscar PhoneNumbers de LIDs
+  // Função para enriquecer participantes via /group/info
   const handleResolveLids = async () => {
     if (!instance || !onParticipantsUpdated) {
       toast.error('Instância não configurada');
       return;
     }
 
-    const lids = uniqueParticipants
-      .filter(p => p.isLidOnly)
-      .map(p => p.jid);
-
-    if (lids.length === 0) {
-      toast.info('Nenhum LID para resolver');
+    if (selectedGroups.length === 0) {
+      toast.info('Nenhum grupo selecionado');
       return;
     }
 
@@ -179,7 +175,6 @@ const ParticipantSelector = ({
           body: JSON.stringify({
             action: 'resolve-lids',
             token: instance.token,
-            lids: lids,
             groupJids: selectedGroups.map(g => g.id),
           }),
         }
@@ -190,40 +185,54 @@ const ParticipantSelector = ({
       }
 
       const data = await response.json();
-      const resolved = data.resolved || {};
+      const groupParticipants = data.groupParticipants || {};
 
-      // Atualiza os grupos com os números resolvidos
-      const updatedGroups = selectedGroups.map(group => ({
-        ...group,
-        participants: group.participants.map(p => {
-          const lidKey = p.jid.split('@')[0];
-          const resolvedData = resolved[lidKey];
-          if (resolvedData && resolvedData.phone) {
-            return {
-              ...p,
-              jid: `${resolvedData.phone}@s.whatsapp.net`,
-              phoneNumber: `${resolvedData.phone}@s.whatsapp.net`,
-              name: resolvedData.name || p.name,
-            };
-          }
-          return p;
-        }),
-      }));
+      // Replace participants entirely with enriched data from /group/info
+      let totalEnriched = 0;
+      const updatedGroups = selectedGroups.map(group => {
+        const enriched = groupParticipants[group.id];
+        if (!enriched || !Array.isArray(enriched) || enriched.length === 0) return group;
 
-      const resolvedCount = Object.keys(resolved).length;
-      if (resolvedCount > 0) {
-        toast.success(`${resolvedCount} número(s) encontrado(s)`);
+        totalEnriched += enriched.length;
+        return {
+          ...group,
+          participants: enriched.map((p: { phone: string; name: string; isAdmin: boolean; isSuperAdmin: boolean }) => ({
+            jid: `${p.phone}@s.whatsapp.net`,
+            phoneNumber: p.phone,
+            name: p.name,
+            isAdmin: p.isAdmin,
+            isSuperAdmin: p.isSuperAdmin,
+          })),
+        };
+      });
+
+      if (totalEnriched > 0) {
+        toast.success(`${totalEnriched} participante(s) enriquecido(s)`);
         onParticipantsUpdated(updatedGroups);
       } else {
-        toast.info('Nenhum número encontrado para os LIDs');
+        toast.info('Nenhum dado adicional encontrado');
       }
     } catch (error) {
-      console.error('Error resolving LIDs:', error);
+      console.error('Error enriching participants:', error);
       toast.error('Erro ao buscar números');
     } finally {
       setResolvingLids(false);
     }
   };
+
+  // Auto-trigger enrichment when groups with LID contacts are selected
+  const [autoEnrichTriggered, setAutoEnrichTriggered] = useState<string>('');
+
+  const groupKey = selectedGroups.map(g => g.id).sort().join(',');
+  
+  // Use effect-like pattern via useMemo to detect group changes
+  useMemo(() => {
+    if (lidOnlyCount > 0 && instance && onParticipantsUpdated && groupKey && groupKey !== autoEnrichTriggered) {
+      setAutoEnrichTriggered(groupKey);
+      // Small delay to let UI render first
+      setTimeout(() => handleResolveLids(), 500);
+    }
+  }, [groupKey, lidOnlyCount]);
 
   if (uniqueParticipants.length === 0) {
     return (
