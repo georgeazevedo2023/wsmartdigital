@@ -34,6 +34,16 @@ interface Instance {
   status: string;
 }
 
+interface InboxItem {
+  id: string;
+  name: string;
+  instance_id: string;
+}
+
+interface InstanceWithInboxes extends Instance {
+  inboxes: InboxItem[];
+}
+
 interface SidebarProps {
   isMobile?: boolean;
   onNavigate?: () => void;
@@ -44,16 +54,17 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
   const { id: instanceId } = useParams<{ id: string }>();
   const { profile, isSuperAdmin, signOut, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
-  const [instancesOpen, setInstancesOpen] = useState(true);
-  const [broadcastOpen, setBroadcastOpen] = useState(true);
+  const [instancesOpen, setInstancesOpen] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
+  const [helpdeskOpen, setHelpdeskOpen] = useState(false);
   const [instances, setInstances] = useState<Instance[]>([]);
+  const [instancesWithInboxes, setInstancesWithInboxes] = useState<InstanceWithInboxes[]>([]);
 
   // No mobile, nunca está colapsado
   const isCollapsed = isMobile ? false : collapsed;
 
   const navItems = [
     { icon: LayoutDashboard, label: 'Dashboard', path: '/dashboard' },
-    { icon: Headphones, label: 'Atendimento', path: '/dashboard/helpdesk' },
     { icon: Clock, label: 'Agendamentos', path: '/dashboard/scheduled' },
   ];
 
@@ -66,16 +77,27 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
   const isActive = (path: string) => location.pathname === path;
   const isInstancesActive = location.pathname.includes('/dashboard/instances');
   const isBroadcastActive = location.pathname.startsWith('/dashboard/broadcast');
+  const isHelpdeskActive = location.pathname.startsWith('/dashboard/helpdesk');
 
   const fetchInstances = async () => {
     try {
-      const { data, error } = await supabase
-        .from('instances')
-        .select('id, name, status')
-        .order('name');
+      const [instancesRes, inboxesRes] = await Promise.all([
+        supabase.from('instances').select('id, name, status').order('name'),
+        supabase.from('inboxes').select('id, name, instance_id').order('name'),
+      ]);
 
-      if (error) throw error;
-      setInstances(data || []);
+      if (instancesRes.error) throw instancesRes.error;
+      const allInstances = instancesRes.data || [];
+      setInstances(allInstances);
+
+      const allInboxes: InboxItem[] = inboxesRes.data || [];
+      const grouped: InstanceWithInboxes[] = allInstances
+        .map(inst => ({
+          ...inst,
+          inboxes: allInboxes.filter(ib => ib.instance_id === inst.id),
+        }))
+        .filter(inst => inst.inboxes.length > 0);
+      setInstancesWithInboxes(grouped);
     } catch (error) {
       console.error('Error fetching instances:', error);
     }
@@ -166,6 +188,83 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
             {isCollapsed && <TooltipContent side="right">{item.label}</TooltipContent>}
           </Tooltip>
         ))}
+
+        {/* Atendimento - Collapsible com instâncias e inboxes */}
+        {!isCollapsed ? (
+          <Collapsible open={helpdeskOpen} onOpenChange={setHelpdeskOpen}>
+            <CollapsibleTrigger asChild>
+              <button
+                className={cn(
+                  'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all w-full text-left',
+                  isHelpdeskActive
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <Headphones className="w-5 h-5 shrink-0" />
+                <span className="font-medium flex-1">Atendimento</span>
+                <ChevronDown
+                  className={cn(
+                    'w-4 h-4 transition-transform',
+                    helpdeskOpen && 'transform rotate-180'
+                  )}
+                />
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="pl-5 mt-1 space-y-1">
+              {instancesWithInboxes.map((instance) => (
+                <div key={instance.id} className="space-y-0.5">
+                  <div className="flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <span
+                      className={cn(
+                        'w-1.5 h-1.5 rounded-full shrink-0',
+                        instance.status === 'connected' ? 'bg-success' : 'bg-muted-foreground'
+                      )}
+                    />
+                    <span className="truncate">{instance.name}</span>
+                  </div>
+                  {instance.inboxes.map((inbox) => (
+                    <Link
+                      key={inbox.id}
+                      to={`/dashboard/helpdesk?inbox=${inbox.id}`}
+                      onClick={handleLinkClick}
+                      className={cn(
+                        'flex items-center gap-2 px-3 py-1.5 rounded-lg transition-all text-sm pl-6',
+                        location.search.includes(inbox.id)
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:bg-sidebar-accent hover:text-foreground'
+                      )}
+                    >
+                      <Inbox className="w-3.5 h-3.5 shrink-0" />
+                      <span className="truncate">{inbox.name}</span>
+                    </Link>
+                  ))}
+                </div>
+              ))}
+              {instancesWithInboxes.length === 0 && (
+                <span className="px-3 py-2 text-xs text-muted-foreground">Nenhuma caixa configurada</span>
+              )}
+            </CollapsibleContent>
+          </Collapsible>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                to="/dashboard/helpdesk"
+                onClick={handleLinkClick}
+                className={cn(
+                  collapsedLinkClass,
+                  isHelpdeskActive
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <Headphones className="w-5 h-5" />
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent side="right">Atendimento</TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Disparador - Collapsible apenas quando NÃO colapsado */}
         {!isCollapsed ? (
