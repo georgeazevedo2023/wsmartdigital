@@ -1,66 +1,60 @@
 
-
-# Corrigir Player de Audio para Mensagens Enviadas no Helpdesk
+# Corrigir Numeros Nao Aparecendo em Participantes LID
 
 ## Problema
-Quando um audio e enviado pelo helpdesk, o destinatario recebe normalmente, mas na interface da conversa o player nao aparece. Apenas o horario e exibido (como visivel na screenshot: 07:20, 07:50, 07:56, 13:55).
+Alguns contatos na lista de participantes aparecem como "+55 · · · · · · · · 41" com badge "LID" e "[Sem numero]", enquanto outros exibem o numero completo. Isso acontece porque o endpoint `/group/list` da API retorna o campo `PhoneNumber` mascarado (com pontos de privacidade) ou vazio para certos contatos que usam LID (Linked Device ID).
 
 ## Causa Raiz
-No `ChatInput.tsx`, ao enviar audio, a mensagem e salva no banco com `media_url: null` (linha 175-181). O `MessageBubble.tsx` so renderiza o `AudioPlayer` quando `message.media_url` existe (linha 138). Sem URL, o player nao aparece.
+1. O endpoint `/group/list` (acao `groups` no proxy) retorna dados de participantes com `PhoneNumber` mascarado ou ausente para contatos LID
+2. O botao "Buscar numeros" usa a acao `resolve-lids` que chama `/chat/check` - endpoint nao confiavel para resolver LIDs
+3. O endpoint `/group/info` (acao `group-info` ja existente) e o mais confiavel para obter `PhoneNumber` real dos membros
 
 ## Solucao
-Armazenar o audio enviado no Lovable Cloud Storage e salvar a URL publica no campo `media_url` da mensagem.
-
-### Fluxo Corrigido:
-1. Usuario grava audio no browser
-2. Audio e convertido para blob
-3. **NOVO**: Upload do blob para o Storage (bucket `audio-messages`)
-4. Audio e enviado para o destinatario via UAZAPI (sem mudanca)
-5. Mensagem e salva no banco **com a URL do Storage** no campo `media_url`
-6. O broadcast inclui a `media_url` real
-7. O `MessageBubble` renderiza o `AudioPlayer` normalmente
+Alterar a acao `resolve-lids` no proxy para usar `/group/info` em vez de `/chat/check`, buscando os numeros reais dos participantes a partir dos grupos selecionados.
 
 ### Secao Tecnica
 
-**1. Criar bucket de Storage** (migracao SQL):
-- Criar bucket `audio-messages` no Storage para armazenar os audios enviados
-- Configurar politica de acesso para leitura publica e upload autenticado
+**1. Modificar `supabase/functions/uazapi-proxy/index.ts` - acao `resolve-lids`**
+- Em vez de enviar LIDs para `/chat/check`, receber tambem os group JIDs no payload
+- Para cada grupo, chamar `/group/info` que retorna participantes com `PhoneNumber` real
+- Cruzar os LIDs recebidos com os participantes retornados pelo `/group/info`
+- Retornar o mapeamento LID -> PhoneNumber real
 
-**2. Modificar `src/components/helpdesk/ChatInput.tsx`**:
-- Apos gravar o audio, fazer upload do blob para o Storage antes de salvar no banco
-- Gerar um nome unico para o arquivo (ex: `{conversation_id}/{timestamp}.ogg`)
-- Obter a URL publica do arquivo
-- Incluir `media_url` no insert e no broadcast
-
-Trecho relevante da mudanca:
+Logica simplificada:
 ```
-// Upload audio to storage
-const fileName = `${conversation.id}/${Date.now()}.ogg`;
-const { data: uploadData } = await supabase.storage
-  .from('audio-messages')
-  .upload(fileName, blob, { contentType: blob.type });
+// Receber groupJids junto com lids
+const { lids, groupJids } = body
 
-const { data: publicUrl } = supabase.storage
-  .from('audio-messages')
-  .getPublicUrl(fileName);
-
-// Save with media_url
-await supabase.from('conversation_messages').insert({
-  conversation_id: conversation.id,
-  direction: 'outgoing',
-  content: null,
-  media_type: 'audio',
-  media_url: publicUrl.publicUrl,  // <-- agora tem URL
-  sender_id: user.id,
-});
+// Para cada grupo, buscar info completa
+for (const gjid of groupJids) {
+  const resp = await fetch(`${uazapiUrl}/group/info`, {
+    method: 'POST',
+    headers: { 'token': instanceToken },
+    body: JSON.stringify({ groupjid: gjid }),
+  })
+  // Extrair PhoneNumber dos participantes e cruzar com LIDs
+}
 ```
 
-**3. Atualizar o broadcast** no mesmo arquivo:
-- Incluir `media_url: publicUrl.publicUrl` no payload do broadcast (atualmente envia `null`)
+**2. Modificar `src/components/broadcast/ParticipantSelector.tsx` - `handleResolveLids`**
+- Enviar os JIDs dos grupos selecionados junto com os LIDs na requisicao
+- Isso permite que o proxy use `/group/info` para resolver os numeros
+
+Mudanca no body da requisicao:
+```
+body: JSON.stringify({
+  action: 'resolve-lids',
+  token: instance.token,
+  lids: lids,
+  groupJids: selectedGroups.map(g => g.id),  // NOVO
+})
+```
+
+**3. Melhorar `src/components/broadcast/GroupSelector.tsx` - fallback de PushName**
+- Quando `PhoneNumber` estiver vazio mas `PushName` contiver digitos que parecem um numero de telefone (10+ digitos apos limpeza), usar o PushName como fonte do numero
+- Isso captura casos onde o numero mascarado "+55····41" nao e util mas o PushName pode conter o numero real
 
 **Arquivos modificados:**
-- `src/components/helpdesk/ChatInput.tsx` - upload para Storage + salvar URL
-
-**Migracao necessaria:**
-- Criar bucket `audio-messages` no Storage com politica de leitura publica
-
+- `supabase/functions/uazapi-proxy/index.ts` (acao resolve-lids)
+- `src/components/broadcast/ParticipantSelector.tsx` (enviar groupJids)
+- `src/components/broadcast/GroupSelector.tsx` (fallback PushName)
