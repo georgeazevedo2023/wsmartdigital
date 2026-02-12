@@ -669,7 +669,7 @@ Deno.serve(async (req) => {
       }
 
       case 'send-audio': {
-        // Send audio/voice message (PTT) to individual contact via /send/media
+        // Send audio/voice message (PTT) via dedicated /send/ptt endpoint
         console.log('send-audio: instanceToken?', !!instanceToken, 'jid?', !!body.jid, 'audio?', !!body.audio)
         if (!instanceToken || !body.jid || !body.audio) {
           return new Response(
@@ -678,18 +678,13 @@ Deno.serve(async (req) => {
           )
         }
 
-        // Strip data URI prefix if present (e.g. "data:audio/ogg;base64,...")
-        const rawAudio = String(body.audio)
-        const audioFile = rawAudio.startsWith('data:') 
-          ? rawAudio.split(',')[1] || rawAudio
-          : rawAudio
+        // Keep data URI prefix for /send/ptt - UAZAPI needs it to detect file type
+        const audioFile = String(body.audio)
 
-        const audioEndpoint = `${uazapiUrl}/send/media`
+        const audioEndpoint = `${uazapiUrl}/send/ptt`
         const audioBody = {
           number: body.jid,
-          type: 'audio',
           file: audioFile,
-          ptt: true, // Send as voice message (push-to-talk)
         }
 
         console.log('Sending audio PTT to:', body.jid)
