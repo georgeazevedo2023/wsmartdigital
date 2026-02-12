@@ -25,15 +25,17 @@ export const ConversationItem = ({ conversation, isSelected, onClick }: Conversa
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left px-3 py-3 md:py-3 min-h-[56px] flex items-start gap-3 transition-colors hover:bg-secondary/50 active:bg-secondary/70',
-        isSelected && 'bg-primary/10 border-l-2 border-primary',
-        !conversation.is_read && 'bg-secondary/30'
+        'w-full text-left px-3 py-3 min-h-[64px] flex items-center gap-3 transition-colors',
+        'hover:bg-secondary/50 active:bg-secondary/70',
+        isSelected && 'bg-primary/10 border-l-[3px] border-l-primary',
+        !isSelected && !conversation.is_read && 'bg-primary/5 border-l-[3px] border-l-primary/50',
+        !isSelected && conversation.is_read && 'border-l-[3px] border-l-transparent'
       )}
     >
       <div className="relative shrink-0">
-        <Avatar className="w-10 h-10">
+        <Avatar className="w-11 h-11">
           <AvatarImage src={contact?.profile_pic_url || undefined} />
-          <AvatarFallback className="bg-primary/10 text-primary text-sm">
+          <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
             {initials}
           </AvatarFallback>
         </Avatar>
@@ -48,7 +50,7 @@ export const ConversationItem = ({ conversation, isSelected, onClick }: Conversa
 
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className={cn('text-sm truncate', !conversation.is_read && 'font-bold')}>
+          <span className={cn('text-sm truncate', !conversation.is_read ? 'font-bold text-foreground' : 'font-medium text-foreground/90')}>
             {name}
           </span>
           <span className="text-[10px] text-muted-foreground shrink-0">
@@ -62,11 +64,14 @@ export const ConversationItem = ({ conversation, isSelected, onClick }: Conversa
         </div>
 
         <div className="flex items-center justify-between gap-2 mt-0.5">
-          <p className="text-xs text-muted-foreground truncate flex-1">
+          <p className={cn(
+            'text-xs truncate flex-1',
+            !conversation.is_read ? 'text-foreground/80 font-medium' : 'text-muted-foreground'
+          )}>
             {conversation.last_message || conversation.inbox?.name || ''}
           </p>
           {!conversation.is_read && (
-            <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+            <span className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
           )}
         </div>
       </div>
