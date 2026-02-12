@@ -1,42 +1,64 @@
 
 
-# Adicionar Toggle para Retrair/Expandir a Lista de Conversas
+# Corrigir Usabilidade e Sobreposição no HelpDesk
 
-## Objetivo
-Adicionar um botão de alternância (similar ao existente para o painel de contato à direita) para retrair/expandir a coluna da lista de conversas (coluna esquerda) no desktop. No mobile, manter apenas a lista como visualização padrão (já funciona assim).
+## Problemas Identificados
 
-## Mudanças
+Analisando os screenshots e o código:
 
-### 1. `src/pages/dashboard/HelpDesk.tsx` (Desktop)
+1. **Texto vertical no chat**: As colunas laterais (`w-80` = 320px + `w-72` = 288px = 608px) com `shrink-0` não cedem espaço, esmagando a coluna central do chat a quase zero de largura. As letras ficam empilhadas verticalmente.
+2. **Sobreposição no header**: O header do chat e o painel de contato se sobrepõem porque não há contenção de overflow adequada.
+3. **Toggle direito não funciona**: O botão existe mas fica inacessível/invisível por estar espremido na coluna comprimida.
 
-- Adicionar estado `showConversationList` (default: `true`)
-- Envolver a coluna esquerda (`w-80`) com renderização condicional baseada nesse estado
-- Passar `onToggleList` e `showingList` como props para o `ChatPanel`
+## Solução
+
+### 1. `src/pages/dashboard/HelpDesk.tsx`
+
+- Adicionar `overflow-hidden` na div da coluna central do chat para conter o conteúdo
+- Trocar as larguras fixas das colunas laterais de `w-80`/`w-72` para larguras menores e responsivas: `w-72 lg:w-80` (lista) e `w-64 lg:w-72` (contato)
+- Garantir que a coluna do chat tenha `min-w-0` E `overflow-hidden` para que o flex funcione corretamente
 
 ### 2. `src/components/helpdesk/ChatPanel.tsx`
 
-- Adicionar props: `onToggleList?: () => void` e `showingList?: boolean`
-- No header do chat, adicionar um botão com ícones `PanelLeftOpen` / `PanelLeftClose` (do Lucide) ao lado esquerdo (antes do nome do contato)
-- O botão só aparece no desktop (quando `onToggleList` é fornecido)
+- Garantir que o header tenha `overflow-hidden` para impedir que o conteúdo transborde
+- Adicionar `z-10` no header para prevenir sobreposição visual
+- Manter os botões de toggle acessíveis e com tamanho adequado
 
-### Detalhes Visuais
+### 3. `src/components/helpdesk/ContactInfoPanel.tsx`
 
-```text
-Desktop com lista aberta (padrão):
-[Lista w-80] | [▐◄] Nome do contato     [►▌] | [Info]
+- Adicionar `overflow-y-auto` ao container para evitar que o conteúdo do painel transborde quando a tela é pequena
 
-Desktop com lista fechada:
-[▐►] Nome do contato     [►▌] | [Info]
+## Detalhes Técnicos
+
+### HelpDesk.tsx - Layout corrigido
+
+```typescript
+// Coluna esquerda - largura responsiva
+<div className="w-72 lg:w-80 border-r border-border/50 flex flex-col shrink-0 overflow-hidden">
+
+// Coluna central - contenção de overflow
+<div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+
+// Coluna direita - largura responsiva
+<div className="w-64 lg:w-72 border-l border-border/50 flex flex-col shrink-0 overflow-hidden">
 ```
 
-- Ícone `PanelLeftClose` quando a lista está visível (clique fecha)
-- Ícone `PanelLeftOpen` quando a lista está oculta (clique abre)
-- Estilo consistente com o botão existente do painel de contato (ghost, size icon, h-9 w-9)
+### ChatPanel.tsx - Header com z-index
 
-### Mobile
-Nenhuma mudança necessária -- o sistema atual de `mobileView` ('list', 'chat', 'info') já exibe apenas uma view por vez, com a lista como padrão.
+```typescript
+<div className="h-14 px-3 md:px-4 flex items-center gap-2 md:gap-3 border-b border-border/50 bg-card/50 shrink-0 z-10 relative">
+```
 
-## Arquivos Modificados
-- `src/pages/dashboard/HelpDesk.tsx` -- estado + renderização condicional da coluna esquerda
-- `src/components/helpdesk/ChatPanel.tsx` -- novo botão toggle no header
+### ContactInfoPanel.tsx - Scroll
+
+```typescript
+<div className="p-4 space-y-5 overflow-y-auto">
+```
+
+## Resultado Esperado
+
+- Chat exibe texto normalmente sem empilhar letras verticalmente
+- Botões de toggle funcionam e ficam acessíveis
+- Painel de contato não sobrepõe o chat
+- Layout se adapta melhor a diferentes tamanhos de tela
 
