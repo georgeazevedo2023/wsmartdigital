@@ -1,60 +1,75 @@
 
-# Corrigir Numeros Nao Aparecendo em Participantes LID
+# Corrigir Numeros Mascarados - Enriquecimento Automatico via /group/info
 
-## Problema
-Alguns contatos na lista de participantes aparecem como "+55 · · · · · · · · 41" com badge "LID" e "[Sem numero]", enquanto outros exibem o numero completo. Isso acontece porque o endpoint `/group/list` da API retorna o campo `PhoneNumber` mascarado (com pontos de privacidade) ou vazio para certos contatos que usam LID (Linked Device ID).
-
-## Causa Raiz
-1. O endpoint `/group/list` (acao `groups` no proxy) retorna dados de participantes com `PhoneNumber` mascarado ou ausente para contatos LID
-2. O botao "Buscar numeros" usa a acao `resolve-lids` que chama `/chat/check` - endpoint nao confiavel para resolver LIDs
-3. O endpoint `/group/info` (acao `group-info` ja existente) e o mais confiavel para obter `PhoneNumber` real dos membros
+## Problema Real
+A correcao anterior tentava cruzar LIDs com participantes de `/group/info` pelo campo JID. Porem, `/group/info` retorna participantes com JIDs no formato `numero@s.whatsapp.net`, enquanto os LIDs sao no formato `xxx@lid`. Como os identificadores sao completamente diferentes, o cruzamento (`lidSet.has(pLidKey)`) nunca encontra correspondencia e nenhum numero e resolvido.
 
 ## Solucao
-Alterar a acao `resolve-lids` no proxy para usar `/group/info` em vez de `/chat/check`, buscando os numeros reais dos participantes a partir dos grupos selecionados.
+Em vez de tentar cruzar LIDs com phone numbers depois, buscar automaticamente os dados completos de `/group/info` para cada grupo selecionado e SUBSTITUIR os participantes mascarados pelos dados reais. O `/group/info` retorna participantes com PhoneNumber real - basta usar esses dados diretamente.
 
 ### Secao Tecnica
 
 **1. Modificar `supabase/functions/uazapi-proxy/index.ts` - acao `resolve-lids`**
-- Em vez de enviar LIDs para `/chat/check`, receber tambem os group JIDs no payload
-- Para cada grupo, chamar `/group/info` que retorna participantes com `PhoneNumber` real
-- Cruzar os LIDs recebidos com os participantes retornados pelo `/group/info`
-- Retornar o mapeamento LID -> PhoneNumber real
 
-Logica simplificada:
+Mudar a estrategia: em vez de cruzar por LID key, retornar TODOS os participantes com PhoneNumber valido de cada grupo. O frontend fara a substituicao completa dos dados de participantes.
+
 ```
-// Receber groupJids junto com lids
-const { lids, groupJids } = body
-
-// Para cada grupo, buscar info completa
-for (const gjid of groupJids) {
-  const resp = await fetch(`${uazapiUrl}/group/info`, {
-    method: 'POST',
-    headers: { 'token': instanceToken },
-    body: JSON.stringify({ groupjid: gjid }),
-  })
-  // Extrair PhoneNumber dos participantes e cruzar com LIDs
+case 'resolve-lids': {
+  const groupJids = body.groupJids || []
+  
+  // Para cada grupo, buscar info completa
+  const groupParticipants: Record<string, Array<{jid, phone, name}>> = {}
+  
+  for (const gjid of groupJids) {
+    const infoData = await fetch(.../group/info, {groupjid: gjid})
+    const participants = infoData.Participants || []
+    
+    // Retornar TODOS os participantes com phone valido
+    groupParticipants[gjid] = participants
+      .filter(p => p.PhoneNumber && !p.PhoneNumber.includes('·'))
+      .map(p => ({
+        jid: p.JID,
+        phone: p.PhoneNumber.replace(/\D/g, ''),
+        name: p.PushName,
+        isAdmin: p.IsAdmin,
+        isSuperAdmin: p.IsSuperAdmin,
+      }))
+  }
+  
+  return { groupParticipants }
 }
 ```
 
 **2. Modificar `src/components/broadcast/ParticipantSelector.tsx` - `handleResolveLids`**
-- Enviar os JIDs dos grupos selecionados junto com os LIDs na requisicao
-- Isso permite que o proxy use `/group/info` para resolver os numeros
 
-Mudanca no body da requisicao:
+Ao receber os dados do proxy, substituir completamente os participantes de cada grupo selecionado com os dados enriquecidos do `/group/info`, em vez de tentar cruzar por LID.
+
 ```
-body: JSON.stringify({
-  action: 'resolve-lids',
-  token: instance.token,
-  lids: lids,
-  groupJids: selectedGroups.map(g => g.id),  // NOVO
+// Receber dados completos por grupo
+const { groupParticipants } = data
+
+// Para cada grupo, substituir participantes com dados enriquecidos
+const updatedGroups = selectedGroups.map(group => {
+  const enrichedParticipants = groupParticipants[group.id]
+  if (!enrichedParticipants) return group
+  
+  return {
+    ...group,
+    participants: enrichedParticipants.map(p => ({
+      jid: `${p.phone}@s.whatsapp.net`,
+      phoneNumber: p.phone,
+      name: p.name,
+      isAdmin: p.isAdmin,
+      isSuperAdmin: p.isSuperAdmin,
+    })),
+  }
 })
 ```
 
-**3. Melhorar `src/components/broadcast/GroupSelector.tsx` - fallback de PushName**
-- Quando `PhoneNumber` estiver vazio mas `PushName` contiver digitos que parecem um numero de telefone (10+ digitos apos limpeza), usar o PushName como fonte do numero
-- Isso captura casos onde o numero mascarado "+55····41" nao e util mas o PushName pode conter o numero real
+**3. Tornar o enriquecimento automatico**
+
+Remover a necessidade do botao "Buscar numeros" quando possivel: ao selecionar grupos que contenham participantes LID, disparar automaticamente a busca de `/group/info`. O botao permanece como fallback manual.
 
 **Arquivos modificados:**
-- `supabase/functions/uazapi-proxy/index.ts` (acao resolve-lids)
-- `src/components/broadcast/ParticipantSelector.tsx` (enviar groupJids)
-- `src/components/broadcast/GroupSelector.tsx` (fallback PushName)
+- `supabase/functions/uazapi-proxy/index.ts` (acao resolve-lids - retornar todos participantes por grupo)
+- `src/components/broadcast/ParticipantSelector.tsx` (substituir participantes com dados enriquecidos + auto-trigger)
