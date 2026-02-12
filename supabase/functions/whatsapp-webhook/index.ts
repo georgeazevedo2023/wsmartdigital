@@ -16,7 +16,7 @@ function normalizeMediaType(raw: string): string {
   return 'text'
 }
 
-async function getMediaLink(messageId: string, instanceToken: string, isAudio: boolean = false): Promise<string | null> {
+async function getMediaLink(messageId: string, instanceToken: string, isAudio: boolean = false): Promise<{ url: string; mimetype?: string } | null> {
   try {
     console.log('Calling /message/download for messageId:', messageId, 'isAudio:', isAudio)
     const body: Record<string, unknown> = {
@@ -46,9 +46,10 @@ async function getMediaLink(messageId: string, instanceToken: string, isAudio: b
     console.log('UAZAPI /message/download full response:', JSON.stringify(data))
     // For audio with generate_mp3, prefer mp3Link
     if (isAudio && data.mp3Link) {
-      return data.mp3Link
+      return { url: data.mp3Link, mimetype: data.mimetype || data.mimeType }
     }
-    return data.link || data.url || data.fileUrl || data.fileURL || null
+    const url = data.link || data.url || data.fileUrl || data.fileURL || null
+    return url ? { url, mimetype: data.mimetype || data.mimeType } : null
   } catch (err) {
     console.error('Error getting media link:', err)
     return null
@@ -188,10 +189,29 @@ Deno.serve(async (req) => {
     // Media: obter link persistente da UAZAPI antes de salvar
     if (mediaType !== 'text' && externalId && instance.token) {
       console.log('Requesting persistent media link from UAZAPI...')
-      const persistentUrl = await getMediaLink(externalId, instance.token, mediaType === 'audio')
-      if (persistentUrl) {
-        mediaUrl = persistentUrl
+      const persistentResult = await getMediaLink(externalId, instance.token, mediaType === 'audio')
+      if (persistentResult) {
+        mediaUrl = persistentResult.url
         console.log('Got persistent media URL:', mediaUrl.substring(0, 80))
+
+        // Generate friendly name for documents without caption/fileName
+        if (mediaType === 'document' && !content) {
+          const mime = persistentResult.mimetype || ''
+          const extMap: Record<string, string> = {
+            'application/pdf': 'pdf',
+            'application/msword': 'doc',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+            'application/vnd.ms-excel': 'xls',
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+            'application/vnd.ms-powerpoint': 'ppt',
+            'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+            'text/plain': 'txt',
+            'text/csv': 'csv',
+          }
+          const ext = extMap[mime] || mime.split('/').pop() || 'pdf'
+          content = `Documento.${ext}`
+          console.log('Generated document name:', content, 'from mimetype:', mime)
+        }
       } else {
         console.log('Failed to get persistent link, keeping original:', mediaUrl?.substring(0, 80))
       }

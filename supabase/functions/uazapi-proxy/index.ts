@@ -618,6 +618,55 @@ Deno.serve(async (req) => {
         )
       }
 
+      case 'download-media': {
+        // Download media file from UAZAPI with authenticated token (proxy for browser)
+        if (!body.fileUrl || !body.instanceId) {
+          return new Response(
+            JSON.stringify({ error: 'fileUrl and instanceId required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        // Use service role to fetch instance token
+        const serviceSupabase = createClient(
+          Deno.env.get('SUPABASE_URL')!,
+          Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+        )
+
+        const { data: inst, error: instError } = await serviceSupabase
+          .from('instances')
+          .select('token')
+          .eq('id', body.instanceId)
+          .single()
+
+        if (instError || !inst) {
+          return new Response(
+            JSON.stringify({ error: 'Instance not found' }),
+            { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        console.log('Proxying file download:', body.fileUrl.substring(0, 80))
+        const fileResp = await fetch(body.fileUrl, {
+          headers: { 'token': inst.token },
+        })
+
+        if (!fileResp.ok) {
+          return new Response(
+            JSON.stringify({ error: 'Failed to download file', status: fileResp.status }),
+            { status: fileResp.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        return new Response(fileResp.body, {
+          headers: {
+            ...corsHeaders,
+            'Content-Type': fileResp.headers.get('Content-Type') || 'application/octet-stream',
+            'Content-Disposition': fileResp.headers.get('Content-Disposition') || 'inline',
+          },
+        })
+      }
+
       case 'send-chat': {
         // Send text message to individual contact (used by helpdesk)
         if (!instanceToken || !body.jid || !body.message) {
