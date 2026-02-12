@@ -45,6 +45,16 @@ export interface Message {
   created_at: string;
 }
 
+function mediaPreview(mediaType: string): string {
+  switch (mediaType) {
+    case 'image': return '📷 Foto';
+    case 'video': return '🎥 Vídeo';
+    case 'audio': return '🎵 Áudio';
+    case 'document': return '📎 Documento';
+    default: return '';
+  }
+}
+
 interface Inbox {
   id: string;
   name: string;
@@ -104,14 +114,17 @@ const HelpDesk = () => {
       if (convIds.length > 0) {
         const { data: allMsgs } = await supabase
           .from('conversation_messages')
-          .select('conversation_id, content, created_at')
+          .select('conversation_id, content, media_type, created_at')
           .in('conversation_id', convIds)
           .order('created_at', { ascending: false });
 
         if (allMsgs) {
           for (const msg of allMsgs) {
-            if (!lastMsgMap[msg.conversation_id] && msg.content) {
-              lastMsgMap[msg.conversation_id] = msg.content;
+            if (!lastMsgMap[msg.conversation_id]) {
+              const preview = msg.content || mediaPreview(msg.media_type);
+              if (preview) {
+                lastMsgMap[msg.conversation_id] = preview;
+              }
             }
           }
         }
@@ -153,7 +166,7 @@ const HelpDesk = () => {
             if (exists) {
               return prev.map(c =>
                 c.id === data.conversation_id
-                  ? { ...c, last_message: data.content || c.last_message, last_message_at: data.created_at, is_read: false }
+                  ? { ...c, last_message: data.content || mediaPreview(data.media_type) || c.last_message, last_message_at: data.created_at, is_read: false }
                   : c
               );
             }
