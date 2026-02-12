@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
 import { ImageIcon, ExternalLink } from 'lucide-react';
+import { AudioPlayer } from './AudioPlayer';
 import type { Message } from '@/pages/dashboard/HelpDesk';
 
 interface MessageBubbleProps {
@@ -77,13 +78,7 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
         )}
 
         {message.media_type === 'audio' && message.media_url && (
-          <div className="mb-1">
-            <audio controls className="max-w-[260px] w-full h-10">
-              <source src={message.media_url} type="audio/mpeg" />
-              <source src={message.media_url} type="audio/ogg" />
-              Seu navegador não suporta o player de áudio.
-            </audio>
-          </div>
+          <AudioPlayer src={message.media_url} direction={message.direction} />
         )}
         {message.media_type === 'video' && message.media_url && (
           <video controls className="rounded-lg max-w-full mb-1">
