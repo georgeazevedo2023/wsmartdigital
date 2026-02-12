@@ -494,8 +494,8 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {
-                if (file.size > 10 * 1024 * 1024) {
-                  toast.error('Arquivo deve ter no máximo 10MB');
+                if (file.size > 20 * 1024 * 1024) {
+                  toast.error('Arquivo deve ter no máximo 20MB');
                   return;
                 }
                 handleSendFile(file);
