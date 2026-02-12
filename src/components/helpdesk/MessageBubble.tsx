@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { ImageIcon, ExternalLink } from 'lucide-react';
 import type { Message } from '@/pages/dashboard/HelpDesk';
 
 interface MessageBubbleProps {
@@ -9,6 +11,7 @@ interface MessageBubbleProps {
 export const MessageBubble = ({ message }: MessageBubbleProps) => {
   const isOutgoing = message.direction === 'outgoing';
   const isNote = message.direction === 'private_note';
+  const [imgError, setImgError] = useState(false);
 
   return (
     <div
@@ -34,14 +37,45 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
           </span>
         )}
 
-        {/* Media */}
+        {/* Image with error fallback */}
         {message.media_type === 'image' && message.media_url && (
-          <img
-            src={message.media_url}
-            alt="Imagem"
-            className="rounded-lg max-w-full mb-1"
-          />
+          <div className="mb-1">
+            {!imgError ? (
+              <a href={message.media_url} target="_blank" rel="noopener noreferrer">
+                <img
+                  src={message.media_url}
+                  alt="Imagem"
+                  className="rounded-lg max-w-full cursor-pointer hover:opacity-90 transition-opacity"
+                  onError={() => setImgError(true)}
+                />
+              </a>
+            ) : (
+              <div className="rounded-lg bg-muted/50 border border-border flex flex-col items-center justify-center py-6 px-4 gap-2">
+                <ImageIcon className="h-8 w-8 text-muted-foreground" />
+                <a
+                  href={message.media_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Abrir imagem
+                </a>
+              </div>
+            )}
+            <a
+              href={message.media_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[10px] text-muted-foreground hover:text-primary hover:underline break-all block mt-0.5"
+            >
+              {message.media_url.length > 60
+                ? message.media_url.substring(0, 60) + '...'
+                : message.media_url}
+            </a>
+          </div>
         )}
+
         {message.media_type === 'audio' && message.media_url && (
           <audio controls className="max-w-full mb-1">
             <source src={message.media_url} />
