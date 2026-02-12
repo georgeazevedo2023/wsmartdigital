@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save, Plus, MessageCircle } from 'lucide-react';
+import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save, Plus, MessageCircle, Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import BroadcasterHeader from '@/components/broadcast/BroadcasterHeader';
@@ -14,6 +14,7 @@ import LeadImporter from '@/components/broadcast/LeadImporter';
 import LeadList from '@/components/broadcast/LeadList';
 import LeadMessageForm from '@/components/broadcast/LeadMessageForm';
 import EditDatabaseDialog from '@/components/broadcast/EditDatabaseDialog';
+import ManageLeadDatabaseDialog from '@/components/broadcast/ManageLeadDatabaseDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -79,6 +80,7 @@ const LeadsBroadcaster = () => {
   const [isSavingDatabase, setIsSavingDatabase] = useState(false);
   const [isLoadingLeads, setIsLoadingLeads] = useState(false);
   const [editTarget, setEditTarget] = useState<LeadDatabase | null>(null);
+  const [manageTarget, setManageTarget] = useState<LeadDatabase | null>(null);
   const [resendData, setResendData] = useState<ResendData | null>(null);
 
   // Check for resend data from history
@@ -661,9 +663,17 @@ const LeadsBroadcaster = () => {
                 </div>
               )}
 
-              {/* Update Existing Database Button - only when exactly 1 selected */}
+              {/* Database Actions - only when exactly 1 selected */}
               {selectedDatabases.length === 1 && !isCreatingNewDatabase && (
-                <div className="mt-3 pt-3 border-t flex justify-end">
+                <div className="mt-3 pt-3 border-t flex justify-between items-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setManageTarget(selectedDatabases[0])}
+                  >
+                    <Settings2 className="w-4 h-4 mr-2" />
+                    Gerenciar
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
@@ -671,24 +681,21 @@ const LeadsBroadcaster = () => {
                     disabled={isSavingDatabase}
                   >
                     {isSavingDatabase ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Salvando...
+                      </>
                     ) : (
-                      <Save className="w-4 h-4 mr-2" />
+                      <>
+                        <Save className="w-4 h-4 mr-2" />
+                        Atualizar Base
+                      </>
                     )}
-                    Salvar alterações
                   </Button>
                 </div>
               )}
             </CardContent>
           </Card>
-
-          {/* Loading Leads */}
-          {isLoadingLeads && (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-muted-foreground">Carregando contatos...</span>
-            </div>
-          )}
 
           {/* Import Section */}
           {!isLoadingLeads && (selectedDatabases.length > 0 || isCreatingNewDatabase) && (
@@ -854,6 +861,17 @@ const LeadsBroadcaster = () => {
         onOpenChange={(open) => !open && setEditTarget(null)}
         database={editTarget}
         onSave={handleDatabaseUpdated}
+      />
+
+      {/* Manage Database Dialog */}
+      <ManageLeadDatabaseDialog
+        open={!!manageTarget}
+        onOpenChange={(open) => !open && setManageTarget(null)}
+        database={manageTarget}
+        onDatabaseUpdated={(updated) => {
+          handleDatabaseUpdated(updated);
+          setManageTarget(updated);
+        }}
       />
     </div>
   );
