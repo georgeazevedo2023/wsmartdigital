@@ -29,7 +29,7 @@ export const ContactInfoPanel = ({ conversation, onUpdateConversation, onBack }:
   const name = contact?.name || contact?.phone || 'Desconhecido';
 
   return (
-    <div className="p-4 space-y-5">
+    <div className="p-4 space-y-5 overflow-y-auto flex-1">
       {/* Back button (mobile) */}
       {onBack && (
         <Button variant="ghost" size="sm" className="gap-1 -ml-2 -mt-2" onClick={onBack}>
