@@ -25,7 +25,7 @@ export const ConversationItem = ({ conversation, isSelected, onClick }: Conversa
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left px-3 py-3 flex items-start gap-3 transition-colors hover:bg-secondary/50',
+        'w-full text-left px-3 py-3 md:py-3 min-h-[56px] flex items-start gap-3 transition-colors hover:bg-secondary/50 active:bg-secondary/70',
         isSelected && 'bg-primary/10 border-l-2 border-primary',
         !conversation.is_read && 'bg-secondary/30'
       )}

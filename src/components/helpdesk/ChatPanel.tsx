@@ -3,15 +3,18 @@ import { supabase } from '@/integrations/supabase/client';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { MessageSquare } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { MessageSquare, ArrowLeft, User } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
   onUpdateConversation: (id: string, updates: Partial<Conversation>) => void;
+  onBack?: () => void;
+  onShowInfo?: () => void;
 }
 
-export const ChatPanel = ({ conversation, onUpdateConversation }: ChatPanelProps) => {
+export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo }: ChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -80,7 +83,12 @@ export const ChatPanel = ({ conversation, onUpdateConversation }: ChatPanelProps
   return (
     <>
       {/* Header */}
-      <div className="h-14 px-4 flex items-center gap-3 border-b border-border/50 bg-card/50 shrink-0">
+      <div className="h-14 px-3 md:px-4 flex items-center gap-2 md:gap-3 border-b border-border/50 bg-card/50 shrink-0">
+        {onBack && (
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onBack}>
+            <ArrowLeft className="w-5 h-5" />
+          </Button>
+        )}
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold text-sm truncate">
             {contact?.name || contact?.phone || 'Desconhecido'}
@@ -94,6 +102,11 @@ export const ChatPanel = ({ conversation, onUpdateConversation }: ChatPanelProps
             )}
           </div>
         </div>
+        {onShowInfo && (
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
+            <User className="w-5 h-5" />
+          </Button>
+        )}
       </div>
 
       {/* Messages */}
