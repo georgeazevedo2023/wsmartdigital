@@ -76,12 +76,20 @@ async function uploadMediaToStorage(
 
     const arrayBuf = await response.arrayBuffer()
     const uint8 = new Uint8Array(arrayBuf)
-    const contentType = response.headers.get('content-type') || 'application/octet-stream'
+    // Derive mimetype from mediaType, not CDN header (CDN returns application/octet-stream)
+    const mimeMap: Record<string, string> = {
+      image: 'image/jpeg',
+      video: 'video/mp4',
+      audio: 'audio/ogg',
+      document: 'application/octet-stream',
+    }
+    const contentType = mimeMap[mediaType] || 'application/octet-stream'
 
     console.log('CDN response status:', response.status, 'size:', uint8.length, 'type:', contentType)
 
     // Validate: skip if too small or HTML error page
-    if (uint8.length < 1000 || contentType.includes('text/html')) {
+    const rawCt = response.headers.get('content-type') || ''
+    if (uint8.length < 1000 || rawCt.includes('text/html')) {
       console.log('CDN returned invalid content, skipping upload. Size:', uint8.length)
       return ''
     }
@@ -220,19 +228,36 @@ Deno.serve(async (req) => {
       content = message.fileName
     }
 
-    // Download persistent media URL from UAZAPI, fallback to Storage
-    if (mediaType !== 'text' && instance.token) {
+    // Resolve persistent media URL: prioritize fileURL from UAZAPI, then download API, then CDN+Storage
+    if (mediaType !== 'text' && mediaUrl) {
+      const isUazapiUrl = mediaUrl.includes('uazapi.com') || mediaUrl.includes('/download/')
+      const isCdnUrl = mediaUrl.includes('mmg.whatsapp.net')
+
+      if (isUazapiUrl && !isCdnUrl) {
+        // fileURL is already a persistent UAZAPI URL, use directly
+        console.log('Using persistent fileURL from UAZAPI:', mediaUrl.substring(0, 80))
+      } else if (instance.token) {
+        // Try UAZAPI download API first
+        const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
+        const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId, chatId)
+        if (downloadedUrl) {
+          mediaUrl = downloadedUrl
+          console.log('Downloaded persistent media URL:', mediaUrl.substring(0, 80))
+        } else {
+          // Final fallback: download from CDN and upload to Storage with correct mimetype
+          const storageUrl = await uploadMediaToStorage(supabase, mediaUrl, externalId || rawExternalId, mediaType)
+          if (storageUrl) {
+            mediaUrl = storageUrl
+          }
+        }
+      }
+    } else if (mediaType !== 'text' && !mediaUrl && instance.token) {
+      // No URL at all, try UAZAPI download API
       const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
       const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId, chatId)
       if (downloadedUrl) {
         mediaUrl = downloadedUrl
-        console.log('Downloaded persistent media URL:', mediaUrl.substring(0, 80))
-      } else if (mediaUrl) {
-        // Fallback: download from CDN and upload to Storage
-        const storageUrl = await uploadMediaToStorage(supabase, mediaUrl, externalId || rawExternalId, mediaType)
-        if (storageUrl) {
-          mediaUrl = storageUrl
-        }
+        console.log('Downloaded media URL (no fileURL):', mediaUrl.substring(0, 80))
       }
     }
 
