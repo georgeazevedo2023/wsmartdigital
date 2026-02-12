@@ -1,49 +1,86 @@
 
-# Corrigir Auto-Scroll para Ultima Mensagem no Chat
 
-## Problema
+# Painel de Contato Retraivel no Desktop
 
-O `bottomRef.current?.scrollIntoView()` nao funciona corretamente porque o `ScrollArea` do Radix cria um viewport interno. O `scrollIntoView` tenta rolar o documento principal, nao o container de scroll do Radix.
+## Objetivo
 
-## Solucao
+No layout desktop, a coluna direita (info do contato) ficara retraida por padrão. Um botao de seta no header do chat permitira abrir/fechar o painel. Isso maximiza o espaco do chat e melhora o aproveitamento de tela.
 
-Substituir o `ScrollArea` por uma `div` com `overflow-y: auto` simples, onde o `scrollIntoView` funciona nativamente. Isso elimina o problema do viewport interno do Radix.
+## Comportamento
 
-## Mudancas no arquivo `src/components/helpdesk/ChatPanel.tsx`
+```text
+Estado normal (retraido):
+[Lista w-80] [Chat - tela cheia .......................... >]
 
-1. Remover o import do `ScrollArea`
-2. Substituir `<ScrollArea className="flex-1 p-4">` por `<div className="flex-1 overflow-y-auto p-4">`
-3. Adicionar um pequeno `setTimeout` no auto-scroll para garantir que o DOM esta atualizado apos carregar mensagens (especialmente imagens que alteram altura)
-
-### Codigo do auto-scroll atualizado
-
-```typescript
-useEffect(() => {
-  const timer = setTimeout(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, 100);
-  return () => clearTimeout(timer);
-}, [messages]);
+Ao clicar na seta (expandido):
+[Lista w-80] [Chat ..................] [Info w-72]
 ```
 
-### Substituicao do ScrollArea
+- O botao de seta (ChevronRight / ChevronLeft) fica no header do ChatPanel, ao lado do nome do contato
+- Clicar alterna entre mostrar/esconder o painel de info
+- No mobile, o comportamento atual de views separadas permanece inalterado
 
-De:
-```tsx
-<ScrollArea className="flex-1 p-4">
-  ...
-</ScrollArea>
+## Mudancas por Arquivo
+
+### 1. `src/pages/dashboard/HelpDesk.tsx`
+
+- Adicionar estado `showContactInfo` (default: `false`)
+- Passar prop `onToggleInfo` e `showingInfo` para o ChatPanel no layout desktop
+- Condicionar a renderizacao da coluna direita ao estado `showContactInfo`
+
+### 2. `src/components/helpdesk/ChatPanel.tsx`
+
+- Adicionar props `onToggleInfo?: () => void` e `showingInfo?: boolean`
+- No header, ao lado do nome do contato (lado direito), mostrar um botao com icone de seta:
+  - `PanelRightOpen` quando retraido (para indicar que pode abrir)
+  - `PanelRightClose` quando expandido (para indicar que pode fechar)
+- O botao so aparece no desktop (quando `onToggleInfo` existe e nao ha `onShowInfo` de mobile)
+
+## Detalhes Tecnicos
+
+No HelpDesk.tsx, o layout desktop muda de:
+
+```typescript
+// Antes: info sempre visivel
+{selectedConversation && (
+  <div className="w-72 ...">
+    <ContactInfoPanel ... />
+  </div>
+)}
 ```
 
 Para:
-```tsx
-<div className="flex-1 overflow-y-auto p-4">
+
+```typescript
+// Depois: info controlada por estado
+const [showContactInfo, setShowContactInfo] = useState(false);
+
+<ChatPanel
   ...
-</div>
+  onToggleInfo={() => setShowContactInfo(prev => !prev)}
+  showingInfo={showContactInfo}
+/>
+
+{selectedConversation && showContactInfo && (
+  <div className="w-72 ...">
+    <ContactInfoPanel ... />
+  </div>
+)}
+```
+
+No ChatPanel.tsx, adicionar o botao de toggle no header:
+
+```typescript
+{onToggleInfo && (
+  <Button variant="ghost" size="icon" onClick={onToggleInfo}>
+    {showingInfo ? <PanelRightClose /> : <PanelRightOpen />}
+  </Button>
+)}
 ```
 
 ## Resultado
 
-- Scroll automatico para a ultima mensagem ao abrir conversa
-- Scroll automatico ao receber nova mensagem via realtime
-- Funciona em todas as telas (mobile e desktop)
+- Chat ocupa toda a largura disponivel por padrao (melhor aproveitamento de tela)
+- Painel de contato acessivel com um clique na seta
+- Mobile inalterado (continua com navegacao por views)
+- Sem alteracao de funcionalidades
