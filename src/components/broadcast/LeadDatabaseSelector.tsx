@@ -16,12 +16,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Database, Plus, Trash2, Users, Calendar, ChevronRight, FolderOpen, Pencil, MessageCircle } from 'lucide-react';
+import { Database, Plus, Trash2, Users, Calendar, ChevronRight, FolderOpen, Pencil, MessageCircle, Settings2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import EditDatabaseDialog from './EditDatabaseDialog';
+import ManageLeadDatabaseDialog from './ManageLeadDatabaseDialog';
 
 interface LeadDatabase {
   id: string;
@@ -48,6 +49,7 @@ const LeadDatabaseSelector = ({
   const [isLoading, setIsLoading] = useState(true);
   const [deleteTarget, setDeleteTarget] = useState<LeadDatabase | null>(null);
   const [editTarget, setEditTarget] = useState<LeadDatabase | null>(null);
+  const [manageTarget, setManageTarget] = useState<LeadDatabase | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchDatabases = async () => {
@@ -193,6 +195,19 @@ const LeadDatabaseSelector = ({
                           variant="ghost"
                           size="icon"
                           className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          title="Gerenciar contatos"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setManageTarget(db);
+                          }}
+                        >
+                          <Settings2 className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8 text-muted-foreground hover:text-primary"
+                          title="Editar nome/descrição"
                           onClick={(e) => {
                             e.stopPropagation();
                             setEditTarget(db);
@@ -245,6 +260,18 @@ const LeadDatabaseSelector = ({
         onOpenChange={(open) => !open && setEditTarget(null)}
         database={editTarget}
         onSave={handleDatabaseUpdated}
+      />
+
+      {/* Manage Database Dialog */}
+      <ManageLeadDatabaseDialog
+        open={!!manageTarget}
+        onOpenChange={(open) => !open && setManageTarget(null)}
+        database={manageTarget}
+        onDatabaseUpdated={(updated) => {
+          handleDatabaseUpdated(updated);
+          // Update manageTarget so dialog reflects changes
+          setManageTarget(updated);
+        }}
       />
 
       {/* Delete Confirmation Dialog */}
