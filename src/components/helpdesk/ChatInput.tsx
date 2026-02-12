@@ -172,19 +172,34 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
       }
 
       // Save to DB
-      const { error } = await supabase.from('conversation_messages').insert({
+      const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id,
         direction: 'outgoing',
         content: null,
         media_type: 'audio',
         sender_id: user.id,
-      });
+      }).select().single();
       if (error) throw error;
 
       await supabase
         .from('conversations')
         .update({ last_message_at: new Date().toISOString() })
         .eq('id', conversation.id);
+
+      // Broadcast manual para atualizar o ChatPanel em tempo real
+      await supabase.channel('helpdesk-realtime').send({
+        type: 'broadcast',
+        event: 'new-message',
+        payload: {
+          conversation_id: conversation.id,
+          message_id: insertedMsg.id,
+          direction: 'outgoing',
+          media_type: 'audio',
+          content: null,
+          media_url: null,
+          created_at: insertedMsg.created_at,
+        },
+      });
 
       onMessageSent();
     } catch (err: any) {
@@ -250,19 +265,34 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
           throw new Error('Falha ao enviar mensagem');
         }
 
-        const { error } = await supabase.from('conversation_messages').insert({
+        const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
           conversation_id: conversation.id,
           direction: 'outgoing',
           content: text.trim(),
           media_type: 'text',
           sender_id: user.id,
-        });
+        }).select().single();
         if (error) throw error;
 
         await supabase
           .from('conversations')
           .update({ last_message_at: new Date().toISOString() })
           .eq('id', conversation.id);
+
+        // Broadcast manual para atualizar o ChatPanel em tempo real
+        await supabase.channel('helpdesk-realtime').send({
+          type: 'broadcast',
+          event: 'new-message',
+          payload: {
+            conversation_id: conversation.id,
+            message_id: insertedMsg.id,
+            direction: 'outgoing',
+            media_type: 'text',
+            content: text.trim(),
+            media_url: null,
+            created_at: insertedMsg.created_at,
+          },
+        });
       }
 
       setText('');
