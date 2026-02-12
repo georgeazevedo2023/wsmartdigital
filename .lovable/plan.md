@@ -1,137 +1,124 @@
 
-# Melhorar Player de Áudio com Controles de Velocidade no Helpdesk
+# Transcrição Automática de Áudios com Groq Whisper
 
-## Objetivo
-Criar um player de áudio customizado com controles de velocidade (1x, 1.5x, 2x) e melhor visual, similar ao WhatsApp, substituindo o HTML5 nativo `<audio controls>` que é muito pequeno/retraído.
+## Visão Geral
 
-## Problema Atual
-- O elemento `<audio controls>` nativo é compacto e retraído
-- Não oferece controles de velocidade de reprodução
-- Visual não se integra bem com o design do Helpdesk
-- Não permite customização de aparência
+Quando um áudio é recebido no webhook, o sistema vai automaticamente baixar o arquivo, enviar para a API da Groq (Whisper Large V3) para transcrição, salvar o texto no banco de dados, e exibir abaixo do player de áudio na interface.
 
-## Solução Proposta
-
-### 1. Criar Novo Componente: `src/components/helpdesk/AudioPlayer.tsx`
-
-Um player de áudio customizado com:
-- Botão play/pause com ícone (Play/Pause do Lucide)
-- Slider de progresso da música
-- Exibição de tempo (tempo atual / duração total)
-- Dropdown de velocidade (1x, 1.5x, 2x)
-- Visual fluido e espaçoso
-- Responsivo para mobile e desktop
-
-**Estrutura do componente:**
-```typescript
-interface AudioPlayerProps {
-  src: string;
-  direction: 'incoming' | 'outgoing';
-}
-
-export const AudioPlayer = ({ src, direction }: AudioPlayerProps) => {
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(0);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [playbackRate, setPlaybackRate] = useState(1);
-
-  // Estados e funções para controlar:
-  // - togglePlay()
-  // - handleProgressChange(value)
-  // - handleSpeedChange(rate)
-  // - Formatação de tempo com date-fns
-  
-  // Renderizar:
-  // [Play icon] [Slider de progresso] [Tempo] [Dropdown com 1x, 1.5x, 2x]
-}
-```
-
-**Estilos:**
-- Container com padding/espaçamento confortável
-- Botão play com hover effect (cor clara no escuro, animação suave)
-- Slider com cor diferenciada para o indicador de progresso
-- Dropdown discreto no canto direito
-- Separação clara entre incoming e outgoing (cores consistentes)
-
-### 2. Atualizar `MessageBubble.tsx`
-
-Remover o `<audio controls>` nativo e integrar o novo componente:
-
-```typescript
-// Antes:
-{message.media_type === 'audio' && message.media_url && (
-  <div className="mb-1">
-    <audio controls className="max-w-[260px] w-full h-10">
-      <source src={message.media_url} type="audio/mpeg" />
-      <source src={message.media_url} type="audio/ogg" />
-    </audio>
-  </div>
-)}
-
-// Depois:
-{message.media_type === 'audio' && message.media_url && (
-  <AudioPlayer src={message.media_url} direction={message.direction} />
-)}
-```
-
-### 3. Detalhes Técnicos
-
-**Dependências e Imports:**
-- `useRef`, `useState` do React
-- Ícones do Lucide: `Play`, `Pause`, `ChevronDown`
-- `cn()` do `@/lib/utils` para classes
-- `format` do `date-fns` para formatação de tempo
-- Componentes UI existentes: `Button`, `Slider` (ou input type="range")
-
-**Gerenciamento de Estado:**
-- `isPlaying`: boolean para controlar play/pause
-- `currentTime`: número para posição atual
-- `duration`: número para duração total
-- `playbackRate`: 1 | 1.5 | 2 para velocidade
-
-**Eventos do HTMLAudioElement:**
-- `onLoadedMetadata`: capturar duração
-- `onTimeUpdate`: atualizar tempo durante reprodução
-- `onEnded`: resetar ao terminar
-
-**Responsividade:**
-- Mobile: player compacto mas legível
-- Desktop: mais espaçoso, controls visíveis
-
-### 4. Comportamento Esperado
+## Arquitetura
 
 ```text
-Player Incoming (mensagem recebida):
-[▶] ════════════●═════════ [0:15 / 1:30] [▼ 1x]
-
-Player Outgoing (mensagem enviada):
-[▶] ════════════●═════════ [0:15 / 1:30] [▼ 1x]
-
-Dropdown de velocidade aberto:
-[▼ 1x]
-├─ 1x (selecionado)
-├─ 1.5x
-└─ 2x
+Webhook recebe áudio
+  -> Insere mensagem no banco
+  -> Baixa o MP3 via URL
+  -> Envia para Groq Whisper API
+  -> Atualiza campo "transcription" na mensagem
+  -> UI exibe texto abaixo do AudioPlayer
 ```
 
-## Mudanças por Arquivo
+## Mudanças
 
-### A. Criar `src/components/helpdesk/AudioPlayer.tsx`
-- Novo arquivo com componente customizado
-- ~150-200 linhas de código
-- Gerencia estado de reprodução, progresso e velocidade
+### 1. Banco de Dados (migração)
 
-### B. Atualizar `src/components/helpdesk/MessageBubble.tsx`
-- Importar `AudioPlayer`
-- Substituir bloco `<audio controls>` pelo novo componente
-- Manter estrutura de conditional rendering
+Adicionar coluna `transcription` na tabela `conversation_messages`:
 
-## Resultado Final
+```sql
+ALTER TABLE public.conversation_messages
+ADD COLUMN transcription text DEFAULT NULL;
+```
 
-- ✅ Player expandido e bem visual
-- ✅ Controles de velocidade (1x, 1.5x, 2x)
-- ✅ Melhor integração visual com o Helpdesk
-- ✅ Responsivo em mobile e desktop
-- ✅ Funcionalidade equivalente ao WhatsApp
-- ✅ Suporta múltiplos formatos (MP3, OGG)
+### 2. Salvar a API Key da Groq como Secret
+
+A chave da Groq será armazenada como secret seguro (`GROQ_API_KEY`) para uso na edge function.
+
+### 3. Edge Function: `supabase/functions/transcribe-audio/index.ts`
+
+Nova função que:
+- Recebe `messageId` e `audioUrl`
+- Baixa o arquivo de áudio da URL
+- Envia como `multipart/form-data` para `https://api.groq.com/openai/v1/audio/transcriptions`
+- Parâmetros: model `whisper-large-v3`, language `pt`, temperature `0`
+- Atualiza o campo `transcription` da mensagem no banco
+
+### 4. Webhook: `supabase/functions/whatsapp-webhook/index.ts`
+
+Após inserir a mensagem de áudio com sucesso:
+- Chama a edge function `transcribe-audio` de forma assíncrona (fire-and-forget) para não atrasar o webhook
+- Passa o ID da mensagem inserida e a URL do áudio
+
+### 5. UI: `src/components/helpdesk/MessageBubble.tsx`
+
+- Quando `message.media_type === 'audio'` e `message.transcription` existe, exibir o texto abaixo do AudioPlayer
+- Estilo: texto pequeno, itálico, cor suave, com ícone de microfone
+
+### 6. Tipo Message no HelpDesk
+
+Adicionar `transcription?: string` ao tipo `Message` usado no HelpDesk para que o campo seja carregado do banco e disponível na UI.
+
+## Detalhes Técnicos
+
+### Edge Function `transcribe-audio`
+
+```typescript
+// Fluxo principal:
+const audioResponse = await fetch(audioUrl);
+const audioBlob = await audioResponse.blob();
+
+const formData = new FormData();
+formData.append('file', audioBlob, 'audio.mp3');
+formData.append('model', 'whisper-large-v3');
+formData.append('temperature', '0');
+formData.append('language', 'pt');
+formData.append('response_format', 'verbose_json');
+formData.append('prompt', 'Conversa o áudio em texto de forma clara e precisa.');
+
+const result = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
+  body: formData,
+});
+
+const { text } = await result.json();
+
+// Atualizar no banco
+await supabase.from('conversation_messages')
+  .update({ transcription: text })
+  .eq('id', messageId);
+```
+
+### Chamada assíncrona no Webhook
+
+```typescript
+// Após inserir mensagem de áudio com sucesso
+if (mediaType === 'audio' && mediaUrl && insertedMsg) {
+  fetch(`${SUPABASE_URL}/functions/v1/transcribe-audio`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${ANON_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messageId: insertedMsg.id,
+      audioUrl: mediaUrl,
+    }),
+  }).catch(err => console.error('Transcription call failed:', err));
+}
+```
+
+### Exibição na UI
+
+```typescript
+// Abaixo do AudioPlayer no MessageBubble
+{message.media_type === 'audio' && message.transcription && (
+  <p className="text-[11px] text-muted-foreground italic mt-1 whitespace-pre-wrap">
+    {message.transcription}
+  </p>
+)}
+```
+
+## Resultado
+
+- Áudios recebidos são transcritos automaticamente em segundo plano
+- Transcrição aparece abaixo do player assim que disponível
+- Não atrasa o processamento do webhook (chamada assíncrona)
+- Chave da Groq armazenada de forma segura como secret
