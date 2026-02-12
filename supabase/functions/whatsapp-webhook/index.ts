@@ -16,9 +16,17 @@ function normalizeMediaType(raw: string): string {
   return 'text'
 }
 
-async function getMediaLink(messageId: string, instanceToken: string): Promise<string | null> {
+async function getMediaLink(messageId: string, instanceToken: string, isAudio: boolean = false): Promise<string | null> {
   try {
-    console.log('Calling /message/download for messageId:', messageId)
+    console.log('Calling /message/download for messageId:', messageId, 'isAudio:', isAudio)
+    const body: Record<string, unknown> = {
+      id: messageId,
+      return_base64: false,
+      return_link: true,
+    }
+    if (isAudio) {
+      body.generate_mp3 = true
+    }
     const response = await fetch('https://wsmart.uazapi.com/message/download', {
       method: 'POST',
       headers: {
@@ -26,11 +34,7 @@ async function getMediaLink(messageId: string, instanceToken: string): Promise<s
         'Accept': 'application/json',
         'token': instanceToken,
       },
-      body: JSON.stringify({
-        id: messageId,
-        return_base64: false,
-        return_link: true,
-      }),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
@@ -40,6 +44,10 @@ async function getMediaLink(messageId: string, instanceToken: string): Promise<s
 
     const data = await response.json()
     console.log('UAZAPI /message/download full response:', JSON.stringify(data))
+    // For audio with generate_mp3, prefer mp3Link
+    if (isAudio && data.mp3Link) {
+      return data.mp3Link
+    }
     return data.link || data.url || data.fileUrl || data.fileURL || null
   } catch (err) {
     console.error('Error getting media link:', err)
@@ -180,7 +188,7 @@ Deno.serve(async (req) => {
     // Media: obter link persistente da UAZAPI antes de salvar
     if (mediaType !== 'text' && externalId && instance.token) {
       console.log('Requesting persistent media link from UAZAPI...')
-      const persistentUrl = await getMediaLink(externalId, instance.token)
+      const persistentUrl = await getMediaLink(externalId, instance.token, mediaType === 'audio')
       if (persistentUrl) {
         mediaUrl = persistentUrl
         console.log('Got persistent media URL:', mediaUrl.substring(0, 80))
