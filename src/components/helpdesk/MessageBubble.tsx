@@ -78,7 +78,14 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
         )}
 
         {message.media_type === 'audio' && message.media_url && (
-          <AudioPlayer src={message.media_url} direction={message.direction} />
+          <div>
+            <AudioPlayer src={message.media_url} direction={message.direction} />
+            {message.transcription && (
+              <p className="text-[11px] text-muted-foreground italic mt-1 whitespace-pre-wrap">
+                📝 {message.transcription}
+              </p>
+            )}
+          </div>
         )}
         {message.media_type === 'video' && message.media_url && (
           <video controls className="rounded-lg max-w-full mb-1">

@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.sync-conversations]
 verify_jwt = false
+
+[functions.transcribe-audio]
+verify_jwt = false

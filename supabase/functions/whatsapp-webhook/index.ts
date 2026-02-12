@@ -351,6 +351,22 @@ Deno.serve(async (req) => {
 
     console.log('Message processed + REST broadcast status:', broadcastResults.map(r => r.status).join(','), conversation.id, direction, mediaType)
 
+    // Trigger async transcription for incoming audio messages
+    if (mediaType === 'audio' && mediaUrl && insertedMsg && direction === 'incoming') {
+      console.log('Triggering audio transcription for message:', insertedMsg.id)
+      fetch(`${SUPABASE_URL}/functions/v1/transcribe-audio`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messageId: insertedMsg.id,
+          audioUrl: mediaUrl,
+        }),
+      }).catch(err => console.error('Transcription call failed:', err))
+    }
+
     return new Response(JSON.stringify({ ok: true, conversation_id: conversation.id }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

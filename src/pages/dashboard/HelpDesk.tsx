@@ -44,6 +44,7 @@ export interface Message {
   sender_id: string | null;
   external_id: string | null;
   created_at: string;
+  transcription?: string | null;
 }
 
 function mediaPreview(mediaType: string): string {
