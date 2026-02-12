@@ -1,108 +1,72 @@
 
-# Corrigir Download de Midia: Adicionar chatid e Fallback para Storage
+# Corrigir Upload de Midia para Storage
 
 ## Problema Identificado
 
-O endpoint `POST /message/download` da UAZAPI retorna **404 "Message not found"** porque o body enviado contem apenas `{ messageid }`, mas o endpoint provavelmente precisa tambem do `chatid` (padrao comum em APIs WhatsApp como green-api).
+Dois problemas confirmados:
 
-Alem disso, mesmo que o download via UAZAPI funcione, e prudente ter um **fallback**: baixar o arquivo da URL CDN temporaria (`mmg.whatsapp.net`) e armazenar no Supabase Storage para persistencia.
+1. **Storage upload salva arquivo vazio**: O `response.blob()` no Deno edge functions nao e compativel com o metodo `.upload()` do Supabase Storage. O arquivo e criado mas com 0 bytes. Precisa usar `Uint8Array` via `arrayBuffer()`.
 
-## Solucao em 2 Partes
+2. **UAZAPI `/message/download` retorna 404**: O endpoint nao encontra a mensagem. Pode ser formato do ID ou endpoint incorreto. Isso faz o sistema cair no fallback CDN.
 
-### Parte 1: Corrigir chamada ao /message/download
+O fallback CDN FUNCIONA (o download da imagem ocorre) mas o upload para o Storage salva um arquivo vazio por causa do tipo de dado incorreto.
 
-No `downloadMedia()`, incluir o `chatid` no body e tambem tentar formatos alternativos de ID:
+## Solucao
+
+### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
+
+**Correcao 1: Trocar `blob()` por `arrayBuffer()` no upload**
+
+Na funcao `uploadMediaToStorage`, trocar:
 
 ```typescript
-async function downloadMedia(
-  uazapiUrl: string,
-  instanceToken: string,
-  messageId: string,
-  chatId: string   // <-- novo parametro
-): Promise<string> {
-  try {
-    const response = await fetch(`${uazapiUrl}/message/download`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'token': instanceToken,
-      },
-      body: JSON.stringify({ 
-        messageid: messageId,
-        chatid: chatId          // <-- campo adicionado
-      }),
-    })
-    // ... parse response
-  }
+// ANTES (nao funciona no Deno)
+const blob = await response.blob()
+await supabase.storage.from('helpdesk-media').upload(path, blob, { ... })
+
+// DEPOIS (funciona no Deno)
+const arrayBuf = await response.arrayBuffer()
+const uint8 = new Uint8Array(arrayBuf)
+const contentType = response.headers.get('content-type') || 'application/octet-stream'
+await supabase.storage.from('helpdesk-media').upload(path, uint8, { contentType, upsert: true })
+```
+
+**Correcao 2: Adicionar log do tamanho do arquivo para debug**
+
+```typescript
+console.log('CDN response status:', response.status, 'size:', uint8.length, 'type:', contentType)
+```
+
+**Correcao 3: Validar que o conteudo nao e uma pagina de erro**
+
+Verificar se o tamanho do arquivo e razoavel (> 1KB) e o content-type e de midia antes de fazer upload:
+
+```typescript
+if (uint8.length < 1000 || contentType.includes('text/html')) {
+  console.log('CDN returned invalid content, skipping upload')
+  return ''
 }
 ```
 
-Passar `chatId` ao chamar a funcao:
+**Correcao 4: Tentar tambem o formato completo do messageid no UAZAPI download**
+
+O UAZAPI pode esperar o `messageid` no formato completo (como `true_JID_ID`). Tentar esse formato como alternativa:
 
 ```typescript
-const downloadedUrl = await downloadMedia(uazapiUrl, instance.token, rawExternalId, chatId)
+// Tentar com formato completo
+const fullMessageId = `true_${chatId}_${messageId}`
+// Primeiro tenta com ID curto, depois com formato completo
 ```
 
-### Parte 2: Fallback - Baixar CDN e salvar no Storage
+## Arquivos a Modificar
 
-Se o `/message/download` falhar, e a URL CDN existir (`message.content.URL`), baixar o binario e fazer upload para o Supabase Storage:
-
-```typescript
-async function uploadMediaToStorage(
-  supabase: any,
-  cdnUrl: string,
-  messageId: string,
-  mediaType: string
-): Promise<string> {
-  const response = await fetch(cdnUrl)
-  if (!response.ok) return ''
-  
-  const blob = await response.blob()
-  const ext = mediaType === 'image' ? 'jpg' : mediaType === 'video' ? 'mp4' : 'bin'
-  const path = `media/${messageId}.${ext}`
-  
-  await supabase.storage.from('helpdesk-media').upload(path, blob)
-  
-  const { data } = supabase.storage.from('helpdesk-media').getPublicUrl(path)
-  return data.publicUrl
-}
-```
-
-### Fluxo Completo
-
-```text
-Webhook recebe imagem
-  |
-  +--> Tenta POST /message/download (com chatid + messageid)
-  |     |
-  |     +--> Sucesso? Usa URL persistente da UAZAPI
-  |     |
-  |     +--> Falhou? CDN URL existe?
-  |           |
-  |           +--> Sim: Baixa binario da CDN e salva no Storage
-  |           |
-  |           +--> Nao: Salva mensagem sem media_url
-  |
-  +--> Salva mensagem no banco com media_url persistente
-```
-
-## Mudancas Necessarias
-
-### 1. Criar bucket de Storage
-
-Criar o bucket `helpdesk-media` com politica publica de leitura.
-
-### 2. Alterar `supabase/functions/whatsapp-webhook/index.ts`
-
-| Mudanca | Descricao |
-|---------|-----------|
-| `downloadMedia()` | Adicionar parametro `chatId` e enviar no body |
-| Nova funcao `uploadMediaToStorage()` | Baixar CDN e salvar no Storage como fallback |
-| Logica principal | Tentar download UAZAPI primeiro, fallback para Storage se falhar |
-| Chamar com chatId | Passar `chatId` extraido do payload |
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/whatsapp-webhook/index.ts` | Corrigir upload usando `arrayBuffer()` em vez de `blob()`, adicionar validacao de conteudo, melhorar logs |
 
 ## Resultado Esperado
 
-- Se o UAZAPI `/message/download` funcionar com `chatid`: imagens persistentes via UAZAPI
-- Se falhar: imagens persistentes via Supabase Storage (fallback robusto)
-- O frontend nao precisa de mudancas - o `MessageBubble` ja renderiza `<img src={media_url} />`
+- CDN download captura o binario corretamente
+- Upload para Storage salva o arquivo com conteudo real
+- Imagens aparecem no helpdesk com URL persistente do Storage
+- Se CDN expirado, arquivo invalido e descartado (em vez de salvar lixo)
