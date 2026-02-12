@@ -20,46 +20,6 @@ function extractPhone(jid: string): string {
   return jid.split('@')[0].replace(/\D/g, '')
 }
 
-async function downloadMedia(
-  uazapiUrl: string,
-  instanceToken: string,
-  messageId: string,
-  chatId: string
-): Promise<string> {
-  // Try multiple ID formats: raw, short, and full (true_chatId_messageId)
-  const shortId = messageId.includes(':') ? messageId.split(':').pop()! : messageId
-  const fullId = `true_${chatId}_${shortId}`
-  const idsToTry = [messageId, fullId]
-
-  for (const id of idsToTry) {
-    try {
-      console.log('Trying UAZAPI download with messageid:', id.substring(0, 40))
-      const response = await fetch(`${uazapiUrl}/message/download`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'token': instanceToken,
-        },
-        body: JSON.stringify({ messageid: id, chatid: chatId }),
-      })
-
-      if (!response.ok) {
-        const errText = await response.text()
-        console.log('Download media failed:', response.status, errText.substring(0, 100))
-        continue
-      }
-
-      const data = await response.json()
-      console.log('Download media response keys:', Object.keys(data))
-      const url = data.url || data.URL || data.fileUrl || data.file || ''
-      if (url) return url
-    } catch (err) {
-      console.error('Error downloading media with id', id.substring(0, 20), ':', err)
-    }
-  }
-  return ''
-}
-
 async function uploadMediaToStorage(
   supabase: any,
   cdnUrl: string,
@@ -67,30 +27,26 @@ async function uploadMediaToStorage(
   mediaType: string
 ): Promise<string> {
   try {
-    console.log('Fallback: downloading from CDN:', cdnUrl.substring(0, 80))
+    console.log('Downloading CDN media as blob:', cdnUrl.substring(0, 80))
     const response = await fetch(cdnUrl)
     if (!response.ok) {
       console.log('CDN download failed:', response.status)
       return ''
     }
 
-    const arrayBuf = await response.arrayBuffer()
-    const uint8 = new Uint8Array(arrayBuf)
-    // Derive mimetype from mediaType, not CDN header (CDN returns application/octet-stream)
+    const mediaBlob = await response.blob()
     const mimeMap: Record<string, string> = {
-      image: 'image/jpeg',
-      video: 'video/mp4',
-      audio: 'audio/ogg',
-      document: 'application/octet-stream',
+      image: 'image/jpeg', video: 'video/mp4', audio: 'audio/ogg', document: 'application/octet-stream'
     }
-    const contentType = mimeMap[mediaType] || 'application/octet-stream'
-
-    console.log('CDN response status:', response.status, 'size:', uint8.length, 'type:', contentType)
-
-    // Validate: skip if too small or HTML error page
     const rawCt = response.headers.get('content-type') || ''
-    if (uint8.length < 1000 || rawCt.includes('text/html')) {
-      console.log('CDN returned invalid content, skipping upload. Size:', uint8.length)
+    const contentType = rawCt.includes('text/html')
+      ? (mimeMap[mediaType] || 'application/octet-stream')
+      : (rawCt || mimeMap[mediaType] || 'application/octet-stream')
+
+    console.log('CDN blob size:', mediaBlob.size, 'type:', contentType)
+
+    if (mediaBlob.size < 1000) {
+      console.log('CDN returned too small content, skipping. Size:', mediaBlob.size)
       return ''
     }
 
@@ -100,7 +56,7 @@ async function uploadMediaToStorage(
 
     const { error: uploadError } = await supabase.storage
       .from('helpdesk-media')
-      .upload(path, uint8, { contentType, upsert: true })
+      .upload(path, mediaBlob, { contentType, upsert: true })
 
     if (uploadError) {
       console.error('Storage upload error:', uploadError)
@@ -207,7 +163,6 @@ Deno.serve(async (req) => {
     const fromMe = message.fromMe === true
     const direction = fromMe ? 'outgoing' : 'incoming'
     const rawExternalId = message.messageid || message.id || ''
-    // Normalize: strip "owner:" prefix if present to use short format consistently
     const externalId = rawExternalId.includes(':') ? rawExternalId.split(':').pop()! : rawExternalId
     const owner = payload.owner || chatId.split('@')[0] || ''
 
@@ -228,28 +183,34 @@ Deno.serve(async (req) => {
       content = message.fileName
     }
 
-    // Log all media fields for debugging
+    // Log ALL media-related fields for debugging
+    console.log('Full message keys:', Object.keys(message).join(','))
     console.log('Message media fields:', JSON.stringify({
       fileURL: message.fileURL,
+      fileUrl: message.fileUrl,
+      file_url: message.file_url,
       mediaUrl: message.mediaUrl,
+      media_url: message.media_url,
       contentURL: message.content?.URL,
+      contentUrl: message.content?.url,
       mediaType: message.mediaType,
       fileName: message.fileName,
-      resolvedMediaUrl: mediaUrl?.substring(0, 80),
+      resolvedMediaUrl: mediaUrl?.substring(0, 100),
     }))
 
-    // Simplified media resolution: use fileURL directly, only upload to Storage for CDN URLs
+    // Media resolution: use URL directly when persistent, upload to Storage only for temporary CDN
     if (mediaType !== 'text' && mediaUrl) {
       if (mediaUrl.includes('mmg.whatsapp.net')) {
-        // Temporary WhatsApp CDN URL - persist to Storage
+        // Temporary WhatsApp CDN URL - persist to Storage using blob
+        console.log('CDN URL detected, uploading to storage...')
         const storageUrl = await uploadMediaToStorage(supabase, mediaUrl, externalId || rawExternalId, mediaType)
         if (storageUrl) {
           mediaUrl = storageUrl
         }
         // If storage fails, keep CDN URL (works for a few hours)
       } else {
-        // Any other URL (uazapi.com, etc) - use directly as persistent link
-        console.log('Using persistent media URL directly:', mediaUrl.substring(0, 80))
+        // Persistent URL (uazapi.com, etc) - use directly
+        console.log('Using persistent media URL directly:', mediaUrl.substring(0, 100))
       }
     }
 
@@ -333,7 +294,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Insert message (ON CONFLICT DO NOTHING for dedup via unique index)
+    // Insert message
     const { data: insertedMsg, error: insertError } = await supabase.from('conversation_messages').insert({
       conversation_id: conversation.id,
       direction,
@@ -345,7 +306,6 @@ Deno.serve(async (req) => {
     }).select('id').maybeSingle()
 
     if (insertError) {
-      // Check if it's a unique constraint violation (duplicate) - treat as success
       if (insertError.code === '23505') {
         console.log('Duplicate detected by unique index, skipping:', externalId)
         return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'duplicate_index' }), {
@@ -359,7 +319,6 @@ Deno.serve(async (req) => {
       })
     }
 
-    // If no row was inserted (shouldn't happen with error check above, but just in case)
     if (!insertedMsg) {
       console.log('No row inserted (possible duplicate):', externalId)
       return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'no_insert' }), {
@@ -377,7 +336,7 @@ Deno.serve(async (req) => {
       .update(updateData)
       .eq('id', conversation.id)
 
-    // Broadcast via REST API to TWO topics (chat panel + conversation list)
+    // Broadcast via REST API
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
     const broadcastPayload = {
