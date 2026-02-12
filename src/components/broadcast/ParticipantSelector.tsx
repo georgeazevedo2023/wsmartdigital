@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -221,18 +221,16 @@ const ParticipantSelector = ({
   };
 
   // Auto-trigger enrichment when groups with LID contacts are selected
-  const [autoEnrichTriggered, setAutoEnrichTriggered] = useState<string>('');
-
   const groupKey = selectedGroups.map(g => g.id).sort().join(',');
-  
-  // Use effect-like pattern via useMemo to detect group changes
-  useMemo(() => {
-    if (lidOnlyCount > 0 && instance && onParticipantsUpdated && groupKey && groupKey !== autoEnrichTriggered) {
-      setAutoEnrichTriggered(groupKey);
-      // Small delay to let UI render first
-      setTimeout(() => handleResolveLids(), 500);
+  const autoEnrichTriggeredRef = useRef<string>('');
+
+  useEffect(() => {
+    if (lidOnlyCount > 0 && instance && onParticipantsUpdated && groupKey && groupKey !== autoEnrichTriggeredRef.current) {
+      autoEnrichTriggeredRef.current = groupKey;
+      const timer = setTimeout(() => handleResolveLids(), 500);
+      return () => clearTimeout(timer);
     }
-  }, [groupKey, lidOnlyCount]);
+  }, [groupKey, lidOnlyCount, instance, onParticipantsUpdated]);
 
   if (uniqueParticipants.length === 0) {
     return (

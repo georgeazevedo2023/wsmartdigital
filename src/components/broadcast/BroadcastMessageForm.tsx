@@ -83,6 +83,16 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
   });
   const [message, setMessage] = useState(() => initialData?.content || '');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
+  // Enriched groups with resolved phone numbers (replaces LID-only participants)
+  const [enrichedGroups, setEnrichedGroups] = useState<Group[]>(selectedGroups);
+  
+  // Sync enrichedGroups when selectedGroups prop changes
+  useEffect(() => {
+    setEnrichedGroups(selectedGroups);
+  }, [selectedGroups]);
+  
+  // Use enrichedGroups for all participant-related logic
+  const effectiveGroups = enrichedGroups;
   const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20'>('none');
   const [progress, setProgress] = useState<SendProgress>({
     currentGroup: 0,
@@ -153,8 +163,8 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
     };
   });
 
-  const totalMembers = selectedGroups.reduce((acc, g) => acc + g.size, 0);
-  const totalRegularMembers = selectedGroups.reduce((acc, g) => {
+  const totalMembers = effectiveGroups.reduce((acc, g) => acc + g.size, 0);
+  const totalRegularMembers = effectiveGroups.reduce((acc, g) => {
     return acc + g.participants.filter(p => !p.isAdmin && !p.isSuperAdmin).length;
   }, 0);
 
@@ -163,7 +173,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
     const seenJids = new Set<string>();
     const uniqueMembers: { jid: string; groupName: string }[] = [];
     
-    for (const group of selectedGroups) {
+    for (const group of effectiveGroups) {
       const regularMembers = group.participants.filter(p => !p.isAdmin && !p.isSuperAdmin);
       for (const member of regularMembers) {
         if (!seenJids.has(member.jid)) {
@@ -174,7 +184,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
     }
     
     return uniqueMembers;
-  }, [selectedGroups]);
+  }, [effectiveGroups]);
 
   const uniqueRegularMembersCount = uniqueRegularMembers.length;
 
@@ -2173,10 +2183,12 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               {/* Participant Selector - shows when excludeAdmins is active */}
               {excludeAdmins && (
                 <ParticipantSelector
-                  selectedGroups={selectedGroups}
+                  selectedGroups={effectiveGroups}
                   selectedParticipants={selectedParticipants}
                   onSelectionChange={handleParticipantSelectionChange}
                   disabled={isSending}
+                  instance={instance}
+                  onParticipantsUpdated={setEnrichedGroups}
                 />
               )}
             </div>
