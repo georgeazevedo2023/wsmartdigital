@@ -110,9 +110,9 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
   };
 
   return (
-    <div className="p-3 border-t border-border/50 bg-card/50 shrink-0">
+    <div className="p-3 border-t border-border/50 bg-card/50">
       {isNote && (
-        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md px-3 py-1.5 mb-2 text-xs text-yellow-400">
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-md px-3 py-1 mb-2 text-xs text-yellow-400">
           📝 Escrevendo nota privada — o cliente não verá esta mensagem
         </div>
       )}
@@ -120,7 +120,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
         <Button
           variant={isNote ? 'default' : 'ghost'}
           size="icon"
-          className="shrink-0 h-10 w-10"
+          className="shrink-0 h-9 w-9"
           onClick={() => setIsNote(!isNote)}
           title="Nota privada"
         >
@@ -131,12 +131,12 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={isNote ? 'Escrever nota privada...' : 'Escrever mensagem...'}
-          className="min-h-[42px] max-h-32 resize-none text-base"
+          className="min-h-[40px] max-h-32 resize-none text-sm md:text-sm text-base"
           rows={1}
         />
         <Button
           size="icon"
-          className="shrink-0 h-10 w-10"
+          className="shrink-0 h-9 w-9"
           onClick={handleSend}
           disabled={!text.trim() || sending}
         >

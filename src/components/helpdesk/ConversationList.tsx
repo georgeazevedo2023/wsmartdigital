@@ -1,4 +1,3 @@
-import { ReactNode } from 'react';
 import { Search, Inbox, RefreshCw } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
@@ -18,7 +17,6 @@ interface ConversationListProps {
   loading: boolean;
   onSync?: () => void;
   syncing?: boolean;
-  inboxSelector?: ReactNode;
 }
 
 const statusTabs = [
@@ -39,25 +37,23 @@ export const ConversationList = ({
   loading,
   onSync,
   syncing,
-  inboxSelector,
 }: ConversationListProps) => {
   const unreadCount = conversations.filter(c => !c.is_read).length;
 
   return (
     <>
       {/* Header */}
-      <div className="p-3 pb-2 border-b border-border/50 shrink-0">
-        <div className="flex items-center justify-between mb-2.5">
+      <div className="p-3 border-b border-border/50">
+        <div className="flex items-center justify-between mb-3">
           <h2 className="font-display font-bold text-lg">Atendimento</h2>
           <div className="flex items-center gap-2">
-            {inboxSelector}
             {onSync && (
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={onSync}
                 disabled={syncing}
-                className="h-8 w-8"
+                className="h-7 w-7"
                 title="Sincronizar conversas"
               >
                 <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
@@ -72,16 +68,16 @@ export const ConversationList = ({
         </div>
 
         {/* Status tabs */}
-        <div className="flex gap-1 mb-2.5 overflow-x-auto scrollbar-none">
+        <div className="flex gap-1 mb-3">
           {statusTabs.map(tab => (
             <button
               key={tab.value}
               onClick={() => onStatusFilterChange(tab.value)}
               className={cn(
-                'px-3 py-1.5 rounded-lg text-xs font-medium transition-colors whitespace-nowrap min-h-[32px]',
+                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
                 statusFilter === tab.value
                   ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-secondary active:bg-secondary/70'
+                  : 'text-muted-foreground hover:bg-secondary'
               )}
             >
               {tab.label}
@@ -96,7 +92,7 @@ export const ConversationList = ({
             value={searchQuery}
             onChange={e => onSearchChange(e.target.value)}
             placeholder="Buscar conversa..."
-            className="pl-8 h-9 text-base md:text-sm bg-secondary/50 border-border/30"
+            className="pl-8 h-8 text-sm bg-secondary/50 border-border/30"
           />
         </div>
       </div>

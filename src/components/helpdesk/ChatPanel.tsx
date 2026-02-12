@@ -4,7 +4,6 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { MessageSquare, ArrowLeft, User } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 
@@ -71,50 +70,47 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
 
   if (!conversation) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground gap-3">
-        <div className="w-16 h-16 rounded-full bg-secondary/50 flex items-center justify-center">
-          <MessageSquare className="w-8 h-8 opacity-50" />
-        </div>
-        <div className="text-center">
-          <p className="text-base font-medium">Selecione uma conversa</p>
-          <p className="text-sm text-muted-foreground/70">Escolha uma conversa na lista para começar</p>
-        </div>
+      <div className="flex-1 flex flex-col items-center justify-center text-muted-foreground">
+        <MessageSquare className="w-16 h-16 mb-4 opacity-30" />
+        <p className="text-lg font-medium">Selecione uma conversa</p>
+        <p className="text-sm">Escolha uma conversa na lista para começar</p>
       </div>
     );
   }
 
   const contact = conversation.contact;
-  const name = contact?.name || contact?.phone || 'Desconhecido';
-  const initials = name.charAt(0).toUpperCase();
 
   return (
     <>
       {/* Header */}
-      <div className="h-14 px-3 flex items-center gap-3 border-b border-border/50 bg-card/50 shrink-0">
+      <div className="h-14 px-3 md:px-4 flex items-center gap-2 md:gap-3 border-b border-border/50 bg-card/50 shrink-0">
         {onBack && (
-          <Button variant="ghost" size="icon" className="shrink-0 h-10 w-10" onClick={onBack}>
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onBack}>
             <ArrowLeft className="w-5 h-5" />
           </Button>
         )}
-        <Avatar className="w-9 h-9 shrink-0">
-          <AvatarImage src={contact?.profile_pic_url || undefined} />
-          <AvatarFallback className="bg-primary/10 text-primary text-xs font-semibold">
-            {initials}
-          </AvatarFallback>
-        </Avatar>
         <div className="flex-1 min-w-0">
-          <h3 className="font-semibold text-sm truncate">{name}</h3>
-          <p className="text-xs text-muted-foreground truncate">{contact?.phone}</p>
+          <h3 className="font-semibold text-sm truncate">
+            {contact?.name || contact?.phone || 'Desconhecido'}
+          </h3>
+          <div className="flex items-center gap-2">
+            <p className="text-xs text-muted-foreground">{contact?.phone}</p>
+            {contact?.jid && (
+              <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-mono">
+                {contact.jid.split('@')[0]}
+              </span>
+            )}
+          </div>
         </div>
         {onShowInfo && (
-          <Button variant="ghost" size="icon" className="shrink-0 h-10 w-10" onClick={onShowInfo}>
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
             <User className="w-5 h-5" />
           </Button>
         )}
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-3 md:p-4">
+      <ScrollArea className="flex-1 p-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />

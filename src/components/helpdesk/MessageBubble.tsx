@@ -23,7 +23,7 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
     >
       <div
         className={cn(
-          'max-w-[85%] md:max-w-[75%] rounded-xl px-3 py-2 text-sm',
+          'max-w-[75%] rounded-xl px-3 py-2 text-sm',
           isNote
             ? 'bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 italic'
             : isOutgoing
@@ -45,7 +45,7 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
                 <img
                   src={message.media_url}
                   alt="Imagem"
-                  className="rounded-lg max-w-full max-h-64 cursor-pointer hover:opacity-90 transition-opacity"
+                  className="rounded-lg max-w-full cursor-pointer hover:opacity-90 transition-opacity"
                   onError={() => setImgError(true)}
                 />
               </a>
@@ -82,7 +82,7 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
           </audio>
         )}
         {message.media_type === 'video' && message.media_url && (
-          <video controls className="rounded-lg max-w-full max-h-64 mb-1">
+          <video controls className="rounded-lg max-w-full mb-1">
             <source src={message.media_url} />
           </video>
         )}

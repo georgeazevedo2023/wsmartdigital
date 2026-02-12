@@ -283,38 +283,25 @@ const HelpDesk = () => {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col h-[calc(100vh-4rem)] -m-4 overflow-hidden bg-background">
+      <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
         {mobileView === 'list' && (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <ConversationList
-              conversations={filteredConversations}
-              selectedId={selectedConversation?.id || null}
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              onSelect={handleSelectConversation}
-              loading={loading}
-              onSync={handleSync}
-              syncing={syncing}
-              inboxSelector={
-                inboxes.length > 0 ? (
-                  <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
-                    <SelectTrigger className="w-auto h-8 text-xs gap-1 border-border/30">
-                      <SelectValue placeholder="Inbox" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {inboxes.map(inbox => (
-                        <SelectItem key={inbox.id} value={inbox.id}>
-                          {inbox.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : undefined
-              }
-            />
-          </div>
+          <>
+            {inboxSelector}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <ConversationList
+                conversations={filteredConversations}
+                selectedId={selectedConversation?.id || null}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onSelect={handleSelectConversation}
+                loading={loading}
+                onSync={handleSync}
+                syncing={syncing}
+              />
+            </div>
+          </>
         )}
         {mobileView === 'chat' && (
           <div className="flex-1 flex flex-col overflow-hidden">
@@ -340,10 +327,10 @@ const HelpDesk = () => {
   }
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] -m-6 overflow-hidden">
+    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
       {inboxSelector}
       {/* Main layout */}
-      <div className="flex flex-1 overflow-hidden border-t border-border/50 bg-card/30">
+      <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
         {/* Left: Conversation List */}
         <div className="w-80 border-r border-border/50 flex flex-col shrink-0">
           <ConversationList
