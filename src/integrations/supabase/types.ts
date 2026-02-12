@@ -467,6 +467,7 @@ export type Database = {
           created_at: string | null
           description: string | null
           id: string
+          instance_id: string | null
           leads_count: number | null
           name: string
           updated_at: string | null
@@ -476,6 +477,7 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          instance_id?: string | null
           leads_count?: number | null
           name: string
           updated_at?: string | null
@@ -485,6 +487,7 @@ export type Database = {
           created_at?: string | null
           description?: string | null
           id?: string
+          instance_id?: string | null
           leads_count?: number | null
           name?: string
           updated_at?: string | null
