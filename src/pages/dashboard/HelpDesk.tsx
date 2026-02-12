@@ -336,7 +336,7 @@ const HelpDesk = () => {
       <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
         {/* Left: Conversation List */}
         {showConversationList && (
-          <div className="w-80 border-r border-border/50 flex flex-col shrink-0">
+          <div className="w-72 lg:w-80 border-r border-border/50 flex flex-col shrink-0 overflow-hidden">
             <ConversationList
               conversations={filteredConversations}
               selectedId={selectedConversation?.id || null}
@@ -353,7 +353,7 @@ const HelpDesk = () => {
         )}
 
         {/* Center: Chat */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <ChatPanel
             conversation={selectedConversation}
             onUpdateConversation={handleUpdateConversation}
@@ -366,7 +366,7 @@ const HelpDesk = () => {
 
         {/* Right: Contact Info */}
         {selectedConversation && showContactInfo && (
-          <div className="w-72 border-l border-border/50 flex flex-col shrink-0">
+          <div className="w-64 lg:w-72 border-l border-border/50 flex flex-col shrink-0 overflow-hidden">
             <ContactInfoPanel
               conversation={selectedConversation}
               onUpdateConversation={handleUpdateConversation}
