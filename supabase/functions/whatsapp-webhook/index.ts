@@ -20,58 +20,6 @@ function extractPhone(jid: string): string {
   return jid.split('@')[0].replace(/\D/g, '')
 }
 
-async function uploadMediaToStorage(
-  supabase: any,
-  cdnUrl: string,
-  messageId: string,
-  mediaType: string
-): Promise<string> {
-  try {
-    console.log('Downloading CDN media as blob:', cdnUrl.substring(0, 80))
-    const response = await fetch(cdnUrl)
-    if (!response.ok) {
-      console.log('CDN download failed:', response.status)
-      return ''
-    }
-
-    const mediaBlob = await response.blob()
-    const mimeMap: Record<string, string> = {
-      image: 'image/jpeg', video: 'video/mp4', audio: 'audio/ogg', document: 'application/octet-stream'
-    }
-    const rawCt = response.headers.get('content-type') || ''
-    const contentType = rawCt.includes('text/html')
-      ? (mimeMap[mediaType] || 'application/octet-stream')
-      : (rawCt || mimeMap[mediaType] || 'application/octet-stream')
-
-    console.log('CDN blob size:', mediaBlob.size, 'type:', contentType)
-
-    if (mediaBlob.size < 1000) {
-      console.log('CDN returned too small content, skipping. Size:', mediaBlob.size)
-      return ''
-    }
-
-    const extMap: Record<string, string> = { image: 'jpg', video: 'mp4', audio: 'ogg', document: 'bin' }
-    const ext = extMap[mediaType] || 'bin'
-    const path = `media/${messageId}.${ext}`
-
-    const { error: uploadError } = await supabase.storage
-      .from('helpdesk-media')
-      .upload(path, mediaBlob, { contentType, upsert: true })
-
-    if (uploadError) {
-      console.error('Storage upload error:', uploadError)
-      return ''
-    }
-
-    const { data } = supabase.storage.from('helpdesk-media').getPublicUrl(path)
-    console.log('Uploaded to storage:', data.publicUrl?.substring(0, 80))
-    return data.publicUrl || ''
-  } catch (err) {
-    console.error('Error uploading to storage:', err)
-    return ''
-  }
-}
-
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders })
@@ -198,20 +146,9 @@ Deno.serve(async (req) => {
       resolvedMediaUrl: mediaUrl?.substring(0, 100),
     }))
 
-    // Media resolution: use URL directly when persistent, upload to Storage only for temporary CDN
+    // Media: salvar URL diretamente sem download (evita corrupção de dados no Deno)
     if (mediaType !== 'text' && mediaUrl) {
-      if (mediaUrl.includes('mmg.whatsapp.net')) {
-        // Temporary WhatsApp CDN URL - persist to Storage using blob
-        console.log('CDN URL detected, uploading to storage...')
-        const storageUrl = await uploadMediaToStorage(supabase, mediaUrl, externalId || rawExternalId, mediaType)
-        if (storageUrl) {
-          mediaUrl = storageUrl
-        }
-        // If storage fails, keep CDN URL (works for a few hours)
-      } else {
-        // Persistent URL (uazapi.com, etc) - use directly
-        console.log('Using persistent media URL directly:', mediaUrl.substring(0, 100))
-      }
+      console.log('Storing media URL directly (no download):', mediaUrl.substring(0, 80))
     }
 
     console.log(`Processing: direction=${direction}, mediaType=${mediaType}, externalId=${externalId}, chatId=${chatId}, mediaUrl=${mediaUrl ? 'YES' : 'NO'}`)
