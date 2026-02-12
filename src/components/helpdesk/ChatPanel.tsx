@@ -149,7 +149,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
         ) : (
           <div className="space-y-2">
             {messages.map(msg => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble key={msg.id} message={msg} instanceId={conversation.inbox?.instance_id} />
             ))}
           </div>
         )}

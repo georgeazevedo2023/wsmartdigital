@@ -1,18 +1,56 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ImageIcon, ExternalLink, FileText, Download } from 'lucide-react';
+import { ImageIcon, ExternalLink, FileText, Download, Loader2 } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
+import { supabase } from '@/integrations/supabase/client';
 import type { Message } from '@/pages/dashboard/HelpDesk';
 
 interface MessageBubbleProps {
   message: Message;
+  instanceId?: string;
 }
 
-export const MessageBubble = ({ message }: MessageBubbleProps) => {
+export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
   const isOutgoing = message.direction === 'outgoing';
   const isNote = message.direction === 'private_note';
   const [imgError, setImgError] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const handleDocumentOpen = async () => {
+    if (!message.media_url || !instanceId) return;
+    setDownloading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('uazapi-proxy', {
+        body: { action: 'download-media', fileUrl: message.media_url, instanceId },
+      });
+
+      if (error) throw error;
+
+      // data is already a Blob when responseType isn't json
+      const blob = data instanceof Blob ? data : new Blob([JSON.stringify(data)], { type: 'application/octet-stream' });
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank');
+    } catch (err) {
+      console.error('Error downloading document:', err);
+      // Fallback: try direct link
+      window.open(message.media_url, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  // Extract friendly file name for documents
+  const getDocumentInfo = () => {
+    const raw = (typeof message.content === 'string' && message.content) 
+      ? message.content 
+      : message.media_url?.split('/').pop()?.split('?')[0] || 'Documento';
+    // If name looks like a hash (64+ hex chars), show generic name
+    const isHash = /^[0-9a-f]{32,}\.\w+$/i.test(raw);
+    const fileName = isHash ? `Documento.${raw.split('.').pop() || 'pdf'}` : raw;
+    const ext = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() || 'DOC' : 'DOC';
+    return { fileName, ext };
+  };
 
   return (
     <div
@@ -99,16 +137,12 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
         )}
 
         {message.media_type === 'document' && message.media_url && (() => {
-          const fileName = (typeof message.content === 'string' && message.content) 
-            ? message.content 
-            : message.media_url.split('/').pop()?.split('?')[0] || 'Documento';
-          const ext = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() || 'DOC' : 'DOC';
+          const { fileName, ext } = getDocumentInfo();
           return (
-            <a
-              href={message.media_url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors mb-1"
+            <button
+              onClick={handleDocumentOpen}
+              disabled={downloading}
+              className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors mb-1 w-full text-left cursor-pointer disabled:opacity-50"
             >
               <div className="shrink-0 h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
                 <FileText className="h-5 w-5 text-primary" />
@@ -117,12 +151,16 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
                 <span className="text-sm font-medium truncate">{fileName}</span>
                 <span className="text-[10px] text-muted-foreground uppercase">{ext}</span>
               </div>
-              <Download className="h-4 w-4 text-muted-foreground shrink-0" />
-            </a>
+              {downloading ? (
+                <Loader2 className="h-4 w-4 text-muted-foreground shrink-0 animate-spin" />
+              ) : (
+                <Download className="h-4 w-4 text-muted-foreground shrink-0" />
+              )}
+            </button>
           );
         })()}
 
-        {message.content && typeof message.content === 'string' && (
+        {message.media_type !== 'document' && message.content && typeof message.content === 'string' && (
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         )}
         {message.content && typeof message.content === 'object' && (
