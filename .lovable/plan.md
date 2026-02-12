@@ -1,48 +1,39 @@
 
 
-# Corrigir Imagens: Salvar URL Direta (Sem Download)
+# Corrigir Exibicao de Imagens e Mostrar Link Publico
 
-## Diagnostico
+## Problema
 
-O arquivo no Storage contem dados corrompidos -- o binario nao comeca com os magic bytes JPEG (`FF D8 FF`). O `fetch()` do Deno para o CDN do WhatsApp retorna dados invalidos, provavelmente por headers de autenticacao ou incompatibilidade do runtime.
-
-Os logs confirmam que `content.URL` tem a URL da imagem no CDN do WhatsApp. A URL funciona por varias horas, suficiente para atendimento em tempo real.
+As URLs do CDN do WhatsApp (`mmg.whatsapp.net`) sao bloqueadas pelo navegador (CORS/403) quando usadas diretamente em tags `<img>`. Por isso as imagens aparecem com icone quebrado. O download no servidor tambem corrompe os dados.
 
 ## Solucao
 
-### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
+### 1. MessageBubble - Tratamento de erro + Link publico
 
-**1. Remover a funcao `uploadMediaToStorage` (linhas 23-73)**
+**Arquivo: `src/components/helpdesk/MessageBubble.tsx`**
 
-Essa funcao corrompe os dados e nao funciona corretamente no Deno com CDN do WhatsApp.
-
-**2. Simplificar a logica de midia (linhas 202-215)**
-
-Substituir por codigo que simplesmente usa a URL diretamente, sem nenhum download:
+- Adicionar estado `imgError` para detectar quando a imagem falha
+- Quando falhar, mostrar placeholder com icone de imagem e botao "Abrir imagem"
+- **Sempre** mostrar o link da URL publica abaixo da imagem (ou do placeholder), como solicitado
+- Tornar a imagem clicavel (abre em nova aba)
 
 ```typescript
-// Media: usar URL diretamente sem download
-if (mediaType !== 'text' && mediaUrl) {
-  console.log('Storing media URL directly (no download):', mediaUrl.substring(0, 80))
-}
+// Logica de fallback
+const [imgError, setImgError] = useState(false);
+
+// Se imagem carregou OK: mostra imagem + link abaixo
+// Se imagem falhou: mostra placeholder + link para abrir
 ```
 
-Sem condicional de CDN vs persistente. Qualquer URL que vier no payload vai direto para o banco.
+### 2. Resultado visual
 
-**3. Manter os logs de debug dos campos de midia**
+- Imagem carregou: imagem visivel + link clicavel abaixo
+- Imagem falhou (CORS): placeholder cinza com icone + link "Abrir imagem" que abre a URL original em nova aba
+- Em ambos os casos, o link da URL publica aparece abaixo
 
-Os logs existentes (linhas 187-199) continuam uteis para diagnostico futuro.
-
-## Resultado
-
-- Imagens aparecem imediatamente usando URL do CDN do WhatsApp
-- Zero processamento de midia no servidor (mais rapido, sem corrupcao)
-- URLs do CDN funcionam por varias horas (suficiente para atendimento)
-- Para persistencia futura, pode-se implementar um cron job separado que baixa e salva as midias
-
-## Arquivo a modificar
+### Arquivo a modificar
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/whatsapp-webhook/index.ts` | Remover funcao `uploadMediaToStorage`, simplificar bloco de midia para salvar URL direto |
+| `src/components/helpdesk/MessageBubble.tsx` | Adicionar estado imgError, fallback visual, link publico da URL abaixo da imagem |
 
