@@ -94,8 +94,23 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
           pictureUrl: g.profilePicUrl || g.pictureUrl || g.PictureUrl,
           participants: rawParticipants.map((p: any) => {
             // PhoneNumber é o número real, JID pode ser LID interno do WhatsApp
-            const phoneNumber = p.PhoneNumber || p.phoneNumber || '';
+            let phoneNumber = p.PhoneNumber || p.phoneNumber || '';
             const jid = p.JID || p.jid || p.id || '';
+            const pushName = p.PushName || p.pushName || p.DisplayName || p.Name || p.name || '';
+            
+            // Fallback: se PhoneNumber estiver vazio ou mascarado (com ·),
+            // verificar se PushName contém dígitos que parecem um número de telefone
+            if ((!phoneNumber || phoneNumber.includes('·')) && pushName) {
+              const digitsFromName = pushName.replace(/\D/g, '');
+              if (digitsFromName.length >= 10) {
+                phoneNumber = digitsFromName;
+              }
+            }
+            
+            // Se phoneNumber está mascarado (contém ·), ignorar
+            if (phoneNumber && phoneNumber.includes('·')) {
+              phoneNumber = '';
+            }
             
             return {
               // Prioriza PhoneNumber como identificador principal (quando disponível)
@@ -103,7 +118,7 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
               phoneNumber: phoneNumber || undefined,
               isAdmin: p.IsAdmin || p.isAdmin || false,
               isSuperAdmin: p.IsSuperAdmin || p.isSuperAdmin || false,
-              name: p.PushName || p.pushName || p.DisplayName || p.Name || p.name || undefined,
+              name: pushName || undefined,
               // Guarda o JID original para casos onde só temos LID
               originalJid: jid,
             };

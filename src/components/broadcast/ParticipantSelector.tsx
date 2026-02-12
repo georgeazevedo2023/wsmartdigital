@@ -180,6 +180,7 @@ const ParticipantSelector = ({
             action: 'resolve-lids',
             token: instance.token,
             lids: lids,
+            groupJids: selectedGroups.map(g => g.id),
           }),
         }
       );
