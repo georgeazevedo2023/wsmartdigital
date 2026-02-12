@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ImageIcon, ExternalLink } from 'lucide-react';
+import { ImageIcon, ExternalLink, FileText, Download } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import type { Message } from '@/pages/dashboard/HelpDesk';
 
@@ -97,6 +97,30 @@ export const MessageBubble = ({ message }: MessageBubbleProps) => {
             <source src={message.media_url} />
           </video>
         )}
+
+        {message.media_type === 'document' && message.media_url && (() => {
+          const fileName = (typeof message.content === 'string' && message.content) 
+            ? message.content 
+            : message.media_url.split('/').pop()?.split('?')[0] || 'Documento';
+          const ext = fileName.includes('.') ? fileName.split('.').pop()?.toUpperCase() || 'DOC' : 'DOC';
+          return (
+            <a
+              href={message.media_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/50 hover:bg-muted transition-colors mb-1"
+            >
+              <div className="shrink-0 h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                <FileText className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-sm font-medium truncate">{fileName}</span>
+                <span className="text-[10px] text-muted-foreground uppercase">{ext}</span>
+              </div>
+              <Download className="h-4 w-4 text-muted-foreground shrink-0" />
+            </a>
+          );
+        })()}
 
         {message.content && typeof message.content === 'string' && (
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
