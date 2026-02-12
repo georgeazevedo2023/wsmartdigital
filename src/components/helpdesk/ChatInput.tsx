@@ -147,6 +147,18 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
         return;
       }
 
+      // Upload audio to storage
+      const fileName = `${conversation.id}/${Date.now()}.ogg`;
+      const { error: uploadError } = await supabase.storage
+        .from('audio-messages')
+        .upload(fileName, blob, { contentType: blob.type });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('audio-messages')
+        .getPublicUrl(fileName);
+      const audioPublicUrl = publicUrlData.publicUrl;
+
       const base64Audio = await blobToBase64(blob);
 
       const { data: session } = await supabase.auth.getSession();
@@ -171,12 +183,13 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
         throw new Error('Falha ao enviar áudio');
       }
 
-      // Save to DB
+      // Save to DB with media_url
       const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id,
         direction: 'outgoing',
         content: null,
         media_type: 'audio',
+        media_url: audioPublicUrl,
         sender_id: user.id,
       }).select().single();
       if (error) throw error;
@@ -196,7 +209,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
           direction: 'outgoing',
           media_type: 'audio',
           content: null,
-          media_url: null,
+          media_url: audioPublicUrl,
           created_at: insertedMsg.created_at,
         },
       });
