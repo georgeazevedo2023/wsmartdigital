@@ -6,10 +6,12 @@ import InstanceCard from '@/components/dashboard/InstanceCard';
 import DashboardCharts from '@/components/dashboard/DashboardCharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Server, Users, Wifi, WifiOff, MessageSquare, UsersRound, RefreshCw } from 'lucide-react';
+import { Server, Users, Wifi, WifiOff, MessageSquare, UsersRound, RefreshCw, UserPlus } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { startOfDay, subDays, format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
 
 interface Instance {
   id: string;
@@ -33,6 +35,13 @@ interface InstanceStats {
   status: string;
 }
 
+interface HelpdeskLeadsStats {
+  today: number;
+  yesterday: number;
+  total: number;
+  dailyData: { day: string; label: string; leads: number }[];
+}
+
 const DashboardHome = () => {
   const { profile, isSuperAdmin } = useAuth();
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -40,9 +49,11 @@ const DashboardHome = () => {
   const [loading, setLoading] = useState(true);
   const [loadingStats, setLoadingStats] = useState(false);
   const [instanceStats, setInstanceStats] = useState<InstanceStats[]>([]);
+  const [helpdeskLeads, setHelpdeskLeads] = useState<HelpdeskLeadsStats>({ today: 0, yesterday: 0, total: 0, dailyData: [] });
 
   useEffect(() => {
     fetchData();
+    fetchHelpdeskLeadsStats();
   }, [isSuperAdmin]);
 
   const fetchData = async () => {
@@ -89,6 +100,65 @@ const DashboardHome = () => {
       console.error('Error fetching data:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchHelpdeskLeadsStats = async () => {
+    try {
+      const now = new Date();
+      const todayStart = startOfDay(now).toISOString();
+      const yesterdayStart = startOfDay(subDays(now, 1)).toISOString();
+      const sevenDaysAgo = startOfDay(subDays(now, 6)).toISOString();
+
+      // Fetch today, yesterday, total and last 7 days in parallel
+      const [todayRes, yesterdayRes, totalRes, weekRes] = await Promise.all([
+        supabase
+          .from('lead_database_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('source', 'helpdesk')
+          .gte('created_at', todayStart),
+        supabase
+          .from('lead_database_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('source', 'helpdesk')
+          .gte('created_at', yesterdayStart)
+          .lt('created_at', todayStart),
+        supabase
+          .from('lead_database_entries')
+          .select('id', { count: 'exact', head: true })
+          .eq('source', 'helpdesk'),
+        supabase
+          .from('lead_database_entries')
+          .select('created_at')
+          .eq('source', 'helpdesk')
+          .gte('created_at', sevenDaysAgo)
+          .order('created_at', { ascending: true }),
+      ]);
+
+      const todayCount = todayRes.count || 0;
+      const yesterdayCount = yesterdayRes.count || 0;
+      const totalCount = totalRes.count || 0;
+
+      // Group by day
+      const dayMap = new Map<string, number>();
+      for (let i = 6; i >= 0; i--) {
+        const d = subDays(now, i);
+        dayMap.set(format(d, 'yyyy-MM-dd'), 0);
+      }
+      weekRes.data?.forEach((entry) => {
+        const dayKey = format(new Date(entry.created_at!), 'yyyy-MM-dd');
+        dayMap.set(dayKey, (dayMap.get(dayKey) || 0) + 1);
+      });
+
+      const dailyData = Array.from(dayMap.entries()).map(([day, count]) => ({
+        day,
+        label: format(new Date(day), 'EEE', { locale: ptBR }),
+        leads: count,
+      }));
+
+      setHelpdeskLeads({ today: todayCount, yesterday: yesterdayCount, total: totalCount, dailyData });
+    } catch (error) {
+      console.error('Error fetching helpdesk leads stats:', error);
     }
   };
 
@@ -254,6 +324,16 @@ const DashboardHome = () => {
             icon={Users}
           />
         )}
+        <StatsCard
+          title="Leads Helpdesk Hoje"
+          value={helpdeskLeads.today}
+          icon={UserPlus}
+          description={`${helpdeskLeads.total} leads capturados no total`}
+          trend={helpdeskLeads.yesterday > 0 ? {
+            value: Math.round(((helpdeskLeads.today - helpdeskLeads.yesterday) / helpdeskLeads.yesterday) * 100),
+            positive: helpdeskLeads.today >= helpdeskLeads.yesterday,
+          } : undefined}
+        />
       </div>
 
       {/* Charts Section */}
@@ -262,6 +342,7 @@ const DashboardHome = () => {
         connectedCount={connectedInstances.length}
         disconnectedCount={disconnectedInstances.length}
         loading={loadingStats}
+        helpdeskLeadsDailyData={helpdeskLeads.dailyData}
       />
 
       {/* Instance Groups Breakdown */}
