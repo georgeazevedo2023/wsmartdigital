@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 import { Button } from '@/components/ui/button';
 import { MessageSquare, ArrowLeft, User } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
@@ -65,7 +65,10 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
 
   // Auto-scroll to bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const timer = setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+    return () => clearTimeout(timer);
   }, [messages]);
 
   if (!conversation) {
@@ -110,7 +113,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
       </div>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4">
+      <div className="flex-1 overflow-y-auto p-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -127,7 +130,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
           </div>
         )}
         <div ref={bottomRef} />
-      </ScrollArea>
+      </div>
 
       {/* Input */}
       <ChatInput conversation={conversation} onMessageSent={fetchMessages} />
