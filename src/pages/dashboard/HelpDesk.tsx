@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
-
+import { useIsMobile } from '@/hooks/use-mobile';
 import { ConversationList } from '@/components/helpdesk/ConversationList';
 import { ChatPanel } from '@/components/helpdesk/ChatPanel';
 import { ContactInfoPanel } from '@/components/helpdesk/ContactInfoPanel';
@@ -64,7 +64,8 @@ interface Inbox {
 
 const HelpDesk = () => {
   const { user } = useAuth();
-  const [activeView, setActiveView] = useState<'list' | 'chat' | 'info'>('list');
+  const isMobile = useIsMobile();
+  const [mobileView, setMobileView] = useState<'list' | 'chat' | 'info'>('list');
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('aberta');
@@ -231,7 +232,7 @@ const HelpDesk = () => {
 
   const handleSelectConversation = async (conversation: Conversation) => {
     setSelectedConversation(conversation);
-    setActiveView('chat');
+    if (isMobile) setMobileView('chat');
 
     if (!conversation.is_read) {
       await supabase
@@ -280,46 +281,90 @@ const HelpDesk = () => {
     </div>
   ) : null;
 
-  return (
-    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
-      {activeView === 'list' && (
-        <>
-          {inboxSelector}
+  if (isMobile) {
+    return (
+      <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+        {mobileView === 'list' && (
+          <>
+            {inboxSelector}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              <ConversationList
+                conversations={filteredConversations}
+                selectedId={selectedConversation?.id || null}
+                statusFilter={statusFilter}
+                onStatusFilterChange={setStatusFilter}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onSelect={handleSelectConversation}
+                loading={loading}
+                onSync={handleSync}
+                syncing={syncing}
+              />
+            </div>
+          </>
+        )}
+        {mobileView === 'chat' && (
           <div className="flex-1 flex flex-col overflow-hidden">
-            <ConversationList
-              conversations={filteredConversations}
-              selectedId={selectedConversation?.id || null}
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              onSelect={handleSelectConversation}
-              loading={loading}
-              onSync={handleSync}
-              syncing={syncing}
+            <ChatPanel
+              conversation={selectedConversation}
+              onUpdateConversation={handleUpdateConversation}
+              onBack={() => setMobileView('list')}
+              onShowInfo={() => setMobileView('info')}
             />
           </div>
-        </>
-      )}
-      {activeView === 'chat' && (
-        <div className="flex-1 flex flex-col overflow-hidden">
+        )}
+        {mobileView === 'info' && selectedConversation && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            <ContactInfoPanel
+              conversation={selectedConversation}
+              onUpdateConversation={handleUpdateConversation}
+              onBack={() => setMobileView('chat')}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
+      {inboxSelector}
+      {/* Main layout */}
+      <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
+        {/* Left: Conversation List */}
+        <div className="w-80 border-r border-border/50 flex flex-col shrink-0">
+          <ConversationList
+            conversations={filteredConversations}
+            selectedId={selectedConversation?.id || null}
+            statusFilter={statusFilter}
+            onStatusFilterChange={setStatusFilter}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onSelect={handleSelectConversation}
+            loading={loading}
+            onSync={handleSync}
+            syncing={syncing}
+          />
+        </div>
+
+        {/* Center: Chat */}
+        <div className="flex-1 flex flex-col min-w-0">
           <ChatPanel
             conversation={selectedConversation}
             onUpdateConversation={handleUpdateConversation}
-            onBack={() => setActiveView('list')}
-            onShowInfo={() => setActiveView('info')}
           />
         </div>
-      )}
-      {activeView === 'info' && selectedConversation && (
-        <div className="flex-1 flex flex-col overflow-hidden">
-          <ContactInfoPanel
-            conversation={selectedConversation}
-            onUpdateConversation={handleUpdateConversation}
-            onBack={() => setActiveView('chat')}
-          />
-        </div>
-      )}
+
+        {/* Right: Contact Info */}
+        {selectedConversation && (
+          <div className="w-72 border-l border-border/50 flex flex-col shrink-0">
+            <ContactInfoPanel
+              conversation={selectedConversation}
+              onUpdateConversation={handleUpdateConversation}
+            />
+          </div>
+        )}
+      </div>
     </div>
   );
 };
