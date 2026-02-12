@@ -1,87 +1,51 @@
 
 
-# Melhorar UX Mobile-First do Helpdesk
+# Layout do Helpdesk: Uma coluna visivel por vez (Mobile-First)
 
-## Problema Atual
+## Problema
 
-O layout do Helpdesk usa 3 colunas fixas (lista w-80 + chat flex-1 + info w-72) sem nenhuma adaptacao mobile. Em telas pequenas, tudo fica espremido e inutilizavel.
+No desktop, as 3 colunas (lista w-80 + chat flex-1 + info w-72) ficam todas abertas ao mesmo tempo, deixando o espaco apertado. O usuario quer que apenas uma coluna fique visivel, com as outras retraidas.
 
-## Solucao: Navegacao por Views no Mobile
+## Solucao
 
-No mobile (< 768px), usar um sistema de views onde apenas uma coluna e visivel por vez:
+Aplicar o mesmo padrao de navegacao por views que ja existe no mobile para TODAS as telas. Remover a separacao `isMobile` e usar um unico sistema de views para desktop e mobile.
+
+### Comportamento
+
+- **View "list"** (padrao): Lista de conversas em tela cheia
+- **View "chat"**: Painel de chat em tela cheia, com botao voltar para lista e botao info
+- **View "info"**: Painel de info do contato em tela cheia, com botao voltar para chat
+
+### Mudancas no arquivo `src/pages/dashboard/HelpDesk.tsx`
+
+1. Remover a condicao `if (isMobile)` que separa os layouts
+2. Usar um unico bloco de renderizacao com `mobileView` (renomear para `activeView`) para todas as telas
+3. Manter o `inboxSelector` visivel apenas na view "list"
+4. Ajustar larguras: na view "list" usar `max-w-2xl mx-auto` no desktop para centralizar, chat e info usam tela cheia
+
+### Detalhes tecnicos
+
+O layout desktop atual (linhas 329-368) sera substituido pelo mesmo padrao condicional que ja existe nas linhas 284-326, removendo a bifurcacao `isMobile`. O estado `mobileView` sera renomeado para `activeView` para refletir que nao e mais exclusivo do mobile.
 
 ```text
-[Lista] --clica conversa--> [Chat] --clica info--> [Contato]
-  ^                           |                       |
-  |___________voltar__________|_______voltar__________|
+Estado activeView:
+  'list'  --> ConversationList (tela cheia)
+  'chat'  --> ChatPanel com onBack e onShowInfo
+  'info'  --> ContactInfoPanel com onBack
 ```
 
-No desktop (>= 768px), manter o layout atual de 3 colunas lado a lado.
+A selecao de conversa sempre muda para `activeView = 'chat'`. Os botoes de voltar e info ja existem no ChatPanel e ContactInfoPanel (implementados anteriormente).
 
-## Mudancas por Arquivo
+### Arquivos a modificar
 
-### 1. `src/pages/dashboard/HelpDesk.tsx`
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/pages/dashboard/HelpDesk.tsx` | Remover layout de 3 colunas desktop, usar view unica para todas as telas, renomear mobileView para activeView |
 
-- Adicionar estado `mobileView: 'list' | 'chat' | 'info'` (default: 'list')
-- Usar `useIsMobile()` hook
-- Ao selecionar conversa no mobile: setar `mobileView = 'chat'`
-- Passar callback `onBack` para ChatPanel e ContactInfoPanel
-- No mobile: renderizar condicionalmente apenas a view ativa (sem colunas fixas)
-- No desktop: manter layout atual inalterado
-- Mover o seletor de inbox para dentro do ConversationList no mobile (evitar barra extra)
+### Resultado
 
-### 2. `src/components/helpdesk/ChatPanel.tsx`
-
-- Adicionar props `onBack?: () => void` e `onShowInfo?: () => void`
-- No header: mostrar botao de voltar (ArrowLeft) quando `onBack` existir
-- Adicionar botao de info/contato no header (User icon) que chama `onShowInfo`
-- Ajustar padding e tamanhos para toque mobile
-
-### 3. `src/components/helpdesk/ContactInfoPanel.tsx`
-
-- Adicionar prop `onBack?: () => void`
-- Mostrar botao de voltar no topo quando `onBack` existir
-
-### 4. `src/components/helpdesk/ConversationList.tsx`
-
-- Ajustar altura e padding para mobile
-- Garantir que os items tenham area de toque suficiente (min 48px)
-
-### 5. `src/components/helpdesk/ChatInput.tsx`
-
-- Ajustar textarea e botoes para mobile (area de toque maior)
-- Textarea com `text-base` no mobile para evitar zoom do iOS
-
-## Detalhes Tecnicos
-
-Estado de navegacao mobile no HelpDesk.tsx:
-
-```typescript
-const isMobile = useIsMobile();
-const [mobileView, setMobileView] = useState<'list' | 'chat' | 'info'>('list');
-
-const handleSelectConversation = (c: Conversation) => {
-  setSelectedConversation(c);
-  if (isMobile) setMobileView('chat');
-};
-```
-
-Layout condicional:
-
-```typescript
-// Mobile: renderiza apenas a view ativa
-{isMobile ? (
-  mobileView === 'list' ? <ConversationList ... /> :
-  mobileView === 'chat' ? <ChatPanel onBack={() => setMobileView('list')} onShowInfo={() => setMobileView('info')} ... /> :
-  <ContactInfoPanel onBack={() => setMobileView('chat')} ... />
-) : (
-  // Desktop: layout 3 colunas atual
-)}
-```
-
-## Resultado
-
-- Mobile: navegacao fluida entre telas, area de toque adequada, sem scroll horizontal
-- Desktop: layout inalterado, sem regressoes
-- Sem alteracao de funcionalidades ou logica de negocio
+- Uma coluna visivel por vez em qualquer tamanho de tela
+- Navegacao fluida: Lista -> Chat -> Info -> voltar
+- Sem regressao de funcionalidades
+- Layout mais limpo e focado
 
