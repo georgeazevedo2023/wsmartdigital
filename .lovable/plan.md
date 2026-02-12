@@ -1,65 +1,87 @@
 
 
-# Mostrar icone de foto na lista de conversas
+# Melhorar UX Mobile-First do Helpdesk
 
-## Problema
+## Problema Atual
 
-Quando a ultima mensagem de uma conversa e uma imagem (sem texto/legenda), o campo `content` e `null`. A query que busca a ultima mensagem ignora essas entradas, entao a preview da conversa fica vazia em vez de mostrar algo como "📷 Foto".
+O layout do Helpdesk usa 3 colunas fixas (lista w-80 + chat flex-1 + info w-72) sem nenhuma adaptacao mobile. Em telas pequenas, tudo fica espremido e inutilizavel.
 
-## Solucao
+## Solucao: Navegacao por Views no Mobile
 
-### 1. Atualizar query de ultima mensagem (`src/pages/dashboard/HelpDesk.tsx`)
+No mobile (< 768px), usar um sistema de views onde apenas uma coluna e visivel por vez:
 
-Na query que busca as ultimas mensagens (linhas 105-117), adicionar `media_type` ao select e ajustar a logica para aceitar mensagens sem `content` quando tiverem midia:
-
+```text
+[Lista] --clica conversa--> [Chat] --clica info--> [Contato]
+  ^                           |                       |
+  |___________voltar__________|_______voltar__________|
 ```
-.select('conversation_id, content, media_type, created_at')
-```
 
-No loop, se `content` for null mas `media_type` for imagem/video/audio/documento, gerar um texto como "📷 Foto", "🎥 Video", "🎵 Audio", "📎 Documento".
+No desktop (>= 768px), manter o layout atual de 3 colunas lado a lado.
 
-### 2. Atualizar broadcast realtime (linha 156)
+## Mudancas por Arquivo
 
-Quando o broadcast chega com `media_type` mas sem `content`, gerar o mesmo texto de preview de midia para a lista.
+### 1. `src/pages/dashboard/HelpDesk.tsx`
 
-### 3. Arquivos a modificar
+- Adicionar estado `mobileView: 'list' | 'chat' | 'info'` (default: 'list')
+- Usar `useIsMobile()` hook
+- Ao selecionar conversa no mobile: setar `mobileView = 'chat'`
+- Passar callback `onBack` para ChatPanel e ContactInfoPanel
+- No mobile: renderizar condicionalmente apenas a view ativa (sem colunas fixas)
+- No desktop: manter layout atual inalterado
+- Mover o seletor de inbox para dentro do ConversationList no mobile (evitar barra extra)
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `src/pages/dashboard/HelpDesk.tsx` | Adicionar `media_type` na query de last message, gerar preview de midia quando content e null, ajustar handler de broadcast |
+### 2. `src/components/helpdesk/ChatPanel.tsx`
 
-### Detalhes tecnicos
+- Adicionar props `onBack?: () => void` e `onShowInfo?: () => void`
+- No header: mostrar botao de voltar (ArrowLeft) quando `onBack` existir
+- Adicionar botao de info/contato no header (User icon) que chama `onShowInfo`
+- Ajustar padding e tamanhos para toque mobile
 
-Funcao auxiliar para gerar preview:
+### 3. `src/components/helpdesk/ContactInfoPanel.tsx`
+
+- Adicionar prop `onBack?: () => void`
+- Mostrar botao de voltar no topo quando `onBack` existir
+
+### 4. `src/components/helpdesk/ConversationList.tsx`
+
+- Ajustar altura e padding para mobile
+- Garantir que os items tenham area de toque suficiente (min 48px)
+
+### 5. `src/components/helpdesk/ChatInput.tsx`
+
+- Ajustar textarea e botoes para mobile (area de toque maior)
+- Textarea com `text-base` no mobile para evitar zoom do iOS
+
+## Detalhes Tecnicos
+
+Estado de navegacao mobile no HelpDesk.tsx:
 
 ```typescript
-function mediaPreview(mediaType: string): string {
-  switch (mediaType) {
-    case 'image': return '📷 Foto';
-    case 'video': return '🎥 Vídeo';
-    case 'audio': return '🎵 Áudio';
-    case 'document': return '📎 Documento';
-    default: return '';
-  }
-}
+const isMobile = useIsMobile();
+const [mobileView, setMobileView] = useState<'list' | 'chat' | 'info'>('list');
+
+const handleSelectConversation = (c: Conversation) => {
+  setSelectedConversation(c);
+  if (isMobile) setMobileView('chat');
+};
 ```
 
-Na query de ultimas mensagens, aceitar a mensagem se tiver `content` OU `media_type` diferente de 'text':
+Layout condicional:
 
 ```typescript
-for (const msg of allMsgs) {
-  if (!lastMsgMap[msg.conversation_id]) {
-    const preview = msg.content || mediaPreview(msg.media_type);
-    if (preview) {
-      lastMsgMap[msg.conversation_id] = preview;
-    }
-  }
-}
+// Mobile: renderiza apenas a view ativa
+{isMobile ? (
+  mobileView === 'list' ? <ConversationList ... /> :
+  mobileView === 'chat' ? <ChatPanel onBack={() => setMobileView('list')} onShowInfo={() => setMobileView('info')} ... /> :
+  <ContactInfoPanel onBack={() => setMobileView('chat')} ... />
+) : (
+  // Desktop: layout 3 colunas atual
+)}
 ```
 
-No broadcast (linha 156), usar a mesma logica:
+## Resultado
 
-```typescript
-last_message: data.content || mediaPreview(data.media_type) || c.last_message
-```
+- Mobile: navegacao fluida entre telas, area de toque adequada, sem scroll horizontal
+- Desktop: layout inalterado, sem regressoes
+- Sem alteracao de funcionalidades ou logica de negocio
 
