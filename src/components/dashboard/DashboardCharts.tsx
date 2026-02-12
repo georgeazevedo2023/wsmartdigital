@@ -18,6 +18,7 @@ interface DashboardChartsProps {
   disconnectedCount: number;
   loading: boolean;
   helpdeskLeadsDailyData?: { day: string; label: string; leads: number }[];
+  helpdeskChartTitle?: string;
 }
 
 const CHART_COLORS = {
@@ -38,7 +39,7 @@ const statusChartConfig = {
   offline: { label: 'Offline', color: CHART_COLORS.offline },
 };
 
-const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loading, helpdeskLeadsDailyData }: DashboardChartsProps) => {
+const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loading, helpdeskLeadsDailyData, helpdeskChartTitle }: DashboardChartsProps) => {
   if (loading) {
     return (
       <div className="grid gap-4 md:grid-cols-2 animate-fade-in" style={{ animationDelay: '175ms' }}>
@@ -233,7 +234,7 @@ const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loa
       {helpdeskLeadsDailyData && helpdeskLeadsDailyData.length > 0 && (
         <Card className="glass-card-hover md:col-span-2">
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Leads Helpdesk — Últimos 7 dias</CardTitle>
+            <CardTitle className="text-sm font-medium">{helpdeskChartTitle || 'Leads Helpdesk — Últimos 7 dias'}</CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             <ChartContainer config={{ leads: { label: 'Leads', color: 'hsl(262 80% 55%)' } }} className="h-[220px] w-full">
