@@ -1,72 +1,67 @@
 
-# Corrigir Upload de Midia para Storage
 
-## Problema Identificado
+# Corrigir Exibicao de Imagens: Mimetype e fileURL
 
-Dois problemas confirmados:
+## Problemas Identificados
 
-1. **Storage upload salva arquivo vazio**: O `response.blob()` no Deno edge functions nao e compativel com o metodo `.upload()` do Supabase Storage. O arquivo e criado mas com 0 bytes. Precisa usar `Uint8Array` via `arrayBuffer()`.
+### 1. Mimetype incorreto no Storage
+Os arquivos estao sendo salvos no Storage com mimetype `application/octet-stream` em vez de `image/jpeg`. Isso acontece porque o CDN do WhatsApp retorna `application/octet-stream` no header `content-type`, e o webhook usa esse valor ao fazer o upload. O navegador nao consegue renderizar o arquivo como imagem com esse mimetype.
 
-2. **UAZAPI `/message/download` retorna 404**: O endpoint nao encontra a mensagem. Pode ser formato do ID ou endpoint incorreto. Isso faz o sistema cair no fallback CDN.
-
-O fallback CDN FUNCIONA (o download da imagem ocorre) mas o upload para o Storage salva um arquivo vazio por causa do tipo de dado incorreto.
+### 2. fileURL da UAZAPI ignorada
+O payload do webhook ja inclui `message.fileURL` que pode ser uma URL persistente hospedada no servidor UAZAPI (ex: `https://wsmart.uazapi.com/...`). O codigo atual extrai essa URL na linha 208 mas depois sobrescreve com a logica de download que falha (404).
 
 ## Solucao
 
 ### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
 
-**Correcao 1: Trocar `blob()` por `arrayBuffer()` no upload**
+**Mudanca 1: Derivar mimetype do mediaType, nao do CDN**
 
-Na funcao `uploadMediaToStorage`, trocar:
+Na funcao `uploadMediaToStorage`, usar o `mediaType` para definir o content-type correto em vez de confiar no header da resposta CDN:
 
 ```typescript
-// ANTES (nao funciona no Deno)
-const blob = await response.blob()
-await supabase.storage.from('helpdesk-media').upload(path, blob, { ... })
-
-// DEPOIS (funciona no Deno)
-const arrayBuf = await response.arrayBuffer()
-const uint8 = new Uint8Array(arrayBuf)
-const contentType = response.headers.get('content-type') || 'application/octet-stream'
-await supabase.storage.from('helpdesk-media').upload(path, uint8, { contentType, upsert: true })
+const mimeMap: Record<string, string> = {
+  image: 'image/jpeg',
+  video: 'video/mp4',
+  audio: 'audio/ogg',
+  document: 'application/octet-stream'
+}
+const contentType = mimeMap[mediaType] || 'application/octet-stream'
 ```
 
-**Correcao 2: Adicionar log do tamanho do arquivo para debug**
+**Mudanca 2: Usar fileURL se for URL persistente da UAZAPI**
+
+Antes de tentar o download via `/message/download`, verificar se a `mediaUrl` ja extraida do payload (`message.fileURL`) eh uma URL do servidor UAZAPI (nao do CDN do WhatsApp). Se for, usar diretamente sem tentar download:
 
 ```typescript
-console.log('CDN response status:', response.status, 'size:', uint8.length, 'type:', contentType)
-```
-
-**Correcao 3: Validar que o conteudo nao e uma pagina de erro**
-
-Verificar se o tamanho do arquivo e razoavel (> 1KB) e o content-type e de midia antes de fazer upload:
-
-```typescript
-if (uint8.length < 1000 || contentType.includes('text/html')) {
-  console.log('CDN returned invalid content, skipping upload')
-  return ''
+if (mediaType !== 'text' && mediaUrl) {
+  // Se fileURL ja eh do servidor UAZAPI, usar diretamente
+  const isUazapiUrl = mediaUrl.includes('uazapi.com') || mediaUrl.includes('/download/')
+  const isCdnUrl = mediaUrl.includes('mmg.whatsapp.net')
+  
+  if (isUazapiUrl && !isCdnUrl) {
+    // URL ja persistente, usar direto
+    console.log('Using persistent fileURL from UAZAPI:', mediaUrl.substring(0, 80))
+  } else if (instance.token) {
+    // URL temporaria do CDN - tentar download UAZAPI, fallback Storage
+    // ... logica existente
+  }
 }
 ```
 
-**Correcao 4: Tentar tambem o formato completo do messageid no UAZAPI download**
+**Mudanca 3: Reordenar prioridade das URLs**
 
-O UAZAPI pode esperar o `messageid` no formato completo (como `true_JID_ID`). Tentar esse formato como alternativa:
-
-```typescript
-// Tentar com formato completo
-const fullMessageId = `true_${chatId}_${messageId}`
-// Primeiro tenta com ID curto, depois com formato completo
-```
+1. Primeiro: usar `fileURL` se for URL persistente (UAZAPI)
+2. Segundo: tentar `/message/download` com messageid + chatid
+3. Terceiro: baixar do CDN e salvar no Storage com mimetype correto
 
 ## Arquivos a Modificar
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/whatsapp-webhook/index.ts` | Corrigir upload usando `arrayBuffer()` em vez de `blob()`, adicionar validacao de conteudo, melhorar logs |
+| `supabase/functions/whatsapp-webhook/index.ts` | Corrigir mimetype no upload, priorizar fileURL persistente, reordenar logica de fallback |
 
 ## Resultado Esperado
 
-- CDN download captura o binario corretamente
-- Upload para Storage salva o arquivo com conteudo real
-- Imagens aparecem no helpdesk com URL persistente do Storage
-- Se CDN expirado, arquivo invalido e descartado (em vez de salvar lixo)
+- Imagens com fileURL da UAZAPI aparecem imediatamente
+- Fallback para Storage usa mimetype correto (`image/jpeg` em vez de `application/octet-stream`)
+- Imagens renderizam corretamente no navegador
