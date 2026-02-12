@@ -1,124 +1,62 @@
 
-# Transcrição Automática de Áudios com Groq Whisper
+# Corrigir Exibição da Transcrição e Adicionar Loading Indicator
 
-## Visão Geral
+## Problema Identificado
 
-Quando um áudio é recebido no webhook, o sistema vai automaticamente baixar o arquivo, enviar para a API da Groq (Whisper Large V3) para transcrição, salvar o texto no banco de dados, e exibir abaixo do player de áudio na interface.
+A transcrição está funcionando corretamente no backend (os logs confirmam que o áudio foi transcrito e salvo). O problema é que:
 
-## Arquitetura
+1. A mensagem de áudio é inserida primeiro SEM transcrição
+2. A transcrição é adicionada via UPDATE alguns segundos depois
+3. O canal realtime do ChatPanel só escuta eventos de broadcast (`new-message`), que são disparados apenas na inserção -- o UPDATE posterior com a transcrição não dispara um refresh na UI
+4. Resultado: o usuário vê a mensagem sem transcrição e precisa recarregar manualmente
 
-```text
-Webhook recebe áudio
-  -> Insere mensagem no banco
-  -> Baixa o MP3 via URL
-  -> Envia para Groq Whisper API
-  -> Atualiza campo "transcription" na mensagem
-  -> UI exibe texto abaixo do AudioPlayer
-```
+## Solução
 
-## Mudanças
+### 1. Webhook: Notificar o frontend quando a transcrição chegar
 
-### 1. Banco de Dados (migração)
+Modificar a edge function `transcribe-audio` para, após salvar a transcrição no banco, enviar um broadcast no canal `helpdesk-realtime` com evento `transcription-updated`, incluindo o `messageId`, `conversationId` e o texto da transcrição.
 
-Adicionar coluna `transcription` na tabela `conversation_messages`:
+Para isso, a edge function precisa receber também o `conversationId` como parâmetro. O webhook será atualizado para enviá-lo.
 
-```sql
-ALTER TABLE public.conversation_messages
-ADD COLUMN transcription text DEFAULT NULL;
-```
+### 2. ChatPanel: Escutar evento de transcrição
 
-### 2. Salvar a API Key da Groq como Secret
+Atualizar o `ChatPanel.tsx` para escutar o evento `transcription-updated` no canal broadcast. Quando recebido, atualizar o campo `transcription` da mensagem correspondente no state local (sem precisar refazer o fetch completo).
 
-A chave da Groq será armazenada como secret seguro (`GROQ_API_KEY`) para uso na edge function.
+### 3. MessageBubble: Adicionar loading indicator
 
-### 3. Edge Function: `supabase/functions/transcribe-audio/index.ts`
+No `MessageBubble.tsx`, quando `media_type === 'audio'` e `transcription` for `null` ou `undefined`, e a mensagem for `incoming`, exibir um indicador de "Transcrevendo..." com animação de pulso abaixo do player.
 
-Nova função que:
-- Recebe `messageId` e `audioUrl`
-- Baixa o arquivo de áudio da URL
-- Envia como `multipart/form-data` para `https://api.groq.com/openai/v1/audio/transcriptions`
-- Parâmetros: model `whisper-large-v3`, language `pt`, temperature `0`
-- Atualiza o campo `transcription` da mensagem no banco
+### 4. Webhook: Passar conversationId para transcribe-audio
 
-### 4. Webhook: `supabase/functions/whatsapp-webhook/index.ts`
-
-Após inserir a mensagem de áudio com sucesso:
-- Chama a edge function `transcribe-audio` de forma assíncrona (fire-and-forget) para não atrasar o webhook
-- Passa o ID da mensagem inserida e a URL do áudio
-
-### 5. UI: `src/components/helpdesk/MessageBubble.tsx`
-
-- Quando `message.media_type === 'audio'` e `message.transcription` existe, exibir o texto abaixo do AudioPlayer
-- Estilo: texto pequeno, itálico, cor suave, com ícone de microfone
-
-### 6. Tipo Message no HelpDesk
-
-Adicionar `transcription?: string` ao tipo `Message` usado no HelpDesk para que o campo seja carregado do banco e disponível na UI.
+Atualizar a chamada no webhook para incluir o `conversationId` no body enviado para a edge function.
 
 ## Detalhes Técnicos
 
-### Edge Function `transcribe-audio`
-
+### Arquivo: `supabase/functions/transcribe-audio/index.ts`
+- Receber `conversationId` além de `messageId` e `audioUrl`
+- Após salvar no banco, enviar broadcast via Supabase Realtime:
 ```typescript
-// Fluxo principal:
-const audioResponse = await fetch(audioUrl);
-const audioBlob = await audioResponse.blob();
-
-const formData = new FormData();
-formData.append('file', audioBlob, 'audio.mp3');
-formData.append('model', 'whisper-large-v3');
-formData.append('temperature', '0');
-formData.append('language', 'pt');
-formData.append('response_format', 'verbose_json');
-formData.append('prompt', 'Conversa o áudio em texto de forma clara e precisa.');
-
-const result = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
-  method: 'POST',
-  headers: { Authorization: `Bearer ${GROQ_API_KEY}` },
-  body: formData,
-});
-
-const { text } = await result.json();
-
-// Atualizar no banco
-await supabase.from('conversation_messages')
-  .update({ transcription: text })
-  .eq('id', messageId);
+await supabase.channel('helpdesk-realtime').send({
+  type: 'broadcast',
+  event: 'transcription-updated',
+  payload: { messageId, conversationId, transcription }
+})
 ```
 
-### Chamada assíncrona no Webhook
+### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
+- Incluir `conversationId` na chamada para `transcribe-audio`
 
-```typescript
-// Após inserir mensagem de áudio com sucesso
-if (mediaType === 'audio' && mediaUrl && insertedMsg) {
-  fetch(`${SUPABASE_URL}/functions/v1/transcribe-audio`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${ANON_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      messageId: insertedMsg.id,
-      audioUrl: mediaUrl,
-    }),
-  }).catch(err => console.error('Transcription call failed:', err));
-}
-```
+### Arquivo: `src/components/helpdesk/ChatPanel.tsx`
+- Adicionar listener para evento `transcription-updated` no canal broadcast existente
+- Atualizar mensagem no state local com a transcrição recebida
 
-### Exibição na UI
+### Arquivo: `src/components/helpdesk/MessageBubble.tsx`
+- Quando `media_type === 'audio'`, `direction === 'incoming'`, e sem `transcription`:
+  - Exibir loading: "Transcrevendo..." com animação pulse
+- Quando `transcription` existe: exibir o texto normalmente
 
-```typescript
-// Abaixo do AudioPlayer no MessageBubble
-{message.media_type === 'audio' && message.transcription && (
-  <p className="text-[11px] text-muted-foreground italic mt-1 whitespace-pre-wrap">
-    {message.transcription}
-  </p>
-)}
-```
+## Resultado Esperado
 
-## Resultado
-
-- Áudios recebidos são transcritos automaticamente em segundo plano
-- Transcrição aparece abaixo do player assim que disponível
-- Não atrasa o processamento do webhook (chamada assíncrona)
-- Chave da Groq armazenada de forma segura como secret
+- Transcrição aparece automaticamente no chat segundos após o áudio ser recebido, sem recarregar a página
+- Loading "Transcrevendo..." visível enquanto o processo ocorre
+- Transição suave do loading para o texto transcrito
