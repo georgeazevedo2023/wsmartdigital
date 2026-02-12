@@ -4,7 +4,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 
 import { Button } from '@/components/ui/button';
-import { MessageSquare, ArrowLeft, User } from 'lucide-react';
+import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 
 interface ChatPanelProps {
@@ -12,9 +12,11 @@ interface ChatPanelProps {
   onUpdateConversation: (id: string, updates: Partial<Conversation>) => void;
   onBack?: () => void;
   onShowInfo?: () => void;
+  onToggleInfo?: () => void;
+  showingInfo?: boolean;
 }
 
-export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo }: ChatPanelProps) => {
+export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo }: ChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -108,6 +110,11 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
         {onShowInfo && (
           <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
             <User className="w-5 h-5" />
+          </Button>
+        )}
+        {onToggleInfo && (
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onToggleInfo}>
+            {showingInfo ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
           </Button>
         )}
       </div>
