@@ -667,6 +667,48 @@ Deno.serve(async (req) => {
         })
       }
 
+      case 'send-audio': {
+        // Send audio/voice message (PTT) to individual contact via /send/media
+        if (!instanceToken || !body.jid || !body.audio) {
+          return new Response(
+            JSON.stringify({ error: 'Token, jid and audio (base64) required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
+        const audioEndpoint = `${uazapiUrl}/send/media`
+        const audioBody = {
+          number: body.jid,
+          type: 'audio',
+          file: body.audio, // base64 audio data
+          ptt: true, // Send as voice message (push-to-talk)
+        }
+
+        console.log('Sending audio PTT to:', body.jid)
+        const audioResponse = await fetch(audioEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'token': instanceToken,
+          },
+          body: JSON.stringify(audioBody),
+        })
+
+        console.log('Audio response status:', audioResponse.status)
+        const audioRawText = await audioResponse.text()
+        let audioData: unknown
+        try {
+          audioData = JSON.parse(audioRawText)
+        } catch {
+          audioData = { raw: audioRawText }
+        }
+
+        return new Response(
+          JSON.stringify(audioData),
+          { status: audioResponse.status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        )
+      }
+
       case 'send-chat': {
         // Send text message to individual contact (used by helpdesk)
         if (!instanceToken || !body.jid || !body.message) {
