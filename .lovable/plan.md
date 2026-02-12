@@ -1,86 +1,44 @@
 
+# Corrigir Auto-Scroll ao Selecionar Conversa
 
-# Painel de Contato Retraivel no Desktop
+## Problema
 
-## Objetivo
+O auto-scroll depende de `[messages]` como dependencia do `useEffect`, mas quando o estado `loading` muda de `true` para `false`, o spinner e substituido pelas mensagens no DOM. O timeout de 100ms pode nao ser suficiente para o React renderizar todas as mensagens antes de executar o `scrollIntoView`. Alem disso, ao reselecionar a mesma conversa, a referencia de `messages` pode nao mudar.
 
-No layout desktop, a coluna direita (info do contato) ficara retraida por padrão. Um botao de seta no header do chat permitira abrir/fechar o painel. Isso maximiza o espaco do chat e melhora o aproveitamento de tela.
+## Solucao
 
-## Comportamento
+Duas mudancas no `src/components/helpdesk/ChatPanel.tsx`:
 
-```text
-Estado normal (retraido):
-[Lista w-80] [Chat - tela cheia .......................... >]
+1. Adicionar `loading` como dependencia do `useEffect` de auto-scroll, para que ele dispare quando o loading termina (loading muda de true para false)
+2. Usar `behavior: 'instant'` em vez de `'smooth'` na primeira carga (quando vem do loading), para garantir que o usuario ja veja a ultima mensagem sem animacao que pode ser interrompida
+3. Aumentar o timeout para 150ms para dar mais tempo ao DOM
 
-Ao clicar na seta (expandido):
-[Lista w-80] [Chat ..................] [Info w-72]
-```
+### Mudanca no codigo
 
-- O botao de seta (ChevronRight / ChevronLeft) fica no header do ChatPanel, ao lado do nome do contato
-- Clicar alterna entre mostrar/esconder o painel de info
-- No mobile, o comportamento atual de views separadas permanece inalterado
-
-## Mudancas por Arquivo
-
-### 1. `src/pages/dashboard/HelpDesk.tsx`
-
-- Adicionar estado `showContactInfo` (default: `false`)
-- Passar prop `onToggleInfo` e `showingInfo` para o ChatPanel no layout desktop
-- Condicionar a renderizacao da coluna direita ao estado `showContactInfo`
-
-### 2. `src/components/helpdesk/ChatPanel.tsx`
-
-- Adicionar props `onToggleInfo?: () => void` e `showingInfo?: boolean`
-- No header, ao lado do nome do contato (lado direito), mostrar um botao com icone de seta:
-  - `PanelRightOpen` quando retraido (para indicar que pode abrir)
-  - `PanelRightClose` quando expandido (para indicar que pode fechar)
-- O botao so aparece no desktop (quando `onToggleInfo` existe e nao ha `onShowInfo` de mobile)
-
-## Detalhes Tecnicos
-
-No HelpDesk.tsx, o layout desktop muda de:
-
+De:
 ```typescript
-// Antes: info sempre visivel
-{selectedConversation && (
-  <div className="w-72 ...">
-    <ContactInfoPanel ... />
-  </div>
-)}
+useEffect(() => {
+  const timer = setTimeout(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, 100);
+  return () => clearTimeout(timer);
+}, [messages]);
 ```
 
 Para:
-
 ```typescript
-// Depois: info controlada por estado
-const [showContactInfo, setShowContactInfo] = useState(false);
-
-<ChatPanel
-  ...
-  onToggleInfo={() => setShowContactInfo(prev => !prev)}
-  showingInfo={showContactInfo}
-/>
-
-{selectedConversation && showContactInfo && (
-  <div className="w-72 ...">
-    <ContactInfoPanel ... />
-  </div>
-)}
+useEffect(() => {
+  if (loading) return;
+  const timer = setTimeout(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+  }, 150);
+  return () => clearTimeout(timer);
+}, [messages, loading]);
 ```
 
-No ChatPanel.tsx, adicionar o botao de toggle no header:
-
-```typescript
-{onToggleInfo && (
-  <Button variant="ghost" size="icon" onClick={onToggleInfo}>
-    {showingInfo ? <PanelRightClose /> : <PanelRightOpen />}
-  </Button>
-)}
-```
+Usar `'instant'` garante que ao abrir a conversa o scroll vai direto para o fim sem animacao (que pode ser cortada). Para novas mensagens via realtime, o scroll tambem sera instantaneo, o que e aceitavel.
 
 ## Resultado
 
-- Chat ocupa toda a largura disponivel por padrao (melhor aproveitamento de tela)
-- Painel de contato acessivel com um clique na seta
-- Mobile inalterado (continua com navegacao por views)
-- Sem alteracao de funcionalidades
+- Ao clicar em qualquer conversa da lista, o chat sempre mostra a ultima mensagem
+- Funciona mesmo com imagens e midia na conversa
