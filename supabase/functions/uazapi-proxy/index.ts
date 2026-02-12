@@ -669,7 +669,7 @@ Deno.serve(async (req) => {
       }
 
       case 'send-audio': {
-        // Send audio/voice message (PTT) via dedicated /send/ptt endpoint
+        // Send audio/voice message via dedicated /send/audio endpoint
         console.log('send-audio: instanceToken?', !!instanceToken, 'jid?', !!body.jid, 'audio?', !!body.audio)
         if (!instanceToken || !body.jid || !body.audio) {
           return new Response(
@@ -678,10 +678,13 @@ Deno.serve(async (req) => {
           )
         }
 
-        // Keep data URI prefix for /send/ptt - UAZAPI needs it to detect file type
-        const audioFile = String(body.audio)
+        // Strip data URI prefix if present (e.g. "data:audio/ogg;base64,...")
+        const rawAudio = String(body.audio)
+        const audioFile = rawAudio.includes(',') && rawAudio.startsWith('data:')
+          ? rawAudio.split(',')[1]
+          : rawAudio
 
-        const audioEndpoint = `${uazapiUrl}/send/ptt`
+        const audioEndpoint = `${uazapiUrl}/send/audio`
         const audioBody = {
           number: body.jid,
           file: audioFile,
