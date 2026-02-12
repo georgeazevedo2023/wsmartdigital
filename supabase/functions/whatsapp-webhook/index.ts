@@ -26,29 +26,38 @@ async function downloadMedia(
   messageId: string,
   chatId: string
 ): Promise<string> {
-  try {
-    const response = await fetch(`${uazapiUrl}/message/download`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'token': instanceToken,
-      },
-      body: JSON.stringify({ messageid: messageId, chatid: chatId }),
-    })
+  // Try multiple ID formats: raw, short, and full (true_chatId_messageId)
+  const shortId = messageId.includes(':') ? messageId.split(':').pop()! : messageId
+  const fullId = `true_${chatId}_${shortId}`
+  const idsToTry = [messageId, fullId]
 
-    if (!response.ok) {
-      const errText = await response.text()
-      console.log('Download media failed:', response.status, errText)
-      return ''
+  for (const id of idsToTry) {
+    try {
+      console.log('Trying UAZAPI download with messageid:', id.substring(0, 40))
+      const response = await fetch(`${uazapiUrl}/message/download`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'token': instanceToken,
+        },
+        body: JSON.stringify({ messageid: id, chatid: chatId }),
+      })
+
+      if (!response.ok) {
+        const errText = await response.text()
+        console.log('Download media failed:', response.status, errText.substring(0, 100))
+        continue
+      }
+
+      const data = await response.json()
+      console.log('Download media response keys:', Object.keys(data))
+      const url = data.url || data.URL || data.fileUrl || data.file || ''
+      if (url) return url
+    } catch (err) {
+      console.error('Error downloading media with id', id.substring(0, 20), ':', err)
     }
-
-    const data = await response.json()
-    console.log('Download media response keys:', Object.keys(data))
-    return data.url || data.URL || data.fileUrl || data.file || data.base64 || ''
-  } catch (err) {
-    console.error('Error downloading media:', err)
-    return ''
   }
+  return ''
 }
 
 async function uploadMediaToStorage(
@@ -65,14 +74,25 @@ async function uploadMediaToStorage(
       return ''
     }
 
-    const blob = await response.blob()
+    const arrayBuf = await response.arrayBuffer()
+    const uint8 = new Uint8Array(arrayBuf)
+    const contentType = response.headers.get('content-type') || 'application/octet-stream'
+
+    console.log('CDN response status:', response.status, 'size:', uint8.length, 'type:', contentType)
+
+    // Validate: skip if too small or HTML error page
+    if (uint8.length < 1000 || contentType.includes('text/html')) {
+      console.log('CDN returned invalid content, skipping upload. Size:', uint8.length)
+      return ''
+    }
+
     const extMap: Record<string, string> = { image: 'jpg', video: 'mp4', audio: 'ogg', document: 'bin' }
     const ext = extMap[mediaType] || 'bin'
     const path = `media/${messageId}.${ext}`
 
     const { error: uploadError } = await supabase.storage
       .from('helpdesk-media')
-      .upload(path, blob, { contentType: blob.type || 'application/octet-stream', upsert: true })
+      .upload(path, uint8, { contentType, upsert: true })
 
     if (uploadError) {
       console.error('Storage upload error:', uploadError)
