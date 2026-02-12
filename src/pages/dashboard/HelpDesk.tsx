@@ -68,6 +68,7 @@ const HelpDesk = () => {
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState<'list' | 'chat' | 'info'>('list');
   const [showContactInfo, setShowContactInfo] = useState(false);
+  const [showConversationList, setShowConversationList] = useState(true);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('aberta');
@@ -334,20 +335,22 @@ const HelpDesk = () => {
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
         {/* Left: Conversation List */}
-        <div className="w-80 border-r border-border/50 flex flex-col shrink-0">
-          <ConversationList
-            conversations={filteredConversations}
-            selectedId={selectedConversation?.id || null}
-            statusFilter={statusFilter}
-            onStatusFilterChange={setStatusFilter}
-            searchQuery={searchQuery}
-            onSearchChange={setSearchQuery}
-            onSelect={handleSelectConversation}
-            loading={loading}
-            onSync={handleSync}
-            syncing={syncing}
-          />
-        </div>
+        {showConversationList && (
+          <div className="w-80 border-r border-border/50 flex flex-col shrink-0">
+            <ConversationList
+              conversations={filteredConversations}
+              selectedId={selectedConversation?.id || null}
+              statusFilter={statusFilter}
+              onStatusFilterChange={setStatusFilter}
+              searchQuery={searchQuery}
+              onSearchChange={setSearchQuery}
+              onSelect={handleSelectConversation}
+              loading={loading}
+              onSync={handleSync}
+              syncing={syncing}
+            />
+          </div>
+        )}
 
         {/* Center: Chat */}
         <div className="flex-1 flex flex-col min-w-0">
@@ -356,6 +359,8 @@ const HelpDesk = () => {
             onUpdateConversation={handleUpdateConversation}
             onToggleInfo={() => setShowContactInfo(prev => !prev)}
             showingInfo={showContactInfo}
+            onToggleList={() => setShowConversationList(prev => !prev)}
+            showingList={showConversationList}
           />
         </div>
 
