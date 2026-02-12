@@ -38,7 +38,8 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json()
-    const { action, instanceName, token: instanceToken, groupjid } = body
+    const { action, instanceName, token: bodyToken, groupjid, instanceToken: altToken } = body
+    const instanceToken = bodyToken || altToken
 
     const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
     const adminToken = Deno.env.get('UAZAPI_ADMIN_TOKEN')
@@ -669,6 +670,7 @@ Deno.serve(async (req) => {
 
       case 'send-audio': {
         // Send audio/voice message (PTT) to individual contact via /send/media
+        console.log('send-audio: instanceToken?', !!instanceToken, 'jid?', !!body.jid, 'audio?', !!body.audio)
         if (!instanceToken || !body.jid || !body.audio) {
           return new Response(
             JSON.stringify({ error: 'Token, jid and audio (base64) required' }),
@@ -676,11 +678,17 @@ Deno.serve(async (req) => {
           )
         }
 
+        // Strip data URI prefix if present (e.g. "data:audio/ogg;base64,...")
+        const rawAudio = String(body.audio)
+        const audioFile = rawAudio.startsWith('data:') 
+          ? rawAudio.split(',')[1] || rawAudio
+          : rawAudio
+
         const audioEndpoint = `${uazapiUrl}/send/media`
         const audioBody = {
           number: body.jid,
           type: 'audio',
-          file: body.audio, // base64 audio data
+          file: audioFile,
           ptt: true, // Send as voice message (push-to-talk)
         }
 
