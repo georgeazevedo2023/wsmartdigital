@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -65,6 +66,8 @@ interface Inbox {
 
 const HelpDesk = () => {
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
+  const inboxParam = searchParams.get('inbox');
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState<'list' | 'chat' | 'info'>('list');
   const [showContactInfo, setShowContactInfo] = useState(false);
@@ -90,11 +93,15 @@ const HelpDesk = () => {
 
       if (!error && data && data.length > 0) {
         setInboxes(data);
-        setSelectedInboxId(data[0].id);
+        // Use inbox from URL param if available, otherwise first inbox
+        const targetInbox = inboxParam && data.some(ib => ib.id === inboxParam)
+          ? inboxParam
+          : data[0].id;
+        setSelectedInboxId(targetInbox);
       }
     };
     fetchInboxes();
-  }, [user]);
+  }, [user, inboxParam]);
 
   const fetchConversations = async () => {
     if (!user || !selectedInboxId) return;
