@@ -1,22 +1,19 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Users, Search, CheckCircle2, XCircle, AlertTriangle, Loader2, Phone } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
-import { toast } from 'sonner';
-import type { Group, Participant } from './GroupSelector';
-import type { Instance } from './InstanceSelector';
+import { Users, Search, CheckCircle2, XCircle } from 'lucide-react';
+import type { Group } from './GroupSelector';
 
 interface ParticipantInfo {
   jid: string;
   displayName: string;
   pushName?: string;
   groupName: string;
-  isLidOnly: boolean;  // Indica se só tem LID (sem PhoneNumber real)
+  isLidOnly: boolean;
 }
 
 interface ParticipantSelectorProps {
@@ -24,26 +21,20 @@ interface ParticipantSelectorProps {
   selectedParticipants: Set<string>;
   onSelectionChange: (selected: Set<string>) => void;
   disabled?: boolean;
-  instance?: Instance;  // Para buscar números de LIDs
-  onParticipantsUpdated?: (groups: Group[]) => void;  // Callback para atualizar grupos com novos dados
 }
 
 // Formata para DDI + DDD + NUMERO (ex: 55 11 999999999)
-// Só formata se vier com 55 (Brasil), outros mantêm apenas dígitos
 const formatPhoneNumber = (value: string): string => {
-  // Limpa tudo exceto dígitos
   const number = value.split('@')[0].replace(/\D/g, '');
   if (!number || number.length < 10) return number || value;
   
-  // Só formata se começar com 55 (Brasil) e tiver tamanho correto
   if (number.startsWith('55') && number.length >= 12 && number.length <= 13) {
-    const ddi = number.slice(0, 2); // 55
-    const ddd = number.slice(2, 4); // DDD
-    const numero = number.slice(4); // Número
+    const ddi = number.slice(0, 2);
+    const ddd = number.slice(2, 4);
+    const numero = number.slice(4);
     return `${ddi} ${ddd} ${numero}`;
   }
   
-  // Para outros números, retorna apenas os dígitos (sem formatação)
   return number;
 };
 
@@ -58,11 +49,8 @@ const ParticipantSelector = ({
   selectedParticipants,
   onSelectionChange,
   disabled = false,
-  instance,
-  onParticipantsUpdated,
 }: ParticipantSelectorProps) => {
   const [searchTerm, setSearchTerm] = useState('');
-  const [resolvingLids, setResolvingLids] = useState(false);
 
   // Obtém membros únicos (não-admin, não-superadmin) com metadados
   const uniqueParticipants = useMemo((): ParticipantInfo[] => {
@@ -77,14 +65,20 @@ const ParticipantSelector = ({
         if (!seenJids.has(member.jid)) {
           seenJids.add(member.jid);
           
-          // Prioriza phoneNumber quando disponível, senão usa jid
           const hasPhoneNumber = !!member.phoneNumber;
           const rawNumber = member.phoneNumber || member.jid || '';
           const isLid = isLidOnlyJid(member.jid, member.phoneNumber);
           
+          // For LID participants: show PushName as primary, no "[Sem número]"
+          const displayName = hasPhoneNumber
+            ? formatPhoneNumber(rawNumber)
+            : isLid
+              ? (member.name || member.jid.split('@')[0])
+              : formatPhoneNumber(rawNumber);
+          
           participants.push({
             jid: member.jid,
-            displayName: hasPhoneNumber ? formatPhoneNumber(rawNumber) : (isLid ? '[Sem número]' : formatPhoneNumber(rawNumber)),
+            displayName,
             pushName: member.name,
             groupName: group.name,
             isLidOnly: isLid,
@@ -96,7 +90,7 @@ const ParticipantSelector = ({
     return participants;
   }, [selectedGroups]);
 
-  // Filtra participantes pela busca (nome, número ou grupo)
+  // Filtra participantes pela busca
   const filteredParticipants = useMemo(() => {
     if (!searchTerm.trim()) return uniqueParticipants;
 
@@ -138,100 +132,6 @@ const ParticipantSelector = ({
     uniqueParticipants.every((p) => selectedParticipants.has(p.jid));
   const noneSelected = selectedParticipants.size === 0;
 
-  // Conta quantos participantes são LID-only
-  const lidOnlyCount = useMemo(() => 
-    uniqueParticipants.filter(p => p.isLidOnly).length, 
-    [uniqueParticipants]
-  );
-
-  // Função para enriquecer participantes via /group/info
-  const handleResolveLids = async () => {
-    if (!instance || !onParticipantsUpdated) {
-      toast.error('Instância não configurada');
-      return;
-    }
-
-    if (selectedGroups.length === 0) {
-      toast.info('Nenhum grupo selecionado');
-      return;
-    }
-
-    setResolvingLids(true);
-    try {
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        toast.error('Sessão expirada');
-        return;
-      }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.data.session.access_token}`,
-          },
-          body: JSON.stringify({
-            action: 'resolve-lids',
-            token: instance.token,
-            groupJids: selectedGroups.map(g => g.id),
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar números');
-      }
-
-      const data = await response.json();
-      const groupParticipants = data.groupParticipants || {};
-
-      // Replace participants entirely with enriched data from /group/info
-      let totalEnriched = 0;
-      const updatedGroups = selectedGroups.map(group => {
-        const enriched = groupParticipants[group.id];
-        if (!enriched || !Array.isArray(enriched) || enriched.length === 0) return group;
-
-        totalEnriched += enriched.length;
-        return {
-          ...group,
-          participants: enriched.map((p: { phone: string; name: string; isAdmin: boolean; isSuperAdmin: boolean }) => ({
-            jid: `${p.phone}@s.whatsapp.net`,
-            phoneNumber: p.phone,
-            name: p.name,
-            isAdmin: p.isAdmin,
-            isSuperAdmin: p.isSuperAdmin,
-          })),
-        };
-      });
-
-      if (totalEnriched > 0) {
-        toast.success(`${totalEnriched} participante(s) enriquecido(s)`);
-        onParticipantsUpdated(updatedGroups);
-      } else {
-        toast.info('Nenhum dado adicional encontrado');
-      }
-    } catch (error) {
-      console.error('Error enriching participants:', error);
-      toast.error('Erro ao buscar números');
-    } finally {
-      setResolvingLids(false);
-    }
-  };
-
-  // Auto-trigger enrichment when groups with LID contacts are selected
-  const groupKey = selectedGroups.map(g => g.id).sort().join(',');
-  const autoEnrichTriggeredRef = useRef<string>('');
-
-  useEffect(() => {
-    if (lidOnlyCount > 0 && instance && onParticipantsUpdated && groupKey && groupKey !== autoEnrichTriggeredRef.current) {
-      autoEnrichTriggeredRef.current = groupKey;
-      const timer = setTimeout(() => handleResolveLids(), 500);
-      return () => clearTimeout(timer);
-    }
-  }, [groupKey, lidOnlyCount, instance, onParticipantsUpdated]);
-
   if (uniqueParticipants.length === 0) {
     return (
       <div className="p-4 bg-muted/50 rounded-lg border border-border/50 text-center text-muted-foreground">
@@ -249,55 +149,17 @@ const ParticipantSelector = ({
           <Users className="w-4 h-4 text-muted-foreground" />
           <Label className="text-sm font-medium">Participantes para envio</Label>
         </div>
-        <div className="flex items-center gap-2">
-          {lidOnlyCount > 0 && (
-            <Badge variant="outline" className="text-warning border-warning/50 gap-1">
-              <AlertTriangle className="w-3 h-3" />
-              {lidOnlyCount} sem número
-            </Badge>
-          )}
-          <span className="text-xs text-muted-foreground">
-            {selectedParticipants.size} de {uniqueParticipants.length} selecionado(s)
-          </span>
-        </div>
+        <span className="text-xs text-muted-foreground">
+          {selectedParticipants.size} de {uniqueParticipants.length} selecionado(s)
+        </span>
       </div>
-
-      {/* LID Warning Banner */}
-      {lidOnlyCount > 0 && instance && onParticipantsUpdated && (
-        <div className="flex items-center justify-between p-2 bg-warning/10 border border-warning/20 rounded-md">
-          <div className="flex items-center gap-2 text-sm text-warning-foreground">
-            <AlertTriangle className="w-4 h-4 text-warning" />
-            <span>{lidOnlyCount} participante(s) sem número identificado</span>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={handleResolveLids}
-            disabled={disabled || resolvingLids}
-            className="shrink-0"
-          >
-            {resolvingLids ? (
-              <>
-                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
-                Buscando...
-              </>
-            ) : (
-              <>
-                <Phone className="w-3.5 h-3.5 mr-1" />
-                Buscar números
-              </>
-            )}
-          </Button>
-        </div>
-      )}
 
       {/* Search and Actions */}
       <div className="flex gap-2">
         <div className="relative flex-1">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Buscar por número ou grupo..."
+            placeholder="Buscar por número, nome ou grupo..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             disabled={disabled}
@@ -356,23 +218,23 @@ const ParticipantSelector = ({
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium truncate">{participant.pushName}</p>
                         {participant.isLidOnly && (
-                          <Badge variant="outline" className="text-warning border-warning/50 text-[10px] px-1 py-0">
+                          <Badge variant="outline" className="text-muted-foreground border-border text-[10px] px-1 py-0">
                             LID
                           </Badge>
                         )}
                       </div>
-                      <p className={`text-xs truncate ${participant.isLidOnly ? 'text-warning/70' : 'text-muted-foreground'}`}>
+                      <p className="text-xs text-muted-foreground truncate">
                         {participant.displayName} • {participant.groupName}
                       </p>
                     </>
                   ) : (
                     <>
                       <div className="flex items-center gap-2">
-                        <p className={`text-sm font-medium truncate ${participant.isLidOnly ? 'text-warning' : ''}`}>
+                        <p className="text-sm font-medium truncate">
                           {participant.displayName}
                         </p>
                         {participant.isLidOnly && (
-                          <Badge variant="outline" className="text-warning border-warning/50 text-[10px] px-1 py-0">
+                          <Badge variant="outline" className="text-muted-foreground border-border text-[10px] px-1 py-0">
                             LID
                           </Badge>
                         )}
