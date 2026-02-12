@@ -1,40 +1,47 @@
 
-# Corrigir Envio de Audio no Helpdesk
+# Corrigir Envio de Audio PTT no Helpdesk
 
-## Problema Identificado
+## Problema Raiz
 
-O ChatInput envia o token da instancia com a chave `instanceToken` no body da requisicao:
-```json
-{ "action": "send-audio", "instanceToken": "xxx", "jid": "...", "audio": "..." }
+O codigo existente no projeto ja revela a resposta: no arquivo `process-scheduled-messages/index.ts`, a UAZAPI possui endpoints dedicados por tipo de midia:
+
+```text
+/send/image
+/send/video
+/send/audio
+/send/ptt     <-- endpoint correto para mensagens de voz
+/send/document
 ```
 
-Porem, o proxy na linha 41 faz destructuring de `token` (nao `instanceToken`):
-```javascript
-const { action, instanceName, token: instanceToken, groupjid } = body
-```
+O codigo atual do `send-audio` esta usando `/send/media` (endpoint generico) com `type: 'audio'` e `file: base64`. Embora a UAZAPI retorne 200, a mensagem nao e entregue porque:
 
-Resultado: a variavel `instanceToken` fica `undefined`, a validacao `!instanceToken` retorna `true` na linha 672 e o proxy retorna 400 **antes** de qualquer `console.log`, por isso nao ha logs.
+1. O endpoint `/send/media` pode nao processar PTT corretamente
+2. O campo `file` com base64 puro pode nao ser reconhecido (a UAZAPI pode esperar `url` ou base64 com prefixo data URI)
+3. O formato WebM gravado pelo navegador Chrome pode nao ser compativel
 
-Alem disso, a UAZAPI pode rejeitar audio em formato WebM. O formato mais compativel e OGG com codec Opus.
-
-## Correcoes
+## Solucao
 
 ### 1. Proxy (`supabase/functions/uazapi-proxy/index.ts`)
 
-- Na linha 41, extrair tambem `instanceToken` do body como fallback:
-  ```javascript
-  const { action, instanceName, token: bodyToken, groupjid, instanceToken: altToken } = body
-  const instanceToken = bodyToken || altToken
-  ```
-  Isso garante compatibilidade com ambos os formatos de payload sem quebrar os outros cases.
+Alterar o case `send-audio` para:
 
-- Adicionar log antes da validacao no case `send-audio` para facilitar debug futuro.
+- Usar o endpoint dedicado `/send/ptt` em vez de `/send/media`
+- Enviar o base64 com o prefixo data URI completo no campo `file` (ex: `data:audio/ogg;base64,...`), pois a UAZAPI pode precisar detectar o tipo pelo prefixo
+- Remover o `type` e `ptt` do body (o endpoint `/send/ptt` ja implica isso)
+- Adicionar log da resposta raw para debug futuro
+
+Payload corrigido:
+```json
+{
+  "number": "5581999999999@s.whatsapp.net",
+  "file": "data:audio/ogg;base64,SGVsbG8..."
+}
+```
 
 ### 2. ChatInput (`src/components/helpdesk/ChatInput.tsx`)
 
-- Priorizar formato `audio/ogg;codecs=opus` na selecao do mimeType (mais compativel com WhatsApp).
-- Incluir a data URI prefix no base64 (`data:audio/ogg;base64,...`) para que o proxy possa detectar e limpar o prefixo corretamente, seguindo o mesmo padrao do `send-media`.
+- Garantir que o base64 enviado mantenha o prefixo data URI (ja foi corrigido na versao anterior)
+- Nenhuma mudanca adicional necessaria se o prefixo ja esta sendo mantido
 
 ## Arquivos Modificados
-- `supabase/functions/uazapi-proxy/index.ts` - corrigir extracao do token do body
-- `src/components/helpdesk/ChatInput.tsx` - ajustar formato de audio preferido
+- `supabase/functions/uazapi-proxy/index.ts` - mudar endpoint para `/send/ptt` e ajustar payload
