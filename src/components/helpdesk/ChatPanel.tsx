@@ -4,7 +4,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 
 import { Button } from '@/components/ui/button';
-import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose } from 'lucide-react';
+import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 
 interface ChatPanelProps {
@@ -14,9 +14,11 @@ interface ChatPanelProps {
   onShowInfo?: () => void;
   onToggleInfo?: () => void;
   showingInfo?: boolean;
+  onToggleList?: () => void;
+  showingList?: boolean;
 }
 
-export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo }: ChatPanelProps) => {
+export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo, onToggleList, showingList }: ChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -102,6 +104,11 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
         {onBack && (
           <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onBack}>
             <ArrowLeft className="w-5 h-5" />
+          </Button>
+        )}
+        {onToggleList && (
+          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onToggleList}>
+            {showingList ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
           </Button>
         )}
         <div className="flex-1 min-w-0">
