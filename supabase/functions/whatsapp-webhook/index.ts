@@ -363,6 +363,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           messageId: insertedMsg.id,
           audioUrl: mediaUrl,
+          conversationId: conversation.id,
         }),
       }).catch(err => console.error('Transcription call failed:', err))
     }

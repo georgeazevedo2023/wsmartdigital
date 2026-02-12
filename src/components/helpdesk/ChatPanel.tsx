@@ -56,6 +56,15 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
           fetchMessages();
         }
       })
+      .on('broadcast', { event: 'transcription-updated' }, (payload) => {
+        const { messageId, conversationId, transcription } = payload.payload || {};
+        console.log('[ChatPanel] transcription-updated:', messageId, conversationId);
+        if (conversationId === conversation.id && messageId && transcription) {
+          setMessages(prev => prev.map(msg =>
+            msg.id === messageId ? { ...msg, transcription } : msg
+          ));
+        }
+      })
       .subscribe((status) => {
         console.log('[ChatPanel] channel status:', status);
       });
