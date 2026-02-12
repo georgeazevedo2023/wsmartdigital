@@ -548,25 +548,29 @@ Deno.serve(async (req) => {
       }
 
       case 'resolve-lids': {
-        // Resolve LIDs (Linked Device IDs) to real phone numbers
-        // Uses /group/info endpoint which returns real PhoneNumber for participants
-        if (!instanceToken || !body.lids || !Array.isArray(body.lids)) {
+        // Enrich participants: fetch ALL participants with real PhoneNumber from /group/info
+        // Instead of trying to match LIDs (which have different JID formats), 
+        // return all participants per group so frontend can replace masked data entirely
+        if (!instanceToken) {
           return new Response(
-            JSON.stringify({ error: 'Instance token and lids array required' }),
+            JSON.stringify({ error: 'Instance token required' }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
         
         const groupJids: string[] = body.groupJids || []
-        console.log('Resolving', body.lids.length, 'LIDs using /group/info from', groupJids.length, 'groups')
+        if (groupJids.length === 0) {
+          return new Response(
+            JSON.stringify({ error: 'groupJids array required' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
         
-        // Build a set of LID identifiers to match (without @lid suffix)
-        const lidSet = new Set(body.lids.map((lid: string) => lid.split('@')[0]))
+        console.log('Enriching participants from', groupJids.length, 'groups via /group/info')
         
-        // Map LID -> resolved phone info
-        const lidToPhone: Record<string, { phone: string; name?: string; isValid: boolean }> = {}
+        // For each group, fetch full info and return ALL participants with valid PhoneNumber
+        const groupParticipants: Record<string, Array<{ jid: string; phone: string; name: string; isAdmin: boolean; isSuperAdmin: boolean }>> = {}
         
-        // For each group, fetch full info with real PhoneNumbers
         for (const gjid of groupJids) {
           try {
             const infoResp = await fetch(`${uazapiUrl}/group/info`, {
@@ -586,35 +590,27 @@ Deno.serve(async (req) => {
             const infoData = await infoResp.json()
             const participants = infoData?.Participants || infoData?.participants || []
             
-            for (const p of participants as Array<Record<string, unknown>>) {
-              const pJid = String(p.JID || p.jid || '')
-              const pPhone = String(p.PhoneNumber || p.phoneNumber || '')
-              const pName = String(p.PushName || p.pushName || p.DisplayName || p.Name || p.name || '')
-              
-              // Extract the LID part from the JID
-              const pLidKey = pJid.split('@')[0]
-              
-              // Match: if this participant's JID (LID key) is in our set AND has a real PhoneNumber
-              if (lidSet.has(pLidKey) && pPhone && !pPhone.includes('·')) {
-                const cleanPhone = pPhone.replace(/\D/g, '')
-                if (cleanPhone.length >= 10) {
-                  lidToPhone[pLidKey] = {
-                    phone: cleanPhone,
-                    name: pName || undefined,
-                    isValid: true,
-                  }
-                }
-              }
-            }
+            groupParticipants[gjid] = (participants as Array<Record<string, unknown>>)
+              .filter(p => {
+                const phone = String(p.PhoneNumber || p.phoneNumber || '')
+                return phone && !phone.includes('·') && phone.replace(/\D/g, '').length >= 10
+              })
+              .map(p => ({
+                jid: String(p.JID || p.jid || ''),
+                phone: String(p.PhoneNumber || p.phoneNumber || '').replace(/\D/g, ''),
+                name: String(p.PushName || p.pushName || p.DisplayName || p.Name || p.name || ''),
+                isAdmin: Boolean(p.IsAdmin || p.isAdmin),
+                isSuperAdmin: Boolean(p.IsSuperAdmin || p.isSuperAdmin),
+              }))
+            
+            console.log('Group', gjid, ':', groupParticipants[gjid].length, 'participants with valid phone')
           } catch (err) {
             console.error('Error fetching group/info for', gjid, err)
           }
         }
         
-        console.log('Resolved', Object.keys(lidToPhone).length, 'of', body.lids.length, 'LIDs')
-        
         return new Response(
-          JSON.stringify({ resolved: lidToPhone }),
+          JSON.stringify({ groupParticipants }),
           { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         )
       }
