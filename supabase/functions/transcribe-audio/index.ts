@@ -11,7 +11,7 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { messageId, audioUrl } = await req.json()
+    const { messageId, audioUrl, conversationId } = await req.json()
 
     if (!messageId || !audioUrl) {
       return new Response(JSON.stringify({ error: 'messageId and audioUrl required' }), {
@@ -94,6 +94,28 @@ Deno.serve(async (req) => {
     }
 
     console.log('Transcription saved for message:', messageId)
+
+    // Broadcast transcription update via Realtime REST API
+    if (conversationId) {
+      const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
+      const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
+      await fetch(`${SUPABASE_URL}/realtime/v1/api/broadcast`, {
+        method: 'POST',
+        headers: {
+          'apikey': ANON_KEY,
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${ANON_KEY}`,
+        },
+        body: JSON.stringify({
+          messages: [{
+            topic: 'helpdesk-realtime',
+            event: 'transcription-updated',
+            payload: { messageId, conversationId, transcription },
+          }],
+        }),
+      }).then(r => console.log('Transcription broadcast status:', r.status))
+        .catch(err => console.error('Transcription broadcast failed:', err))
+    }
 
     return new Response(JSON.stringify({ ok: true, transcription }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
