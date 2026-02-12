@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, StickyNote, Mic, X, Square } from 'lucide-react';
+import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
@@ -25,6 +25,8 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [sendingFile, setSendingFile] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -224,6 +226,117 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
     }
   };
 
+  const handleSendFile = async (file: File) => {
+    if (!user) return;
+    setSendingFile(true);
+    try {
+      const { data: instanceData } = await supabase
+        .from('instances')
+        .select('token')
+        .eq('id', conversation.inbox?.instance_id || '')
+        .maybeSingle();
+
+      if (!instanceData?.token) {
+        toast.error('Instância não encontrada');
+        return;
+      }
+
+      const contactJid = conversation.contact?.jid;
+      if (!contactJid) {
+        toast.error('Contato sem JID');
+        return;
+      }
+
+      // Upload file to storage
+      const ext = file.name.split('.').pop() || 'bin';
+      const fileName = `${conversation.id}/${Date.now()}.${ext}`;
+      const { error: uploadError } = await supabase.storage
+        .from('helpdesk-media')
+        .upload(fileName, file, { contentType: file.type });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from('helpdesk-media')
+        .getPublicUrl(fileName);
+      const filePublicUrl = publicUrlData.publicUrl;
+
+      // Convert to base64 for UAZAPI
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+      let binary = '';
+      for (let i = 0; i < uint8.length; i++) {
+        binary += String.fromCharCode(uint8[i]);
+      }
+      const base64 = btoa(binary);
+      const dataUri = `data:${file.type};base64,${base64}`;
+
+      const { data: session } = await supabase.auth.getSession();
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.session?.access_token}`,
+          },
+          body: JSON.stringify({
+            action: 'send-media',
+            instanceToken: instanceData.token,
+            jid: contactJid,
+            mediaUrl: dataUri,
+            mediaType: 'document',
+            filename: file.name,
+            caption: '',
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Falha ao enviar documento');
+      }
+
+      // Save to DB
+      const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
+        conversation_id: conversation.id,
+        direction: 'outgoing',
+        content: file.name,
+        media_type: 'document',
+        media_url: filePublicUrl,
+        sender_id: user.id,
+      }).select().single();
+      if (error) throw error;
+
+      await supabase
+        .from('conversations')
+        .update({ last_message_at: new Date().toISOString() })
+        .eq('id', conversation.id);
+
+      // Broadcast for realtime
+      await supabase.channel('helpdesk-realtime').send({
+        type: 'broadcast',
+        event: 'new-message',
+        payload: {
+          conversation_id: conversation.id,
+          message_id: insertedMsg.id,
+          direction: 'outgoing',
+          media_type: 'document',
+          content: file.name,
+          media_url: filePublicUrl,
+          created_at: insertedMsg.created_at,
+        },
+      });
+
+      onMessageSent();
+      toast.success('Documento enviado!');
+    } catch (err: any) {
+      console.error('Send file error:', err);
+      toast.error(err.message || 'Erro ao enviar documento');
+    } finally {
+      setSendingFile(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   const handleSend = async () => {
     if (!text.trim() || !user) return;
     setSending(true);
@@ -373,6 +486,22 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
         </div>
       ) : (
         <div className="flex items-end gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                if (file.size > 10 * 1024 * 1024) {
+                  toast.error('Arquivo deve ter no máximo 10MB');
+                  return;
+                }
+                handleSendFile(file);
+              }
+            }}
+          />
           <Button
             variant={isNote ? 'default' : 'ghost'}
             size="icon"
@@ -381,6 +510,16 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
             title="Nota privada"
           >
             <StickyNote className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 h-9 w-9"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isNote || sendingFile}
+            title="Enviar documento"
+          >
+            {sendingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
           </Button>
           <Textarea
             value={text}
