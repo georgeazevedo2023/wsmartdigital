@@ -66,6 +66,7 @@ const HelpDesk = () => {
   const { user } = useAuth();
   const isMobile = useIsMobile();
   const [mobileView, setMobileView] = useState<'list' | 'chat' | 'info'>('list');
+  const [showContactInfo, setShowContactInfo] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('aberta');
@@ -352,11 +353,13 @@ const HelpDesk = () => {
           <ChatPanel
             conversation={selectedConversation}
             onUpdateConversation={handleUpdateConversation}
+            onToggleInfo={() => setShowContactInfo(prev => !prev)}
+            showingInfo={showContactInfo}
           />
         </div>
 
         {/* Right: Contact Info */}
-        {selectedConversation && (
+        {selectedConversation && showContactInfo && (
           <div className="w-72 border-l border-border/50 flex flex-col shrink-0">
             <ContactInfoPanel
               conversation={selectedConversation}
