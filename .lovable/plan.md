@@ -1,78 +1,47 @@
 
-## Problema: Audio Enviado Não Aparece na Conversa
+# KPI de Leads do Helpdesk no Dashboard
 
-### Raiz do Problema
+## Objetivo
+Adicionar um card de KPI e um grafico de linha no dashboard mostrando metricas diarias de leads capturados automaticamente pelo Helpdesk.
 
-O fluxo atual para enviar áudio é:
-1. **ChatInput** grava o áudio e envia via `/uazapi-proxy` para WhatsApp
-2. **ChatInput** salva a mensagem diretamente no banco de dados (linha 175-181)
-3. **ChatInput** chama `onMessageSent()` que executa `fetchMessages()` no ChatPanel
+## Fonte de Dados
+A tabela `lead_database_entries` ja possui o campo `source` (com valor `'helpdesk'` para leads auto-capturados) e `created_at` com timestamp. Nao e necessario criar tabelas novas.
 
-O problema é que `fetchMessages()` é chamado **imediatamente**, mas há um delay de rede. Além disso, a mensagem foi **insertida com timestamp `created_at` DEFAULT (now())**, o que pode não sincronizar perfeitamente com o servidor.
+## Implementacao
 
-Mais importante: **O webhook nunca recebe notificação sobre a mensagem outgoing**, então nunca envia o broadcast via `helpdesk-realtime` que o ChatPanel está escutando. A mensagem aparece no DB mas não chega em tempo real via broadcast.
+### 1. DashboardHome.tsx - Novo KPI Card
+- Adicionar um novo `StatsCard` com icone `UserPlus` mostrando:
+  - **Leads Helpdesk Hoje**: contagem de entries com `source = 'helpdesk'` e `created_at` de hoje
+  - **Trend**: comparacao percentual com ontem (ex: +25% vs ontem)
+- Adicionar na grid de stats secundarios
 
-### Solução Proposta
+### 2. DashboardCharts.tsx - Grafico de Leads Diarios
+- Adicionar um novo grafico de barras/area mostrando leads do helpdesk nos ultimos 7 dias
+- Eixo X: dias da semana (seg, ter, qua...)
+- Eixo Y: quantidade de leads capturados
+- Usar a mesma paleta de cores existente
 
-#### Opção 1 (Recomendada - Rápida e Simples)
-Adicionar um broadcast manual no **ChatInput** após salvar a mensagem outgoing:
+### 3. Query de Dados (no DashboardHome.tsx)
+- Nova funcao `fetchHelpdeskLeadsStats()` que:
+  - Busca contagem de hoje: `SELECT COUNT(*) FROM lead_database_entries WHERE source = 'helpdesk' AND created_at >= hoje`
+  - Busca contagem de ontem para calcular trend
+  - Busca ultimos 7 dias agrupados por dia para o grafico
+  - Busca total geral de leads helpdesk
 
-**Arquivo**: `src/components/helpdesk/ChatInput.tsx`
+### Secao Tecnica
 
-```typescript
-// Após salvar a mensagem no DB (linha 175-181), adicionar:
-const { data: messageData } = await supabase
-  .from('conversation_messages')
-  .select('*')
-  .eq('id', insertedMessage.id)
-  .single();
-
-// Fazer broadcast manual para notificar o ChatPanel em tempo real
-const broadcastPayload = {
-  conversation_id: conversation.id,
-  message_id: messageData.id,
-  direction: 'outgoing',
-  media_type: 'audio',
-  content: null,
-  media_url: null,
-  created_at: new Date().toISOString(),
-};
-
-await supabase.channel('helpdesk-realtime').send('broadcast', {
-  event: 'new-message',
-  payload: broadcastPayload,
-});
+**Query principal:**
+```sql
+SELECT DATE(created_at) as day, COUNT(*) as count
+FROM lead_database_entries
+WHERE source = 'helpdesk'
+AND created_at >= NOW() - INTERVAL '7 days'
+GROUP BY DATE(created_at)
+ORDER BY day
 ```
 
-**Benefícios**:
-- Instantâneo - não depende do webhook
-- Mantém consistência com o padrão do webhook
-- Mensagem aparece imediatamente no chat
+**Arquivos modificados:**
+- `src/pages/dashboard/DashboardHome.tsx` - adicionar fetch de dados e StatsCard
+- `src/components/dashboard/DashboardCharts.tsx` - adicionar grafico de leads diarios (recebe dados via props)
 
-**Tempo estimado**: 15 minutos
-
-#### Opção 2 (Mais Robusta - Mas Mais Complexa)
-Criar uma edge function `send-audio-sync` que:
-1. Envia áudio via proxy
-2. Salva no DB
-3. Faz o broadcast
-4. Retorna tudo em uma transação
-
-Isso eliminaria lógica duplicada no frontend.
-
-**Tempo estimado**: 45 minutos
-
-### Arquivos a Modificar
-- `src/components/helpdesk/ChatInput.tsx` - adicionar broadcast manual após save
-
-### Por Que Não Aparecia
-- A mensagem foi salva no DB ✅
-- O fetch foi chamado ✅
-- MAS o broadcast nunca foi enviado, então:
-  - O subscription no ChatPanel (`helpdesk-realtime`) nunca disparou
-  - A tela não fez re-render automático
-  - Apenas ao trocar de conversa e voltar a mensagem aparecia
-
-### Recomendação
-**Implementar Opção 1** (broadcast manual) - é a fix mais rápida e testada. Depois, considerar refatorar para uma edge function centralizada (Opção 2) para eliminar duplicação de lógica entre texto, áudio e mídias.
-
+**Nenhuma migracao necessaria** - os dados ja existem na estrutura atual.
