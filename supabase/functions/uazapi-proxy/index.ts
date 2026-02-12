@@ -590,18 +590,24 @@ Deno.serve(async (req) => {
             const infoData = await infoResp.json()
             const participants = infoData?.Participants || infoData?.participants || []
             
-            groupParticipants[gjid] = (participants as Array<Record<string, unknown>>)
-              .filter(p => {
-                const phone = String(p.PhoneNumber || p.phoneNumber || '')
-                return phone && !phone.includes('·') && phone.replace(/\D/g, '').length >= 10
+        // Return ALL participants - those with valid phone get phone field,
+        // those without (LIDs) keep their original JID for direct sending
+        groupParticipants[gjid] = (participants as Array<Record<string, unknown>>)
+              .map(p => {
+                const rawPhone = String(p.PhoneNumber || p.phoneNumber || '')
+                const cleanPhone = rawPhone.replace(/\D/g, '')
+                const hasValidPhone = cleanPhone.length >= 10 && !rawPhone.includes('·')
+                const jid = String(p.JID || p.jid || '')
+                
+                return {
+                  jid,
+                  phone: hasValidPhone ? cleanPhone : '',
+                  name: String(p.PushName || p.pushName || p.DisplayName || p.Name || p.name || ''),
+                  isAdmin: Boolean(p.IsAdmin || p.isAdmin),
+                  isSuperAdmin: Boolean(p.IsSuperAdmin || p.isSuperAdmin),
+                  isLid: !hasValidPhone,
+                }
               })
-              .map(p => ({
-                jid: String(p.JID || p.jid || ''),
-                phone: String(p.PhoneNumber || p.phoneNumber || '').replace(/\D/g, ''),
-                name: String(p.PushName || p.pushName || p.DisplayName || p.Name || p.name || ''),
-                isAdmin: Boolean(p.IsAdmin || p.isAdmin),
-                isSuperAdmin: Boolean(p.IsSuperAdmin || p.isSuperAdmin),
-              }))
             
             console.log('Group', gjid, ':', groupParticipants[gjid].length, 'participants with valid phone')
           } catch (err) {
