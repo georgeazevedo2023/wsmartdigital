@@ -63,17 +63,37 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
       <div
         className={cn(
           'max-w-[75%] rounded-xl px-3 py-2 text-sm',
-          isNote
-            ? 'bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 italic'
-            : isOutgoing
-              ? 'bg-emerald-600/25 border border-emerald-500/20 text-foreground rounded-br-sm'
-              : 'bg-secondary/80 text-foreground rounded-bl-sm'
+          message.media_type === 'sticker'
+            ? 'bg-transparent p-0'
+            : isNote
+              ? 'bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 italic'
+              : isOutgoing
+                ? 'bg-emerald-600/25 border border-emerald-500/20 text-foreground rounded-br-sm'
+                : 'bg-secondary/80 text-foreground rounded-bl-sm'
         )}
       >
         {isNote && (
           <span className="text-[10px] font-semibold text-yellow-400 block mb-0.5">
             📝 Nota privada
           </span>
+        )}
+
+        {/* Sticker - transparent background, fixed size */}
+        {message.media_type === 'sticker' && message.media_url && (
+          <div className="mb-1">
+            {!imgError ? (
+              <img
+                src={message.media_url}
+                alt="Figurinha"
+                className="max-w-[180px] max-h-[180px] object-contain"
+                onError={() => setImgError(true)}
+              />
+            ) : (
+              <div className="rounded-lg bg-muted/50 border border-border flex items-center justify-center p-4">
+                <span className="text-xs text-muted-foreground">Figurinha</span>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Image with error fallback */}

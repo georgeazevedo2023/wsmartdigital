@@ -12,7 +12,7 @@ function normalizeMediaType(raw: string): string {
   if (lower.includes('video')) return 'video'
   if (lower.includes('audio') || lower.includes('ptt')) return 'audio'
   if (lower.includes('document') || lower.includes('pdf')) return 'document'
-  if (lower.includes('sticker')) return 'image'
+  if (lower.includes('sticker')) return 'sticker'
   return 'text'
 }
 
