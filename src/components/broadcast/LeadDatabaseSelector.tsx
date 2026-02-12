@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Database, Plus, Trash2, Users, Calendar, ChevronRight, FolderOpen, Pencil } from 'lucide-react';
+import { Database, Plus, Trash2, Users, Calendar, ChevronRight, FolderOpen, Pencil, MessageCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
@@ -30,6 +30,7 @@ interface LeadDatabase {
   leads_count: number;
   created_at: string;
   updated_at: string;
+  instance_id?: string | null;
 }
 
 interface LeadDatabaseSelectorProps {
@@ -155,12 +156,20 @@ const LeadDatabaseSelector = ({
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between">
-                      <div className="flex items-start gap-3 flex-1 min-w-0">
-                        <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                          <Database className="w-5 h-5 text-primary" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <h4 className="font-medium truncate">{db.name}</h4>
+                       <div className="flex items-start gap-3 flex-1 min-w-0">
+                         <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                           <Database className="w-5 h-5 text-primary" />
+                         </div>
+                         <div className="min-w-0 flex-1">
+                           <div className="flex items-center gap-2">
+                             <h4 className="font-medium truncate">{db.name}</h4>
+                             {db.instance_id && (
+                               <Badge variant="outline" className="flex items-center gap-1 shrink-0 text-xs">
+                                 <MessageCircle className="w-3 h-3" />
+                                 Helpdesk
+                               </Badge>
+                             )}
+                           </div>
                           <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
                             <span className="flex items-center gap-1">
                               <Users className="w-3 h-3" />

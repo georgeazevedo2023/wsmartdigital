@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
-import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save, Plus } from 'lucide-react';
+import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save, Plus, MessageCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import BroadcasterHeader from '@/components/broadcast/BroadcasterHeader';
@@ -36,6 +36,7 @@ interface LeadDatabase {
   leads_count: number;
   created_at: string;
   updated_at: string;
+  instance_id?: string | null;
 }
 
 interface ResendData {
