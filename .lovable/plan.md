@@ -1,57 +1,40 @@
 
-# Adicionar Envio de Audio no Helpdesk
+# Corrigir Envio de Audio no Helpdesk
 
-## Resumo
+## Problema Identificado
 
-Adicionar um botao de microfone no ChatInput do Helpdesk que permite gravar audio diretamente do navegador e enviar como mensagem de voz (PTT) para o contato via UAZAPI.
-
-## O que muda para o usuario
-
-- Um botao de microfone aparece ao lado do campo de texto no chat
-- Ao clicar e segurar (ou clicar para iniciar/parar), o audio e gravado
-- Durante a gravacao, aparece um indicador visual com tempo decorrido e botao para cancelar
-- Ao finalizar, o audio e enviado como mensagem de voz (PTT) no WhatsApp
-- O audio aparece no chat com o player customizado ja existente
-
-## Mudancas Tecnicas
-
-### 1. Novo action `send-audio` no proxy (`supabase/functions/uazapi-proxy/index.ts`)
-
-Adicionar um novo case `send-audio` que usa o endpoint `/send/media` da UAZAPI com:
-- `number`: JID do contato
-- `type`: `"audio"`
-- `file`: audio em base64
-- `ptt`: `true` (para enviar como mensagem de voz nativa)
-
-### 2. Atualizar `ChatInput.tsx` (`src/components/helpdesk/ChatInput.tsx`)
-
-- Adicionar estado para controle de gravacao (`isRecording`, `mediaRecorder`, `recordingTime`)
-- Usar a API `MediaRecorder` do navegador para capturar audio do microfone
-- Formato de saida: `audio/webm` ou `audio/ogg` (compativel com WhatsApp)
-- Converter o blob gravado para base64 antes de enviar
-- UI durante gravacao: indicador vermelho pulsante, timer, botao cancelar (X) e botao enviar
-- Ao enviar: chamar o proxy com action `send-audio`, salvar na tabela `conversation_messages` com `media_type: 'audio'`
-
-### 3. Fluxo de gravacao
-
-```text
-[Microfone] --> clique --> inicia gravacao
-                          |
-                          v
-              [Indicador vermelho + timer]
-              [Botao X cancelar] [Botao enviar]
-                          |
-                     clique enviar
-                          |
-                          v
-              blob -> base64 -> proxy -> UAZAPI /send/media
-                                         (type=audio, ptt=true)
-                          |
-                          v
-              salvar em conversation_messages
-              (direction=outgoing, media_type=audio)
+O ChatInput envia o token da instancia com a chave `instanceToken` no body da requisicao:
+```json
+{ "action": "send-audio", "instanceToken": "xxx", "jid": "...", "audio": "..." }
 ```
 
-### Arquivos Modificados
-- `supabase/functions/uazapi-proxy/index.ts` - novo case `send-audio`
-- `src/components/helpdesk/ChatInput.tsx` - UI de gravacao e envio de audio
+Porem, o proxy na linha 41 faz destructuring de `token` (nao `instanceToken`):
+```javascript
+const { action, instanceName, token: instanceToken, groupjid } = body
+```
+
+Resultado: a variavel `instanceToken` fica `undefined`, a validacao `!instanceToken` retorna `true` na linha 672 e o proxy retorna 400 **antes** de qualquer `console.log`, por isso nao ha logs.
+
+Alem disso, a UAZAPI pode rejeitar audio em formato WebM. O formato mais compativel e OGG com codec Opus.
+
+## Correcoes
+
+### 1. Proxy (`supabase/functions/uazapi-proxy/index.ts`)
+
+- Na linha 41, extrair tambem `instanceToken` do body como fallback:
+  ```javascript
+  const { action, instanceName, token: bodyToken, groupjid, instanceToken: altToken } = body
+  const instanceToken = bodyToken || altToken
+  ```
+  Isso garante compatibilidade com ambos os formatos de payload sem quebrar os outros cases.
+
+- Adicionar log antes da validacao no case `send-audio` para facilitar debug futuro.
+
+### 2. ChatInput (`src/components/helpdesk/ChatInput.tsx`)
+
+- Priorizar formato `audio/ogg;codecs=opus` na selecao do mimeType (mais compativel com WhatsApp).
+- Incluir a data URI prefix no base64 (`data:audio/ogg;base64,...`) para que o proxy possa detectar e limpar o prefixo corretamente, seguindo o mesmo padrao do `send-media`.
+
+## Arquivos Modificados
+- `supabase/functions/uazapi-proxy/index.ts` - corrigir extracao do token do body
+- `src/components/helpdesk/ChatInput.tsx` - ajustar formato de audio preferido
