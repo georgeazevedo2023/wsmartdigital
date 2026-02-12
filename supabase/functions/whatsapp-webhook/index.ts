@@ -16,6 +16,37 @@ function normalizeMediaType(raw: string): string {
   return 'text'
 }
 
+async function getMediaLink(messageId: string, instanceToken: string): Promise<string | null> {
+  try {
+    console.log('Calling /message/download for messageId:', messageId)
+    const response = await fetch('https://wsmart.uazapi.com/message/download', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'token': instanceToken,
+      },
+      body: JSON.stringify({
+        id: messageId,
+        return_base64: false,
+        return_link: true,
+      }),
+    })
+
+    if (!response.ok) {
+      console.error('Download link request failed:', response.status, await response.text())
+      return null
+    }
+
+    const data = await response.json()
+    console.log('UAZAPI /message/download full response:', JSON.stringify(data))
+    return data.link || data.url || data.fileUrl || data.fileURL || null
+  } catch (err) {
+    console.error('Error getting media link:', err)
+    return null
+  }
+}
+
 function extractPhone(jid: string): string {
   return jid.split('@')[0].replace(/\D/g, '')
 }
@@ -146,9 +177,16 @@ Deno.serve(async (req) => {
       resolvedMediaUrl: mediaUrl?.substring(0, 100),
     }))
 
-    // Media: salvar URL diretamente sem download (evita corrupção de dados no Deno)
-    if (mediaType !== 'text' && mediaUrl) {
-      console.log('Storing media URL directly (no download):', mediaUrl.substring(0, 80))
+    // Media: obter link persistente da UAZAPI antes de salvar
+    if (mediaType !== 'text' && externalId && instance.token) {
+      console.log('Requesting persistent media link from UAZAPI...')
+      const persistentUrl = await getMediaLink(externalId, instance.token)
+      if (persistentUrl) {
+        mediaUrl = persistentUrl
+        console.log('Got persistent media URL:', mediaUrl.substring(0, 80))
+      } else {
+        console.log('Failed to get persistent link, keeping original:', mediaUrl?.substring(0, 80))
+      }
     }
 
     console.log(`Processing: direction=${direction}, mediaType=${mediaType}, externalId=${externalId}, chatId=${chatId}, mediaUrl=${mediaUrl ? 'YES' : 'NO'}`)
