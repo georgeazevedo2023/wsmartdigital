@@ -669,7 +669,7 @@ Deno.serve(async (req) => {
       }
 
       case 'send-audio': {
-        // Send audio/voice message via dedicated /send/audio endpoint
+        // Send audio/voice message (PTT) via /send/media with type 'ptt'
         console.log('send-audio: instanceToken?', !!instanceToken, 'jid?', !!body.jid, 'audio?', !!body.audio)
         if (!instanceToken || !body.jid || !body.audio) {
           return new Response(
@@ -684,9 +684,10 @@ Deno.serve(async (req) => {
           ? rawAudio.split(',')[1]
           : rawAudio
 
-        const audioEndpoint = `${uazapiUrl}/send/audio`
+        const audioEndpoint = `${uazapiUrl}/send/media`
         const audioBody = {
           number: body.jid,
+          type: 'ptt',
           file: audioFile,
         }
 
