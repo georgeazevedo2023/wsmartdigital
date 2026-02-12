@@ -339,6 +339,84 @@ Deno.serve(async (req) => {
       .update(updateData)
       .eq('id', conversation.id)
 
+    // Auto-add contact to instance lead database (fire-and-forget)
+    if (direction === 'incoming' && contactPhone && contactJid) {
+      (async () => {
+        try {
+          // Find or create lead database for this instance
+          let { data: leadDb } = await supabase
+            .from('lead_databases')
+            .select('id, leads_count')
+            .eq('instance_id', instance.id)
+            .maybeSingle()
+
+          if (!leadDb) {
+            // Get instance owner to set as database owner
+            const { data: instanceData } = await supabase
+              .from('instances')
+              .select('user_id, name')
+              .eq('id', instance.id)
+              .single()
+
+            if (instanceData) {
+              const { data: newDb } = await supabase
+                .from('lead_databases')
+                .insert({
+                  name: `Helpdesk - ${instanceData.name}`,
+                  user_id: instanceData.user_id,
+                  instance_id: instance.id,
+                  leads_count: 0,
+                })
+                .select('id, leads_count')
+                .single()
+              leadDb = newDb
+            }
+          }
+
+          if (leadDb) {
+            // Check if contact already exists in this database
+            const { data: existing } = await supabase
+              .from('lead_database_entries')
+              .select('id, name')
+              .eq('database_id', leadDb.id)
+              .eq('phone', contactPhone)
+              .maybeSingle()
+
+            if (!existing) {
+              // Insert new lead entry
+              await supabase
+                .from('lead_database_entries')
+                .insert({
+                  database_id: leadDb.id,
+                  phone: contactPhone,
+                  jid: contactJid,
+                  name: contactName || null,
+                  source: 'helpdesk',
+                  is_verified: true,
+                  verification_status: 'valid',
+                })
+
+              // Increment leads_count
+              await supabase
+                .from('lead_databases')
+                .update({ leads_count: (leadDb.leads_count || 0) + 1 })
+                .eq('id', leadDb.id)
+
+              console.log('Auto-added contact to lead database:', contactPhone, leadDb.id)
+            } else if (!existing.name && contactName && contactName !== contactPhone) {
+              // Update name if it was missing (pushname arrived later)
+              await supabase
+                .from('lead_database_entries')
+                .update({ name: contactName })
+                .eq('id', existing.id)
+            }
+          }
+        } catch (err) {
+          console.error('Error auto-adding to lead database:', err)
+        }
+      })()
+    }
+
     // Broadcast via REST API
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
