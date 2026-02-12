@@ -1,7 +1,7 @@
 import { memo, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from '@/components/ui/chart';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, AreaChart, Area, CartesianGrid } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 
 interface InstanceStats {
@@ -17,6 +17,7 @@ interface DashboardChartsProps {
   connectedCount: number;
   disconnectedCount: number;
   loading: boolean;
+  helpdeskLeadsDailyData?: { day: string; label: string; leads: number }[];
 }
 
 const CHART_COLORS = {
@@ -37,7 +38,7 @@ const statusChartConfig = {
   offline: { label: 'Offline', color: CHART_COLORS.offline },
 };
 
-const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loading }: DashboardChartsProps) => {
+const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loading, helpdeskLeadsDailyData }: DashboardChartsProps) => {
   if (loading) {
     return (
       <div className="grid gap-4 md:grid-cols-2 animate-fade-in" style={{ animationDelay: '175ms' }}>
@@ -228,6 +229,44 @@ const DashboardCharts = ({ instanceStats, connectedCount, disconnectedCount, loa
           )}
         </CardContent>
       </Card>
+      {/* Area Chart - Helpdesk Leads (últimos 7 dias) */}
+      {helpdeskLeadsDailyData && helpdeskLeadsDailyData.length > 0 && (
+        <Card className="glass-card-hover md:col-span-2">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Leads Helpdesk — Últimos 7 dias</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <ChartContainer config={{ leads: { label: 'Leads', color: 'hsl(262 80% 55%)' } }} className="h-[220px] w-full">
+              <AreaChart data={helpdeskLeadsDailyData} margin={{ left: 0, right: 10, top: 10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="leadsGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="hsl(262 80% 55%)" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="hsl(262 80% 55%)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 12 }} />
+                <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11 }} allowDecimals={false} />
+                <ChartTooltip
+                  content={
+                    <ChartTooltipContent
+                      labelFormatter={(_, payload) => payload?.[0]?.payload?.day || ''}
+                      formatter={(value) => <span className="font-medium">{value} leads</span>}
+                    />
+                  }
+                />
+                <Area
+                  type="monotone"
+                  dataKey="leads"
+                  stroke="hsl(262 80% 55%)"
+                  strokeWidth={2}
+                  fill="url(#leadsGradient)"
+                />
+              </AreaChart>
+            </ChartContainer>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 };

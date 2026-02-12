@@ -33,7 +33,7 @@ const StatsCard = ({ title, value, icon: Icon, description, trend, className }: 
                   trend.positive ? 'text-success' : 'text-destructive'
                 )}
               >
-                {trend.positive ? '+' : ''}{trend.value}% vs mês anterior
+                {trend.positive ? '+' : ''}{trend.value}% vs ontem
               </p>
             )}
           </div>
