@@ -41,10 +41,11 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
 
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
-          ? 'audio/ogg;codecs=opus'
+      // Priorizar OGG Opus (mais compatível com WhatsApp)
+      const mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
+        ? 'audio/ogg;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
           : 'audio/webm';
 
       const recorder = new MediaRecorder(stream, { mimeType });
@@ -115,10 +116,8 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onloadend = () => {
-        const result = reader.result as string;
-        // Remove data URI prefix
-        const base64 = result.split(',')[1] || result;
-        resolve(base64);
+        // Manter data URI prefix para o proxy poder detectar e limpar
+        resolve(reader.result as string);
       };
       reader.onerror = reject;
       reader.readAsDataURL(blob);
