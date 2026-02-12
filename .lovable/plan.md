@@ -1,94 +1,65 @@
 
 
-# Corrigir Imagens: Usar endpoint `/message/download` da UAZAPI
+# Mostrar icone de foto na lista de conversas
 
 ## Problema
 
-As URLs do CDN do WhatsApp (`mmg.whatsapp.net`) sao bloqueadas pelo navegador (CORS/403). Salvar a URL direta nao funciona para exibicao no frontend.
+Quando a ultima mensagem de uma conversa e uma imagem (sem texto/legenda), o campo `content` e `null`. A query que busca a ultima mensagem ignora essas entradas, entao a preview da conversa fica vazia em vez de mostrar algo como "📷 Foto".
 
 ## Solucao
 
-Usar o endpoint `POST /message/download` da UAZAPI com `return_link: true` para obter uma URL persistente e acessivel publicamente, hospedada nos servidores da UAZAPI.
+### 1. Atualizar query de ultima mensagem (`src/pages/dashboard/HelpDesk.tsx`)
 
-## Fluxo
+Na query que busca as ultimas mensagens (linhas 105-117), adicionar `media_type` ao select e ajustar a logica para aceitar mensagens sem `content` quando tiverem midia:
 
-1. Webhook recebe mensagem com midia
-2. Antes de salvar no banco, chama `POST https://wsmart.uazapi.com/message/download` com:
-   - `id`: o `messageid` da mensagem
-   - `return_base64`: `false`
-   - `return_link`: `true`
-   - Header `token`: token da instancia (ja disponivel no banco)
-3. A resposta contem uma URL persistente da UAZAPI
-4. Salva essa URL no campo `media_url` do banco
-
-## Mudancas Tecnicas
-
-### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
-
-**1. Adicionar funcao `getMediaLink`**
-
-```typescript
-async function getMediaLink(messageId: string, instanceToken: string): Promise<string | null> {
-  try {
-    const response = await fetch('https://wsmart.uazapi.com/message/download', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'token': instanceToken,
-      },
-      body: JSON.stringify({
-        id: messageId,
-        return_base64: false,
-        return_link: true,
-      }),
-    });
-
-    if (!response.ok) {
-      console.error('Download link request failed:', response.status);
-      return null;
-    }
-
-    const data = await response.json();
-    // Extrair URL da resposta (verificar campo exato nos logs)
-    return data.link || data.url || data.fileUrl || null;
-  } catch (err) {
-    console.error('Error getting media link:', err);
-    return null;
-  }
-}
+```
+.select('conversation_id, content, media_type, created_at')
 ```
 
-**2. Chamar a funcao quando houver midia (linhas 149-152)**
+No loop, se `content` for null mas `media_type` for imagem/video/audio/documento, gerar um texto como "📷 Foto", "🎥 Video", "🎵 Audio", "📎 Documento".
 
-Substituir o bloco atual por:
+### 2. Atualizar broadcast realtime (linha 156)
 
-```typescript
-if (mediaType !== 'text' && externalId && instance.token) {
-  console.log('Requesting persistent media link from UAZAPI...');
-  const persistentUrl = await getMediaLink(externalId, instance.token);
-  if (persistentUrl) {
-    mediaUrl = persistentUrl;
-    console.log('Got persistent media URL:', mediaUrl.substring(0, 80));
-  } else {
-    console.log('Failed to get persistent link, keeping original:', mediaUrl?.substring(0, 80));
-  }
-}
-```
+Quando o broadcast chega com `media_type` mas sem `content`, gerar o mesmo texto de preview de midia para a lista.
 
-**3. Logar a resposta completa do `/message/download` para debug**
-
-Na primeira versao, logar `JSON.stringify(data)` completo para identificar o campo correto da URL na resposta.
-
-## Resultado Esperado
-
-- Imagens com URL persistente da UAZAPI (sem CORS, sem expiracao)
-- Fallback para URL original caso o endpoint falhe
-- Sem download/upload de binarios (zero corrupcao)
-
-## Arquivo a modificar
+### 3. Arquivos a modificar
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `supabase/functions/whatsapp-webhook/index.ts` | Adicionar `getMediaLink()`, chamar antes de salvar no banco |
+| `src/pages/dashboard/HelpDesk.tsx` | Adicionar `media_type` na query de last message, gerar preview de midia quando content e null, ajustar handler de broadcast |
+
+### Detalhes tecnicos
+
+Funcao auxiliar para gerar preview:
+
+```typescript
+function mediaPreview(mediaType: string): string {
+  switch (mediaType) {
+    case 'image': return '📷 Foto';
+    case 'video': return '🎥 Vídeo';
+    case 'audio': return '🎵 Áudio';
+    case 'document': return '📎 Documento';
+    default: return '';
+  }
+}
+```
+
+Na query de ultimas mensagens, aceitar a mensagem se tiver `content` OU `media_type` diferente de 'text':
+
+```typescript
+for (const msg of allMsgs) {
+  if (!lastMsgMap[msg.conversation_id]) {
+    const preview = msg.content || mediaPreview(msg.media_type);
+    if (preview) {
+      lastMsgMap[msg.conversation_id] = preview;
+    }
+  }
+}
+```
+
+No broadcast (linha 156), usar a mesma logica:
+
+```typescript
+last_message: data.content || mediaPreview(data.media_type) || c.last_message
+```
 
