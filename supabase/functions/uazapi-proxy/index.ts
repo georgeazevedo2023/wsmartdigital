@@ -172,10 +172,13 @@ Deno.serve(async (req) => {
           normalizedGroups = []
         }
         
+        // If upstream failed (e.g. WhatsApp disconnected), return empty array with 200
+        // so the frontend doesn't crash - it just shows 0 groups for that instance
+        const groupsStatus = groupsResponse.ok ? 200 : 200
         return new Response(
           JSON.stringify(normalizedGroups),
           { 
-            status: groupsResponse.status, 
+            status: groupsStatus, 
             headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
           }
         )
