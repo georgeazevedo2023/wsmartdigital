@@ -1,67 +1,37 @@
 
-# Adicionar Etiquetas no Chat e Remocao Rapida
+# Remover papel "Vendedor" do sistema de Helpdesk
 
-## Objetivo
-
-1. Adicionar opcao "Etiquetas" no menu "+" do ChatInput (junto com Nota privada, Enviar imagem, Enviar documento)
-2. Permitir remover etiquetas rapidamente clicando no "x" dos badges no ContactInfoPanel
+## Resumo
+Remover o valor `vendedor` do enum `inbox_role`, mantendo apenas `admin`, `gestor` e `agente`.
 
 ## Alteracoes
 
-### 1. ChatInput.tsx - Adicionar opcao de etiquetas no menu "+"
+### 1. Migracao de banco de dados
+- Atualizar qualquer registro existente com role `vendedor` para `agente`
+- Recriar o enum `inbox_role` sem o valor `vendedor` (Postgres exige recriar o enum para remover valores)
+- Atualizar a coluna `role` da tabela `inbox_users` para usar o novo enum
 
-- Adicionar um item "Etiquetas" no popover do menu "+" que abre um sub-popover com a lista de etiquetas (usando LabelPicker)
-- O componente precisa receber novas props: `inboxLabels`, `assignedLabelIds`, `conversationId`, e `onLabelsChanged`
-- Ao clicar em "Etiquetas" no menu, abre o LabelPicker inline dentro do popover
+```sql
+-- Converter vendedores existentes para agentes
+UPDATE public.inbox_users SET role = 'agente' WHERE role = 'vendedor';
 
-### 2. ChatPanel.tsx - Passar props de labels para ChatInput
+-- Recriar enum sem vendedor
+ALTER TYPE public.inbox_role RENAME TO inbox_role_old;
+CREATE TYPE public.inbox_role AS ENUM ('admin', 'gestor', 'agente');
+ALTER TABLE public.inbox_users
+  ALTER COLUMN role DROP DEFAULT,
+  ALTER COLUMN role TYPE public.inbox_role USING role::text::public.inbox_role,
+  ALTER COLUMN role SET DEFAULT 'agente';
+DROP TYPE public.inbox_role_old;
 
-- Receber as props `inboxLabels`, `assignedLabelIds` e `onLabelsChanged` do HelpDesk
-- Repassar para o ChatInput
+-- Recriar funcao get_inbox_role com novo tipo de retorno
+CREATE OR REPLACE FUNCTION public.get_inbox_role(...)
+```
 
-### 3. HelpDesk.tsx - Passar props de labels para ChatPanel
+### 2. ManageInboxUsersDialog.tsx
+- Remover `vendedor` de `ROLE_LABELS` e `ROLE_COLORS`
+- O select de roles ja usa o tipo `InboxRole` do types.ts, que sera atualizado automaticamente apos a migracao
 
-- Passar `inboxLabels`, `assignedLabelIds` (do mapa) e `onLabelsChanged` para o ChatPanel (tanto desktop quanto mobile)
-
-### 4. ConversationLabels.tsx - Adicionar botao de remover
-
-- Adicionar prop opcional `onRemove(labelId)` que, quando presente, exibe um botao "x" em cada badge
-- Ao clicar no "x", chama `onRemove` com o id da etiqueta
-
-### 5. ContactInfoPanel.tsx - Usar remocao rapida
-
-- Passar callback `onRemove` para o ConversationLabels que remove a etiqueta da conversa via Supabase (delete na tabela `conversation_labels`) e chama `onLabelsChanged`
-
-## Secao Tecnica
-
-### ChatInput.tsx
-- Importar `LabelPicker` e tipos
-- Novas props na interface: `inboxLabels?: Label[]`, `assignedLabelIds?: string[]`, `onLabelsChanged?: () => void`
-- Adicionar item no menu popover com icone `Tags` e texto "Etiquetas"
-- Ao clicar, mostra as etiquetas inline no menu (lista com checkboxes, similar ao LabelPicker)
-
-### ChatPanel.tsx
-- Novas props: `inboxLabels`, `assignedLabelIds`, `onLabelsChanged`
-- Passar para `<ChatInput ... inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />`
-
-### HelpDesk.tsx
-- Nas duas renderizacoes de ChatPanel (mobile e desktop), passar:
-  - `inboxLabels={inboxLabels}`
-  - `assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}`
-  - `onLabelsChanged={handleLabelsChanged}`
-
-### ConversationLabels.tsx
-- Nova prop opcional: `onRemove?: (labelId: string) => void`
-- Quando presente, cada badge exibe um botao "x" (icone X de 8px) no final
-- Ao clicar no "x", chama `onRemove(label.id)`
-
-### ContactInfoPanel.tsx
-- Criar funcao `handleRemoveLabel` que faz delete na `conversation_labels` e chama `onLabelsChanged`
-- Passar `onRemove={handleRemoveLabel}` para `<ConversationLabels />`
-
-### Arquivos modificados:
-- `src/components/helpdesk/ChatInput.tsx`
-- `src/components/helpdesk/ChatPanel.tsx`
-- `src/pages/dashboard/HelpDesk.tsx`
-- `src/components/helpdesk/ConversationLabels.tsx`
-- `src/components/helpdesk/ContactInfoPanel.tsx`
+### Arquivos modificados
+- Nova migracao SQL (remover vendedor do enum)
+- `src/components/dashboard/ManageInboxUsersDialog.tsx` (remover referencias ao vendedor)
