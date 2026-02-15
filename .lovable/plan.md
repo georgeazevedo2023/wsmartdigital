@@ -1,32 +1,65 @@
 
+# Corrigir Unwrap do Payload n8n no Webhook
 
-# Alterar Status da Conversa Diretamente no Chat
+## Problema
 
-## Objetivo
+O n8n envia o payload da UAZAPI encapsulado em um array com a seguinte estrutura:
 
-Adicionar um seletor de status no header do ChatPanel para que o agente possa alterar o status da conversa (Aberta, Pendente, Resolvida) sem sair do chat.
+```text
+[
+  {
+    "headers": { ... },
+    "body": {
+      "EventType": "messages",
+      "instanceName": "NeoBlindados",
+      "message": { ... },
+      ...
+    }
+  }
+]
+```
+
+A logica atual de unwrap (linha 78) so verifica `rawPayload.Body?.EventType`, mas nao lida com:
+1. Payload sendo um array (formato n8n)
+2. A chave `body` em minusculo (n8n usa `body`, nao `Body`)
+
+Por isso o webhook recebe o array, nao encontra `EventType` na raiz, e descarta a mensagem com `not_message_event`.
 
 ## Alteracao
 
-### Arquivo: `src/components/helpdesk/ChatPanel.tsx`
+### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
 
-Adicionar um componente `Select` (do shadcn/ui) no header do chat, ao lado do nome do contato, mostrando o status atual com cores distintas:
+Expandir a logica de unwrap (linhas 77-78) para cobrir os formatos do n8n:
 
-- **Aberta** - badge verde
-- **Pendente** - badge amarelo
-- **Resolvida** - badge cinza
+```text
+// Logica atual (insuficiente):
+const payload = rawPayload.Body?.EventType ? rawPayload.Body : rawPayload
 
-Ao trocar o valor no select, chamar `onUpdateConversation(conversation.id, { status: novoStatus })` que ja existe como prop e ja faz o update no banco.
+// Nova logica:
+1. Se rawPayload for um array, pegar rawPayload[0]
+2. Do item resultante, verificar se tem .body ou .Body com EventType
+3. Se sim, usar o conteudo de body/Body como payload
+4. Caso contrario, usar o item diretamente (payload direto da UAZAPI)
+```
 
-### Posicao no header
+Codigo concreto:
 
-O seletor ficara entre as informacoes do contato e os botoes de acao (info/toggle), como um pequeno dropdown compacto.
+```text
+let unwrapped = rawPayload
+// n8n envia como array
+if (Array.isArray(unwrapped)) {
+  unwrapped = unwrapped[0]
+}
+// n8n encapsula em body/Body
+const inner = unwrapped?.body || unwrapped?.Body
+const payload = (inner?.EventType || inner?.eventType) ? inner : unwrapped
+```
 
-### Detalhes tecnicos
+Isso cobre todos os cenarios:
+- Payload direto da UAZAPI (objeto com EventType na raiz)
+- Payload via n8n com Body maiusculo (formato antigo)
+- Payload via n8n com body minusculo dentro de array (formato atual do usuario)
 
-- Usar `Select` do shadcn/ui (ja instalado)
-- Valores: `aberta`, `pendente`, `resolvida` (ja sao os valores usados na tabela `conversations.status`)
-- O callback `onUpdateConversation` ja esta implementado no HelpDesk.tsx e faz `supabase.from('conversations').update()`
-- Nenhuma migracao de banco necessaria
-- Apenas um arquivo modificado: `ChatPanel.tsx`
+### Nenhum outro arquivo modificado
 
+Apenas a edge function `whatsapp-webhook/index.ts` precisa ser atualizada.
