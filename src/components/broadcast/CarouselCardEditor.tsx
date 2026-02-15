@@ -15,6 +15,7 @@ import {
   Link
 } from 'lucide-react';
 import { CarouselButtonEditor, CarouselButton } from './CarouselButtonEditor';
+import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export interface CarouselCard {
@@ -245,6 +246,7 @@ export function CarouselCardEditor({
               disabled={disabled}
               className="min-h-[80px] resize-none text-sm"
             />
+            <EmojiPicker onEmojiSelect={(emoji) => handleTextChange(card.text + emoji)} disabled={disabled} />
           </div>
         </div>
 

@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Plus, AlertCircle } from 'lucide-react';
+import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { CarouselCardEditor, CarouselCard } from './CarouselCardEditor';
 import { CarouselPreview } from './CarouselPreview';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -104,6 +105,7 @@ export function CarouselEditor({ value, onChange, disabled }: CarouselEditorProp
           disabled={disabled}
           className="min-h-[80px] resize-none"
         />
+        <EmojiPicker onEmojiSelect={(emoji) => handleMessageChange(value.message + emoji)} disabled={disabled} />
       </div>
 
       {/* Cards Header */}
