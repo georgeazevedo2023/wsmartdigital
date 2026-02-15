@@ -1,72 +1,76 @@
 
-# Centralizar acoes do ChatInput em um botao "+"
 
-## Objetivo
+# Adicionar Campo de Webhook URL na Caixa de Entrada
 
-Substituir os botoes individuais (Notas, Documento, Emoji) por um unico botao "+" que abre um menu popover com as opcoes organizadas. Isso limpa a interface e torna as acoes mais intuitivas.
+## Contexto
 
-## Layout Atual
+Sim, o sistema precisa de um webhook do n8n (ou direto da UAZAPI) para receber mensagens no HelpDesk. Atualmente, o webhook endpoint e a edge function `whatsapp-webhook`, que recebe os eventos, identifica a instancia pelo `instanceName` no payload e roteia para a inbox correta.
+
+O campo de webhook URL na inbox serve para o admin registrar/visualizar a URL do n8n que deve ser configurada na UAZAPI para aquela instancia, facilitando o gerenciamento.
+
+## Alteracoes
+
+### 1. Migracacao do Banco de Dados
+
+Adicionar coluna `webhook_url` (texto, nullable) na tabela `inboxes`:
 
 ```text
-[Nota] [Documento] [Emoji] [___Textarea___] [Enviar/Mic]
+ALTER TABLE public.inboxes ADD COLUMN webhook_url text;
 ```
 
-## Layout Proposto
+### 2. Formulario de Criacao (`InboxManagement.tsx`)
 
-```text
-[+] [___Textarea___] [Enviar/Mic]
-```
+Adicionar campo "Webhook URL (n8n)" no dialog de criacao, abaixo do seletor de instancia:
 
-Ao clicar no "+", abre um Popover (acima do botao) com 4 opcoes:
+- Label: "Webhook URL (n8n)"
+- Placeholder: "https://seu-n8n.com/webhook/..."
+- Campo opcional
+- Incluir texto de ajuda explicando que esta URL deve ser configurada no n8n para receber mensagens desta instancia
 
-1. **Nota privada** (icone StickyNote) - Ativa/desativa modo nota
-2. **Enviar imagem** (icone Image) - Abre seletor de arquivos filtrado para imagens
-3. **Enviar documento** (icone Paperclip) - Abre seletor de arquivos filtrado para documentos
-4. **Emoji** (icone Smile) - Abre o EmojiPicker existente
+### 3. Card da Inbox
+
+Exibir a webhook URL configurada no card da inbox (truncada), com botao de copiar para facilitar o uso.
 
 ## Secao Tecnica
 
-### Alteracoes em `src/components/helpdesk/ChatInput.tsx`
-
-1. **Adicionar imports**: `Plus`, `Image`, `Smile` do lucide-react; `Popover`, `PopoverTrigger`, `PopoverContent` do radix.
-
-2. **Adicionar estado**: `const [menuOpen, setMenuOpen] = useState(false);`
-
-3. **Adicionar segundo input de arquivo** (ref `imageInputRef`) com `accept` restrito a imagens: `.jpg,.jpeg,.png,.gif,.webp`. O `fileInputRef` existente fica restrito a documentos: `.pdf,.doc,.docx,...`
-
-4. **Substituir os 3 botoes** (Nota, Paperclip, EmojiPicker) por um unico botao "+" que abre o Popover:
+### Estado adicional no componente
 
 ```text
-<Popover open={menuOpen} onOpenChange={setMenuOpen}>
-  <PopoverTrigger asChild>
-    <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9">
-      <Plus className="w-5 h-5" />
-    </Button>
-  </PopoverTrigger>
-  <PopoverContent side="top" align="start" className="w-auto p-2">
-    <div className="flex flex-col gap-1">
-      <!-- Nota Privada -->
-      <button onClick={() => { setIsNote(!isNote); setMenuOpen(false); }}>
-        <StickyNote /> Nota privada
-      </button>
-      <!-- Enviar Imagem -->
-      <button onClick={() => { imageInputRef.current?.click(); setMenuOpen(false); }}>
-        <Image /> Enviar imagem
-      </button>
-      <!-- Enviar Documento -->
-      <button onClick={() => { fileInputRef.current?.click(); setMenuOpen(false); }}>
-        <Paperclip /> Enviar documento
-      </button>
-      <!-- Emoji (abre submenu ou inline) -->
-      <EmojiPicker onEmojiSelect={(emoji) => { setText(prev => prev + emoji); setMenuOpen(false); }} />
-    </div>
-  </PopoverContent>
-</Popover>
+const [webhookUrl, setWebhookUrl] = useState('');
 ```
 
-5. **Manter o banner de nota privada** acima do textarea quando `isNote` estiver ativo.
+### Campo no formulario (apos o Select de instancia)
 
-6. **Desabilitar opcoes de midia** quando `isNote` estiver ativo ou `sendingFile` for true.
+```text
+<div className="space-y-2">
+  <Label>Webhook URL (n8n)</Label>
+  <Input
+    placeholder="https://seu-n8n.com/webhook/..."
+    value={webhookUrl}
+    onChange={(e) => setWebhookUrl(e.target.value)}
+  />
+  <p className="text-xs text-muted-foreground">
+    URL do webhook do n8n que encaminha mensagens da UAZAPI para o HelpDesk
+  </p>
+</div>
+```
 
-### Arquivo modificado:
-- `src/components/helpdesk/ChatInput.tsx`
+### Insert atualizado
+
+```text
+await supabase.from('inboxes').insert({
+  name: newName.trim(),
+  instance_id: selectedInstanceId,
+  created_by: user!.id,
+  webhook_url: webhookUrl.trim() || null,
+});
+```
+
+### Exibicao no card
+
+Adicionar linha com icone `Link` mostrando a URL truncada e botao de copiar ao lado, visivel apenas quando `webhook_url` estiver preenchido.
+
+### Arquivos modificados:
+- **Migracao SQL**: Adicionar coluna `webhook_url` na tabela `inboxes`
+- **`src/pages/dashboard/InboxManagement.tsx`**: Campo no dialog de criacao + exibicao no card
+
