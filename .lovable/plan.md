@@ -1,94 +1,62 @@
 
-# Corrigir Download de Documentos e Botao Enviar no HelpDesk
+# Etiquetas (Labels) no HelpDesk
 
-## Problema 1: Link do documento bloqueado
+## Resumo
 
-O PDF foi salvo corretamente no Storage com URL publica (`tjuokxdkimrtyqsbzskj.supabase.co/storage/v1/object/public/helpdesk-media/...`), porem o Chrome (ou um adblocker) bloqueia a abertura direta do dominio `supabase.co` com `window.open()`, exibindo `ERR_BLOCKED_BY_CLIENT`.
+Adicionar sistema de etiquetas coloridas por caixa de entrada, com gerenciamento (criar, editar, excluir) e atribuicao de etiquetas a conversas. As tabelas `labels` e `conversation_labels` ja existem no banco de dados.
 
-### Solucao
+## Funcionalidades
 
-Em vez de abrir o link com `window.open()`, o sistema vai:
-1. Baixar o arquivo via `fetch()` programaticamente
-2. Criar um blob URL local
-3. Disparar o download usando uma tag `<a>` com atributo `download`
+### 1. Gerenciamento de Etiquetas
+- Botao no cabecalho da lista de conversas (ou no seletor de inbox) para abrir dialog de gerenciamento
+- Criar etiqueta: nome + cor (paleta pre-definida)
+- Editar e excluir etiquetas existentes
+- Etiquetas sao por caixa de entrada (inbox)
 
-Isso contorna o bloqueio do adblocker porque o download eh feito via JavaScript (XHR/fetch), nao via navegacao direta para o dominio bloqueado.
+### 2. Atribuir Etiquetas a Conversas
+- No painel de informacoes do contato (`ContactInfoPanel`), secao "Etiquetas" com as etiquetas atuais
+- Botao "+" para abrir popover/dropdown com etiquetas disponiveis da inbox
+- Clicar em uma etiqueta adiciona/remove da conversa (toggle)
+- Etiquetas exibidas como badges coloridos
 
-## Problema 2: Botao enviar sumiu
+### 3. Exibir Etiquetas na Lista de Conversas
+- No `ConversationItem`, exibir badges pequenos das etiquetas atribuidas abaixo da ultima mensagem
 
-O botao de enviar mensagem (icone Send) so aparece quando ha texto digitado no campo. Quando o campo esta vazio, aparece apenas o botao de microfone. Isso pode confundir o usuario.
-
-### Solucao
-
-Manter o botao Send sempre visivel (desabilitado quando nao ha texto), e adicionar o botao de microfone como um botao separado ao lado. Assim o usuario sempre ve ambas as opcoes.
+### 4. Filtrar por Etiqueta (bonus)
+- Dropdown de filtro por etiqueta na lista de conversas
 
 ## Secao Tecnica
 
-### Arquivo: `src/components/helpdesk/MessageBubble.tsx`
+### Banco de Dados
+Nenhuma migracao necessaria. As tabelas ja existem:
+- `labels` (id, inbox_id, name, color) com RLS por inbox
+- `conversation_labels` (id, conversation_id, label_id) com RLS por inbox via conversation
 
-Alterar `handleDocumentOpen` para usar fetch + download em vez de `window.open()`:
+### Novos Componentes
+1. **`src/components/helpdesk/ManageLabelsDialog.tsx`**
+   - Dialog com lista de etiquetas da inbox selecionada
+   - Formulario inline para criar nova etiqueta (nome + seletor de cor)
+   - Botoes editar/excluir por etiqueta
+   - CRUD via Supabase nas tabelas `labels`
 
-```text
-const handleDocumentOpen = async () => {
-  if (!message.media_url) return;
-  setDownloading(true);
-  try {
-    // Tentar download via fetch para contornar adblocker
-    const response = await fetch(message.media_url);
-    if (!response.ok) throw new Error('Download failed');
-    const blob = await response.blob();
-    const url = URL.createObjectURL(blob);
-    
-    // Criar link de download
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = getDocumentInfo().fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  } catch (err) {
-    // Fallback: tentar proxy para URLs da UAZAPI
-    if (instanceId && message.media_url.includes('uazapi')) {
-      // ... logica existente do proxy ...
-    } else {
-      // Ultimo fallback: tentar abrir direto
-      window.open(message.media_url, '_blank');
-    }
-  } finally {
-    setDownloading(false);
-  }
-};
-```
+2. **`src/components/helpdesk/ConversationLabels.tsx`**
+   - Componente reutilizavel que exibe badges das etiquetas de uma conversa
+   - Usado no `ContactInfoPanel` e no `ConversationItem`
 
-### Arquivo: `src/components/helpdesk/ChatInput.tsx`
+3. **`src/components/helpdesk/LabelPicker.tsx`**
+   - Popover com lista de etiquetas da inbox
+   - Toggle (checkbox) para adicionar/remover de uma conversa
+   - Usado no `ContactInfoPanel`
 
-Alterar a area de botoes (linhas 586-606) para mostrar Send + Mic sempre:
+### Alteracoes em Arquivos Existentes
+- **`ContactInfoPanel.tsx`**: Adicionar secao "Etiquetas" com `ConversationLabels` + `LabelPicker` + botao para abrir `ManageLabelsDialog`
+- **`ConversationItem.tsx`**: Exibir `ConversationLabels` (badges pequenos) na area da ultima mensagem
+- **`ConversationList.tsx`**: Adicionar botao de gerenciar etiquetas no cabecalho e filtro por etiqueta
+- **`HelpDesk.tsx`**: Buscar labels e conversation_labels junto com as conversas, passar como props
 
-```text
-// Antes: Send OU Mic (condicional)
-// Depois: Send (desabilitado sem texto) + Mic (sempre visivel)
-
-<Button
-  size="icon"
-  className="shrink-0 h-9 w-9"
-  onClick={handleSend}
-  disabled={!text.trim() || sending}
->
-  <Send className="w-4 h-4" />
-</Button>
-<Button
-  variant="ghost"
-  size="icon"
-  className="shrink-0 h-9 w-9"
-  onClick={startRecording}
-  disabled={isNote}
-  title="Gravar audio"
->
-  <Mic className="w-4 h-4" />
-</Button>
-```
-
-### Arquivos modificados:
-- `src/components/helpdesk/MessageBubble.tsx` - Download via fetch em vez de window.open
-- `src/components/helpdesk/ChatInput.tsx` - Botao Send sempre visivel
+### Fluxo de Dados
+1. `HelpDesk.tsx` busca `labels` da inbox selecionada e `conversation_labels` das conversas carregadas
+2. Passa as labels e conversation_labels como props para os componentes filhos
+3. `ContactInfoPanel` permite adicionar/remover etiquetas via `LabelPicker`
+4. `ManageLabelsDialog` faz CRUD direto na tabela `labels`
+5. Ao alterar etiquetas, refaz o fetch para atualizar a UI
