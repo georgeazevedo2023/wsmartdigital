@@ -583,27 +583,24 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
             className="min-h-[40px] max-h-32 resize-none text-sm md:text-sm text-base"
             rows={1}
           />
-          {text.trim() ? (
-            <Button
-              size="icon"
-              className="shrink-0 h-9 w-9"
-              onClick={handleSend}
-              disabled={sending}
-            >
-              <Send className="w-4 h-4" />
-            </Button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="shrink-0 h-9 w-9"
-              onClick={startRecording}
-              disabled={isNote}
-              title="Gravar áudio"
-            >
-              <Mic className="w-4 h-4" />
-            </Button>
-          )}
+          <Button
+            size="icon"
+            className="shrink-0 h-9 w-9"
+            onClick={handleSend}
+            disabled={!text.trim() || sending}
+          >
+            <Send className="w-4 h-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="shrink-0 h-9 w-9"
+            onClick={startRecording}
+            disabled={isNote}
+            title="Gravar áudio"
+          >
+            <Mic className="w-4 h-4" />
+          </Button>
         </div>
       )}
     </div>

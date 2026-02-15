@@ -38,28 +38,44 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
 
   const handleDocumentOpen = async () => {
     if (!message.media_url) return;
-
-    // If it's a public Storage URL (not UAZAPI), open directly
-    const isPublicUrl = message.media_url.includes('supabase.co/storage') || 
-                        message.media_url.includes('lovable.dev/storage');
-    if (isPublicUrl) {
-      window.open(message.media_url, '_blank');
-      return;
-    }
-
-    // Fallback: proxy for legacy UAZAPI URLs
-    if (!instanceId) return;
     setDownloading(true);
     try {
+      const { fileName } = getDocumentInfo();
+      
+      // Try fetch + programmatic download (bypasses adblocker)
+      const isPublicUrl = message.media_url.includes('supabase.co/storage') || 
+                          message.media_url.includes('lovable.dev/storage');
+      
+      if (isPublicUrl) {
+        const response = await fetch(message.media_url);
+        if (!response.ok) throw new Error('Download failed');
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        return;
+      }
+
+      // Fallback: proxy for legacy UAZAPI URLs
+      if (!instanceId) return;
       const { data, error } = await supabase.functions.invoke('uazapi-proxy', {
         body: { action: 'download-media', fileUrl: message.media_url, instanceId },
       });
-
       if (error) throw error;
-
       const blob = data instanceof Blob ? data : new Blob([JSON.stringify(data)], { type: 'application/octet-stream' });
       const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank');
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
     } catch (err) {
       console.error('Error downloading document:', err);
       window.open(message.media_url, '_blank');
