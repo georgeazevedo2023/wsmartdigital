@@ -4,6 +4,7 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 import type { Label } from './ConversationLabels';
@@ -126,7 +127,31 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
                 {contact.jid.split('@')[0]}
               </span>
             )}
-          </div>
+        </div>
+        <Select
+          value={conversation.status}
+          onValueChange={(status) => onUpdateConversation(conversation.id, { status })}
+        >
+          <SelectTrigger className="h-7 w-auto min-w-[100px] max-w-[120px] text-xs border-none bg-transparent shadow-none focus:ring-0 gap-1 px-2">
+            <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+              conversation.status === 'aberta' ? 'bg-emerald-500' :
+              conversation.status === 'pendente' ? 'bg-yellow-500' :
+              'bg-muted-foreground/50'
+            }`} />
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-popover z-50">
+            <SelectItem value="aberta">
+              <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Aberta</span>
+            </SelectItem>
+            <SelectItem value="pendente">
+              <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500" /> Pendente</span>
+            </SelectItem>
+            <SelectItem value="resolvida">
+              <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-muted-foreground/50" /> Resolvida</span>
+            </SelectItem>
+          </SelectContent>
+        </Select>
         </div>
         {onShowInfo && (
           <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
