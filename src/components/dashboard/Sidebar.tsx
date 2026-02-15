@@ -70,6 +70,7 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
 
   const adminItems = [
     { icon: Users, label: 'Usuários', path: '/dashboard/users' },
+    { icon: Headphones, label: 'Equipe de Atendimento', path: '/dashboard/inbox-users' },
     { icon: Inbox, label: 'Caixas de Entrada', path: '/dashboard/inboxes' },
     { icon: Settings, label: 'Configurações', path: '/dashboard/settings' },
   ];
