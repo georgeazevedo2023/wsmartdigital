@@ -1,84 +1,94 @@
 
+# Corrigir Download de Documentos e Botao Enviar no HelpDesk
 
-# Corrigir Download de Documentos no HelpDesk
+## Problema 1: Link do documento bloqueado
 
-## Problema
+O PDF foi salvo corretamente no Storage com URL publica (`tjuokxdkimrtyqsbzskj.supabase.co/storage/v1/object/public/helpdesk-media/...`), porem o Chrome (ou um adblocker) bloqueia a abertura direta do dominio `supabase.co` com `window.open()`, exibindo `ERR_BLOCKED_BY_CLIENT`.
 
-Ao clicar no botao de download de um documento PDF no HelpDesk, o sistema baixa o arquivo via proxy, cria uma blob URL (`blob:https://...`) e tenta abrir em nova aba. O Chrome bloqueia essa URL, exibindo "ERR_BLOCKED_BY_CLIENT".
+### Solucao
 
-Isso acontece porque documentos recebidos (incoming) sao armazenados com a URL da UAZAPI (que requer autenticacao), e o sistema precisa usar o proxy para baixar. O blob URL resultante nao funciona em nova aba.
+Em vez de abrir o link com `window.open()`, o sistema vai:
+1. Baixar o arquivo via `fetch()` programaticamente
+2. Criar um blob URL local
+3. Disparar o download usando uma tag `<a>` com atributo `download`
 
-## Solucao
+Isso contorna o bloqueio do adblocker porque o download eh feito via JavaScript (XHR/fetch), nao via navegacao direta para o dominio bloqueado.
 
-Fazer upload dos documentos recebidos para o Storage (bucket `helpdesk-media`) no momento do webhook, armazenando a URL publica no banco. Assim, o download funciona com link direto, sem proxy nem blob.
+## Problema 2: Botao enviar sumiu
 
-## Alteracoes
+O botao de enviar mensagem (icone Send) so aparece quando ha texto digitado no campo. Quando o campo esta vazio, aparece apenas o botao de microfone. Isso pode confundir o usuario.
 
-### 1. Edge Function `whatsapp-webhook/index.ts`
+### Solucao
 
-Quando um documento (ou qualquer midia exceto audio, que ja tem tratamento proprio) chegar via webhook:
-
-1. Baixar o arquivo da URL da UAZAPI
-2. Fazer upload para o bucket `helpdesk-media` no Storage
-3. Salvar a URL publica resultante no campo `media_url`
-
-Isso se aplica a documentos e imagens recebidas. Audios ja sao tratados separadamente.
-
-### 2. Componente `MessageBubble.tsx`
-
-Simplificar o `handleDocumentOpen`:
-
-- Se a `media_url` ja for uma URL publica do Storage (contendo o dominio do projeto), abrir diretamente com `window.open(url, '_blank')`
-- Manter o fallback via proxy apenas para URLs legadas da UAZAPI
+Manter o botao Send sempre visivel (desabilitado quando nao ha texto), e adicionar o botao de microfone como um botao separado ao lado. Assim o usuario sempre ve ambas as opcoes.
 
 ## Secao Tecnica
 
-### Webhook - Upload para Storage
+### Arquivo: `src/components/helpdesk/MessageBubble.tsx`
 
-Apos obter a URL persistente da UAZAPI, adicionar logica para:
-
-```text
-// Baixar o arquivo da UAZAPI
-const mediaResponse = await fetch(mediaUrl, {
-  headers: { token: instance.token }
-});
-const fileBlob = await mediaResponse.arrayBuffer();
-
-// Gerar path no storage
-const ext = mime-to-extension ou fallback
-const storagePath = `webhook/${conversation.id}/${Date.now()}.${ext}`;
-
-// Upload para helpdesk-media
-await supabase.storage.from('helpdesk-media').upload(storagePath, fileBlob, {
-  contentType: mimetype
-});
-
-// Obter URL publica
-const publicUrl = supabase.storage.from('helpdesk-media').getPublicUrl(storagePath);
-mediaUrl = publicUrl.data.publicUrl;
-```
-
-### MessageBubble - Abertura direta
+Alterar `handleDocumentOpen` para usar fetch + download em vez de `window.open()`:
 
 ```text
 const handleDocumentOpen = async () => {
   if (!message.media_url) return;
-  
-  // Se ja e URL publica (Storage), abrir direto
-  const isPublicUrl = message.media_url.includes('supabase') 
-    || message.media_url.startsWith('https://');
-  
-  if (isPublicUrl && !message.media_url.includes('uazapi')) {
-    window.open(message.media_url, '_blank');
-    return;
+  setDownloading(true);
+  try {
+    // Tentar download via fetch para contornar adblocker
+    const response = await fetch(message.media_url);
+    if (!response.ok) throw new Error('Download failed');
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    
+    // Criar link de download
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = getDocumentInfo().fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    // Fallback: tentar proxy para URLs da UAZAPI
+    if (instanceId && message.media_url.includes('uazapi')) {
+      // ... logica existente do proxy ...
+    } else {
+      // Ultimo fallback: tentar abrir direto
+      window.open(message.media_url, '_blank');
+    }
+  } finally {
+    setDownloading(false);
   }
-  
-  // Fallback: proxy para URLs legadas
-  // ... logica existente do proxy ...
 };
 ```
 
-### Arquivos modificados:
-- `supabase/functions/whatsapp-webhook/index.ts` - Upload de midia para Storage
-- `src/components/helpdesk/MessageBubble.tsx` - Abertura direta de URLs publicas
+### Arquivo: `src/components/helpdesk/ChatInput.tsx`
 
+Alterar a area de botoes (linhas 586-606) para mostrar Send + Mic sempre:
+
+```text
+// Antes: Send OU Mic (condicional)
+// Depois: Send (desabilitado sem texto) + Mic (sempre visivel)
+
+<Button
+  size="icon"
+  className="shrink-0 h-9 w-9"
+  onClick={handleSend}
+  disabled={!text.trim() || sending}
+>
+  <Send className="w-4 h-4" />
+</Button>
+<Button
+  variant="ghost"
+  size="icon"
+  className="shrink-0 h-9 w-9"
+  onClick={startRecording}
+  disabled={isNote}
+  title="Gravar audio"
+>
+  <Mic className="w-4 h-4" />
+</Button>
+```
+
+### Arquivos modificados:
+- `src/components/helpdesk/MessageBubble.tsx` - Download via fetch em vez de window.open
+- `src/components/helpdesk/ChatInput.tsx` - Botao Send sempre visivel
