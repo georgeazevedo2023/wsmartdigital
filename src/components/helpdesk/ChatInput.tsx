@@ -1,25 +1,32 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2, Plus, ImageIcon, Smile } from 'lucide-react';
+import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2, Plus, ImageIcon, Smile, Tags } from 'lucide-react';
 import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
+import type { Label } from './ConversationLabels';
 
 interface ChatInputProps {
   conversation: Conversation;
   onMessageSent: () => void;
+  inboxLabels?: Label[];
+  assignedLabelIds?: string[];
+  onLabelsChanged?: () => void;
 }
 
-export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
+export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assignedLabelIds = [], onLabelsChanged }: ChatInputProps) => {
   const { user } = useAuth();
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [isNote, setIsNote] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
+  const [togglingLabel, setTogglingLabel] = useState<string | null>(null);
 
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -567,6 +574,52 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
                     <Paperclip className="w-4 h-4" />
                     Enviar documento
                   </button>
+                  {inboxLabels.length > 0 && (
+                    <>
+                      <button
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-md hover:bg-accent text-foreground"
+                        onClick={() => setShowLabels(!showLabels)}
+                      >
+                        <Tags className="w-4 h-4" />
+                        Etiquetas
+                      </button>
+                      {showLabels && (
+                        <div className="border-t border-border/50 pt-1 mt-1 space-y-0.5 max-h-40 overflow-y-auto">
+                          {inboxLabels.map(label => {
+                            const isAssigned = assignedLabelIds.includes(label.id);
+                            return (
+                              <button
+                                key={label.id}
+                                className="flex items-center gap-2 w-full px-3 py-1.5 rounded-md hover:bg-secondary/50 text-sm disabled:opacity-50"
+                                onClick={async () => {
+                                  setTogglingLabel(label.id);
+                                  try {
+                                    if (isAssigned) {
+                                      await supabase.from('conversation_labels').delete()
+                                        .eq('conversation_id', conversation.id).eq('label_id', label.id);
+                                    } else {
+                                      await supabase.from('conversation_labels')
+                                        .insert({ conversation_id: conversation.id, label_id: label.id });
+                                    }
+                                    onLabelsChanged?.();
+                                  } catch (err: any) {
+                                    toast.error(err.message || 'Erro');
+                                  } finally {
+                                    setTogglingLabel(null);
+                                  }
+                                }}
+                                disabled={togglingLabel === label.id}
+                              >
+                                <Checkbox checked={isAssigned} className="pointer-events-none" />
+                                <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: label.color }} />
+                                <span className="truncate">{label.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
                   <div className="px-1 py-1">
                     <EmojiPicker onEmojiSelect={(emoji) => { setText(prev => prev + emoji); setMenuOpen(false); }} disabled={sending} />
                   </div>

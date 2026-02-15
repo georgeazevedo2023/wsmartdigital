@@ -9,6 +9,8 @@ import type { Conversation } from '@/pages/dashboard/HelpDesk';
 import { ConversationLabels, type Label } from './ConversationLabels';
 import { LabelPicker } from './LabelPicker';
 import { ManageLabelsDialog } from './ManageLabelsDialog';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 interface ContactInfoPanelProps {
   conversation: Conversation;
@@ -44,6 +46,19 @@ export const ContactInfoPanel = ({
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
 
   const assignedLabels = inboxLabels.filter(l => assignedLabelIds.includes(l.id));
+
+  const handleRemoveLabel = async (labelId: string) => {
+    try {
+      await supabase
+        .from('conversation_labels')
+        .delete()
+        .eq('conversation_id', conversation.id)
+        .eq('label_id', labelId);
+      onLabelsChanged?.();
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao remover etiqueta');
+    }
+  };
 
   return (
     <div className="p-4 space-y-5 overflow-y-auto flex-1">
@@ -90,7 +105,7 @@ export const ContactInfoPanel = ({
             </Button>
           </div>
         </div>
-        <ConversationLabels labels={assignedLabels} size="md" />
+        <ConversationLabels labels={assignedLabels} size="md" onRemove={handleRemoveLabel} />
         {assignedLabels.length === 0 && (
           <p className="text-xs text-muted-foreground">Nenhuma etiqueta</p>
         )}

@@ -11,9 +11,10 @@ interface ConversationLabelsProps {
   labels: Label[];
   size?: 'sm' | 'md';
   className?: string;
+  onRemove?: (labelId: string) => void;
 }
 
-export const ConversationLabels = ({ labels, size = 'sm', className }: ConversationLabelsProps) => {
+export const ConversationLabels = ({ labels, size = 'sm', className, onRemove }: ConversationLabelsProps) => {
   if (labels.length === 0) return null;
 
   return (
@@ -22,7 +23,7 @@ export const ConversationLabels = ({ labels, size = 'sm', className }: Conversat
         <span
           key={label.id}
           className={cn(
-            'inline-flex items-center rounded-full font-medium border',
+            'inline-flex items-center rounded-full font-medium border gap-0.5',
             size === 'sm' ? 'text-[10px] px-1.5 py-0' : 'text-xs px-2 py-0.5'
           )}
           style={{
@@ -32,6 +33,15 @@ export const ConversationLabels = ({ labels, size = 'sm', className }: Conversat
           }}
         >
           {label.name}
+          {onRemove && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemove(label.id); }}
+              className="ml-0.5 hover:opacity-70 transition-opacity leading-none"
+              title="Remover etiqueta"
+            >
+              ×
+            </button>
+          )}
         </span>
       ))}
     </div>
