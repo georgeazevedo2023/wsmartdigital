@@ -271,6 +271,9 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
       const base64 = btoa(binary);
       const dataUri = `data:${file.type};base64,${base64}`;
 
+      const isImage = file.type.startsWith('image/');
+      const mediaType = isImage ? 'image' : 'document';
+
       const { data: session } = await supabase.auth.getSession();
       const response = await fetch(
         `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
@@ -285,23 +288,23 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
             instanceToken: instanceData.token,
             jid: contactJid,
             mediaUrl: dataUri,
-            mediaType: 'document',
-            filename: file.name,
+            mediaType,
+            filename: isImage ? undefined : file.name,
             caption: '',
           }),
         }
       );
 
       if (!response.ok) {
-        throw new Error('Falha ao enviar documento');
+        throw new Error(isImage ? 'Falha ao enviar imagem' : 'Falha ao enviar documento');
       }
 
       // Save to DB
       const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id,
         direction: 'outgoing',
-        content: file.name,
-        media_type: 'document',
+        content: isImage ? null : file.name,
+        media_type: mediaType,
         media_url: filePublicUrl,
         sender_id: user.id,
       }).select().single();
@@ -320,15 +323,15 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
           conversation_id: conversation.id,
           message_id: insertedMsg.id,
           direction: 'outgoing',
-          media_type: 'document',
-          content: file.name,
+          media_type: mediaType,
+          content: isImage ? null : file.name,
           media_url: filePublicUrl,
           created_at: insertedMsg.created_at,
         },
       });
 
       onMessageSent();
-      toast.success('Documento enviado!');
+      toast.success(isImage ? 'Imagem enviada!' : 'Documento enviado!');
     } catch (err: any) {
       console.error('Send file error:', err);
       toast.error(err.message || 'Erro ao enviar documento');
@@ -491,7 +494,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
+            accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {
@@ -518,7 +521,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
             className="shrink-0 h-9 w-9"
             onClick={() => fileInputRef.current?.click()}
             disabled={isNote || sendingFile}
-            title="Enviar documento"
+            title="Enviar arquivo ou imagem"
           >
             {sendingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
           </Button>
