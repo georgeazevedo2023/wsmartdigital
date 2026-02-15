@@ -1,10 +1,14 @@
-import { Search, Inbox, RefreshCw } from 'lucide-react';
+import { useState } from 'react';
+import { Search, Inbox, RefreshCw, Tags } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { ConversationItem } from './ConversationItem';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { ManageLabelsDialog } from './ManageLabelsDialog';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
+import type { Label } from './ConversationLabels';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -17,6 +21,12 @@ interface ConversationListProps {
   loading: boolean;
   onSync?: () => void;
   syncing?: boolean;
+  inboxLabels?: Label[];
+  conversationLabelsMap?: Record<string, string[]>;
+  labelFilter?: string | null;
+  onLabelFilterChange?: (labelId: string | null) => void;
+  inboxId?: string;
+  onLabelsChanged?: () => void;
 }
 
 const statusTabs = [
@@ -37,8 +47,15 @@ export const ConversationList = ({
   loading,
   onSync,
   syncing,
+  inboxLabels = [],
+  conversationLabelsMap = {},
+  labelFilter,
+  onLabelFilterChange,
+  inboxId,
+  onLabelsChanged,
 }: ConversationListProps) => {
   const unreadCount = conversations.filter(c => !c.is_read).length;
+  const [manageOpen, setManageOpen] = useState(false);
 
   return (
     <>
@@ -46,7 +63,18 @@ export const ConversationList = ({
       <div className="p-3 border-b border-border/50">
         <div className="flex items-center justify-between mb-3">
           <h2 className="font-display font-bold text-lg">Atendimento</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            {inboxId && onLabelsChanged && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setManageOpen(true)}
+                className="h-7 w-7"
+                title="Gerenciar etiquetas"
+              >
+                <Tags className="w-4 h-4" />
+              </Button>
+            )}
             {onSync && (
               <Button
                 variant="ghost"
@@ -85,6 +113,28 @@ export const ConversationList = ({
           ))}
         </div>
 
+        {/* Label filter */}
+        {inboxLabels.length > 0 && onLabelFilterChange && (
+          <div className="mb-3">
+            <Select value={labelFilter || '_all'} onValueChange={v => onLabelFilterChange(v === '_all' ? null : v)}>
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue placeholder="Filtrar por etiqueta" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_all">Todas as etiquetas</SelectItem>
+                {inboxLabels.map(l => (
+                  <SelectItem key={l.id} value={l.id}>
+                    <div className="flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
+                      {l.name}
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {/* Search */}
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -116,11 +166,23 @@ export const ConversationList = ({
                 conversation={c}
                 isSelected={c.id === selectedId}
                 onClick={() => onSelect(c)}
+                labels={inboxLabels.filter(l => (conversationLabelsMap[c.id] || []).includes(l.id))}
               />
             ))}
           </div>
         )}
       </ScrollArea>
+
+      {/* Manage Labels Dialog */}
+      {inboxId && onLabelsChanged && (
+        <ManageLabelsDialog
+          open={manageOpen}
+          onOpenChange={setManageOpen}
+          inboxId={inboxId}
+          labels={inboxLabels}
+          onChanged={onLabelsChanged}
+        />
+      )}
     </>
   );
 };

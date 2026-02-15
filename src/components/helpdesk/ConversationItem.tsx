@@ -2,12 +2,14 @@ import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { ConversationLabels, type Label } from './ConversationLabels';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
 
 interface ConversationItemProps {
   conversation: Conversation;
   isSelected: boolean;
   onClick: () => void;
+  labels?: Label[];
 }
 
 const priorityColors: Record<string, string> = {
@@ -16,7 +18,7 @@ const priorityColors: Record<string, string> = {
   baixa: 'bg-primary',
 };
 
-export const ConversationItem = ({ conversation, isSelected, onClick }: ConversationItemProps) => {
+export const ConversationItem = ({ conversation, isSelected, onClick, labels = [] }: ConversationItemProps) => {
   const contact = conversation.contact;
   const name = contact?.name || contact?.phone || 'Desconhecido';
   const initials = name.charAt(0).toUpperCase();
@@ -37,7 +39,6 @@ export const ConversationItem = ({ conversation, isSelected, onClick }: Conversa
             {initials}
           </AvatarFallback>
         </Avatar>
-        {/* Priority indicator */}
         <span
           className={cn(
             'absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-card',
@@ -69,6 +70,10 @@ export const ConversationItem = ({ conversation, isSelected, onClick }: Conversa
             <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
           )}
         </div>
+
+        {labels.length > 0 && (
+          <ConversationLabels labels={labels} size="sm" className="mt-1" />
+        )}
       </div>
     </button>
   );

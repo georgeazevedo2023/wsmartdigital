@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -8,6 +8,7 @@ import { ChatPanel } from '@/components/helpdesk/ChatPanel';
 import { ContactInfoPanel } from '@/components/helpdesk/ContactInfoPanel';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
+import type { Label } from '@/components/helpdesk/ConversationLabels';
 
 export interface Conversation {
   id: string;
@@ -82,6 +83,11 @@ const HelpDesk = () => {
   const [syncing, setSyncing] = useState(false);
   const [syncedInboxes, setSyncedInboxes] = useState<Set<string>>(new Set());
 
+  // Labels state
+  const [inboxLabels, setInboxLabels] = useState<Label[]>([]);
+  const [conversationLabelsMap, setConversationLabelsMap] = useState<Record<string, string[]>>({});
+  const [labelFilter, setLabelFilter] = useState<string | null>(null);
+
   // Fetch user's inboxes
   useEffect(() => {
     const fetchInboxes = async () => {
@@ -93,7 +99,6 @@ const HelpDesk = () => {
 
       if (!error && data && data.length > 0) {
         setInboxes(data);
-        // Use inbox from URL param if available, otherwise first inbox
         const targetInbox = inboxParam && data.some(ib => ib.id === inboxParam)
           ? inboxParam
           : data[0].id;
@@ -102,6 +107,40 @@ const HelpDesk = () => {
     };
     fetchInboxes();
   }, [user, inboxParam]);
+
+  // Fetch labels for selected inbox
+  const fetchLabels = useCallback(async () => {
+    if (!selectedInboxId) return;
+    const { data } = await supabase
+      .from('labels')
+      .select('*')
+      .eq('inbox_id', selectedInboxId)
+      .order('name');
+    setInboxLabels((data as Label[]) || []);
+  }, [selectedInboxId]);
+
+  useEffect(() => {
+    fetchLabels();
+  }, [fetchLabels]);
+
+  // Fetch conversation_labels for loaded conversations
+  const fetchConversationLabels = useCallback(async (convIds: string[]) => {
+    if (convIds.length === 0) {
+      setConversationLabelsMap({});
+      return;
+    }
+    const { data } = await supabase
+      .from('conversation_labels')
+      .select('conversation_id, label_id')
+      .in('conversation_id', convIds);
+
+    const map: Record<string, string[]> = {};
+    (data || []).forEach(cl => {
+      if (!map[cl.conversation_id]) map[cl.conversation_id] = [];
+      map[cl.conversation_id].push(cl.label_id);
+    });
+    setConversationLabelsMap(map);
+  }, []);
 
   const fetchConversations = async () => {
     if (!user || !selectedInboxId) return;
@@ -122,22 +161,25 @@ const HelpDesk = () => {
 
       const convIds = (data || []).map((c: any) => c.id);
 
-      // Fetch last message for each conversation
+      // Fetch last message + conversation labels in parallel
       let lastMsgMap: Record<string, string> = {};
-      if (convIds.length > 0) {
-        const { data: allMsgs } = await supabase
-          .from('conversation_messages')
-          .select('conversation_id, content, media_type, created_at')
-          .in('conversation_id', convIds)
-          .order('created_at', { ascending: false });
+      const [msgsResult] = await Promise.all([
+        convIds.length > 0
+          ? supabase
+              .from('conversation_messages')
+              .select('conversation_id, content, media_type, created_at')
+              .in('conversation_id', convIds)
+              .order('created_at', { ascending: false })
+          : Promise.resolve({ data: null }),
+        fetchConversationLabels(convIds),
+      ]);
 
-        if (allMsgs) {
-          for (const msg of allMsgs) {
-            if (!lastMsgMap[msg.conversation_id]) {
-              const preview = msg.content || mediaPreview(msg.media_type);
-              if (preview) {
-                lastMsgMap[msg.conversation_id] = preview;
-              }
+      if (msgsResult.data) {
+        for (const msg of msgsResult.data) {
+          if (!lastMsgMap[msg.conversation_id]) {
+            const preview = msg.content || mediaPreview(msg.media_type);
+            if (preview) {
+              lastMsgMap[msg.conversation_id] = preview;
             }
           }
         }
@@ -164,7 +206,7 @@ const HelpDesk = () => {
     }
   }, [user, statusFilter, selectedInboxId]);
 
-  // Realtime via broadcast (bypasses RLS issues with postgres_changes)
+  // Realtime via broadcast
   useEffect(() => {
     if (!selectedInboxId) return;
 
@@ -264,13 +306,25 @@ const HelpDesk = () => {
     }
   };
 
+  const handleLabelsChanged = () => {
+    fetchLabels();
+    const convIds = conversations.map(c => c.id);
+    fetchConversationLabels(convIds);
+  };
+
   const filteredConversations = conversations.filter(c => {
-    if (!searchQuery) return true;
-    const q = searchQuery.toLowerCase();
-    return (
-      c.contact?.name?.toLowerCase().includes(q) ||
-      c.contact?.phone?.includes(q)
-    );
+    // Search filter
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = c.contact?.name?.toLowerCase().includes(q) || c.contact?.phone?.includes(q);
+      if (!matchesSearch) return false;
+    }
+    // Label filter
+    if (labelFilter) {
+      const convLabels = conversationLabelsMap[c.id] || [];
+      if (!convLabels.includes(labelFilter)) return false;
+    }
+    return true;
   });
 
   const inboxSelector = inboxes.length > 0 ? (
@@ -291,6 +345,25 @@ const HelpDesk = () => {
     </div>
   ) : null;
 
+  const listProps = {
+    conversations: filteredConversations,
+    selectedId: selectedConversation?.id || null,
+    statusFilter,
+    onStatusFilterChange: setStatusFilter,
+    searchQuery,
+    onSearchChange: setSearchQuery,
+    onSelect: handleSelectConversation,
+    loading,
+    onSync: handleSync,
+    syncing,
+    inboxLabels,
+    conversationLabelsMap,
+    labelFilter,
+    onLabelFilterChange: setLabelFilter,
+    inboxId: selectedInboxId,
+    onLabelsChanged: handleLabelsChanged,
+  };
+
   if (isMobile) {
     return (
       <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
@@ -298,18 +371,7 @@ const HelpDesk = () => {
           <>
             {inboxSelector}
             <div className="flex-1 flex flex-col overflow-hidden">
-              <ConversationList
-                conversations={filteredConversations}
-                selectedId={selectedConversation?.id || null}
-                statusFilter={statusFilter}
-                onStatusFilterChange={setStatusFilter}
-                searchQuery={searchQuery}
-                onSearchChange={setSearchQuery}
-                onSelect={handleSelectConversation}
-                loading={loading}
-                onSync={handleSync}
-                syncing={syncing}
-              />
+              <ConversationList {...listProps} />
             </div>
           </>
         )}
@@ -329,6 +391,9 @@ const HelpDesk = () => {
               conversation={selectedConversation}
               onUpdateConversation={handleUpdateConversation}
               onBack={() => setMobileView('chat')}
+              inboxLabels={inboxLabels}
+              assignedLabelIds={conversationLabelsMap[selectedConversation.id] || []}
+              onLabelsChanged={handleLabelsChanged}
             />
           </div>
         )}
@@ -339,27 +404,13 @@ const HelpDesk = () => {
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
       {inboxSelector}
-      {/* Main layout */}
       <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
-        {/* Left: Conversation List */}
         {showConversationList && (
           <div className="w-72 lg:w-80 border-r border-border/50 flex flex-col shrink-0 overflow-hidden">
-            <ConversationList
-              conversations={filteredConversations}
-              selectedId={selectedConversation?.id || null}
-              statusFilter={statusFilter}
-              onStatusFilterChange={setStatusFilter}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              onSelect={handleSelectConversation}
-              loading={loading}
-              onSync={handleSync}
-              syncing={syncing}
-            />
+            <ConversationList {...listProps} />
           </div>
         )}
 
-        {/* Center: Chat */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
           <ChatPanel
             conversation={selectedConversation}
@@ -371,12 +422,14 @@ const HelpDesk = () => {
           />
         </div>
 
-        {/* Right: Contact Info */}
         {selectedConversation && showContactInfo && (
           <div className="w-64 lg:w-72 border-l border-border/50 flex flex-col shrink-0 overflow-hidden">
             <ContactInfoPanel
               conversation={selectedConversation}
               onUpdateConversation={handleUpdateConversation}
+              inboxLabels={inboxLabels}
+              assignedLabelIds={conversationLabelsMap[selectedConversation.id] || []}
+              onLabelsChanged={handleLabelsChanged}
             />
           </div>
         )}
