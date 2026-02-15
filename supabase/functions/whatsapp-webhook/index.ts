@@ -187,30 +187,68 @@ Deno.serve(async (req) => {
     }))
 
     // Media: obter link persistente da UAZAPI antes de salvar
+    const mimeExtMap: Record<string, string> = {
+      'application/pdf': 'pdf',
+      'application/msword': 'doc',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.ms-excel': 'xls',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.ms-powerpoint': 'ppt',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'text/plain': 'txt',
+      'text/csv': 'csv',
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'video/mp4': 'mp4',
+    }
+
     if (mediaType !== 'text' && externalId && instance.token) {
       console.log('Requesting persistent media link from UAZAPI...')
       const persistentResult = await getMediaLink(externalId, instance.token, mediaType === 'audio')
       if (persistentResult) {
         mediaUrl = persistentResult.url
         console.log('Got persistent media URL:', mediaUrl.substring(0, 80))
+        const mime = persistentResult.mimetype || ''
 
         // Generate friendly name for documents without caption/fileName
         if (mediaType === 'document' && !content) {
-          const mime = persistentResult.mimetype || ''
-          const extMap: Record<string, string> = {
-            'application/pdf': 'pdf',
-            'application/msword': 'doc',
-            'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-            'application/vnd.ms-excel': 'xls',
-            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-            'application/vnd.ms-powerpoint': 'ppt',
-            'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-            'text/plain': 'txt',
-            'text/csv': 'csv',
-          }
-          const ext = extMap[mime] || mime.split('/').pop() || 'pdf'
+          const ext = mimeExtMap[mime] || mime.split('/').pop() || 'pdf'
           content = `Documento.${ext}`
           console.log('Generated document name:', content, 'from mimetype:', mime)
+        }
+
+        // Upload non-audio media to Storage for public URL access
+        if (mediaType !== 'audio' && mediaUrl) {
+          try {
+            console.log('Uploading media to Storage bucket...')
+            const mediaResponse = await fetch(mediaUrl)
+            if (mediaResponse.ok) {
+              const fileBuffer = await mediaResponse.arrayBuffer()
+              const ext = mimeExtMap[mime] || mime.split('/').pop() || 'bin'
+              const storagePath = `webhook/${Date.now()}_${Math.random().toString(36).substring(2, 8)}.${ext}`
+              const contentType = mime || 'application/octet-stream'
+
+              const { error: uploadError } = await supabase.storage
+                .from('helpdesk-media')
+                .upload(storagePath, fileBuffer, { contentType, upsert: false })
+
+              if (!uploadError) {
+                const { data: publicUrlData } = supabase.storage
+                  .from('helpdesk-media')
+                  .getPublicUrl(storagePath)
+                mediaUrl = publicUrlData.publicUrl
+                console.log('Media uploaded to Storage, public URL:', mediaUrl.substring(0, 80))
+              } else {
+                console.error('Storage upload error:', uploadError.message)
+              }
+            } else {
+              console.error('Failed to download media from UAZAPI:', mediaResponse.status)
+            }
+          } catch (uploadErr) {
+            console.error('Error uploading media to Storage:', uploadErr)
+          }
         }
       } else {
         console.log('Failed to get persistent link, keeping original:', mediaUrl?.substring(0, 80))
