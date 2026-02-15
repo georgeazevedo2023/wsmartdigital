@@ -1268,9 +1268,24 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
             results.push({ groupName: member.jid, success: true });
             // Save to HelpDesk
             const phone = member.jid.replace('@s.whatsapp.net', '');
+            const carouselJson = JSON.stringify({
+              message: carouselData.message,
+              cards: carouselData.cards.map(c => ({
+                id: c.id,
+                text: c.text,
+                image: c.image,
+                buttons: c.buttons.map(b => ({
+                  id: b.id,
+                  type: b.type,
+                  label: b.label,
+                  value: b.url || b.phone || '',
+                })),
+              })),
+            });
             saveToHelpdesk(instance.id, member.jid, phone, null, {
               content: carouselData.message || '📋 Carrossel enviado',
-              media_type: 'text',
+              media_type: 'carousel',
+              media_url: carouselJson,
             });
           } catch (error) {
             console.error(`Erro ao enviar carrossel para ${member.jid}:`, error);

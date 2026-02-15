@@ -7,6 +7,16 @@ interface HelpdeskMessageData {
 }
 
 /**
+ * Normalize a phone number by extracting the last 8-10 significant digits.
+ * This handles variations like with/without the extra '9' digit in Brazilian numbers.
+ */
+const normalizePhone = (phone: string): string => {
+  const digits = phone.replace(/\D/g, '');
+  // Return last 8 digits for matching (handles 9-digit vs 8-digit variations)
+  return digits.slice(-8);
+};
+
+/**
  * After a successful broadcast send, save the outgoing message to the HelpDesk
  * so it appears in the conversation history.
  */
@@ -30,17 +40,17 @@ export const saveToHelpdesk = async (
       return;
     }
 
-    // 2. Find or create contact by JID
-    const { data: existingContact } = await supabase
+    // 2. Find contact by JID first, then fallback to phone number matching
+    let contactId: string | null = null;
+
+    const { data: exactContact } = await supabase
       .from('contacts')
       .select('id')
       .eq('jid', contactJid)
       .maybeSingle();
 
-    let contactId: string;
-
-    if (existingContact) {
-      contactId = existingContact.id;
+    if (exactContact) {
+      contactId = exactContact.id;
       // Update name if we have a better one
       if (contactName) {
         await supabase
@@ -49,21 +59,44 @@ export const saveToHelpdesk = async (
           .eq('id', contactId);
       }
     } else {
-      const { data: newContact, error: insertErr } = await supabase
+      // Fallback: search by phone number (last 8 digits match)
+      const normalizedPhone = normalizePhone(contactPhone);
+      const { data: phoneContacts } = await supabase
         .from('contacts')
-        .insert({
-          jid: contactJid,
-          phone: contactPhone,
-          name: contactName,
-        })
-        .select('id')
-        .single();
+        .select('id, phone, jid')
+        .limit(50);
 
-      if (insertErr || !newContact) {
-        console.error('[saveToHelpdesk] Error creating contact:', insertErr);
-        return;
+      if (phoneContacts) {
+        const match = phoneContacts.find(c => normalizePhone(c.phone) === normalizedPhone);
+        if (match) {
+          contactId = match.id;
+          if (contactName) {
+            await supabase
+              .from('contacts')
+              .update({ name: contactName })
+              .eq('id', contactId);
+          }
+        }
       }
-      contactId = newContact.id;
+
+      if (!contactId) {
+        // Create new contact
+        const { data: newContact, error: insertErr } = await supabase
+          .from('contacts')
+          .insert({
+            jid: contactJid,
+            phone: contactPhone,
+            name: contactName,
+          })
+          .select('id')
+          .single();
+
+        if (insertErr || !newContact) {
+          console.error('[saveToHelpdesk] Error creating contact:', insertErr);
+          return;
+        }
+        contactId = newContact.id;
+      }
     }
 
     // 3. Find open/pending conversation or create new one

@@ -690,7 +690,21 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
         // Save to HelpDesk
         saveToHelpdesk(instance.id, lead.jid, lead.phone, lead.name || null, {
           content: carouselData.message || '📋 Carrossel enviado',
-          media_type: 'text',
+          media_type: 'carousel',
+          media_url: JSON.stringify({
+            message: carouselData.message,
+            cards: carouselData.cards.map(c => ({
+              id: c.id,
+              text: c.text,
+              image: c.image,
+              buttons: c.buttons.map(b => ({
+                id: b.id,
+                type: b.type,
+                label: b.label,
+                value: b.url || b.phone || '',
+              })),
+            })),
+          }),
         });
       } catch (error: any) {
         results.push({ name: displayName, success: false, error: error.message });
