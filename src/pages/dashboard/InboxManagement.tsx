@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Inbox, Loader2, Users, Trash2, MonitorSmartphone, Link, Copy } from 'lucide-react';
+import { Plus, Search, Inbox, Loader2, Users, Trash2, MonitorSmartphone, Link, Copy, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Navigate } from 'react-router-dom';
@@ -75,6 +75,11 @@ const InboxManagement = () => {
   // Manage users dialog
   const [selectedInbox, setSelectedInbox] = useState<InboxWithDetails | null>(null);
   const [isManageUsersOpen, setIsManageUsersOpen] = useState(false);
+
+  // Edit webhook
+  const [editingWebhookId, setEditingWebhookId] = useState<string | null>(null);
+  const [editWebhookValue, setEditWebhookValue] = useState('');
+  const [isSavingWebhook, setIsSavingWebhook] = useState(false);
 
   useEffect(() => {
     fetchInboxes();
@@ -199,6 +204,24 @@ const InboxManagement = () => {
       toast.error(error.message || 'Erro ao excluir');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleSaveWebhook = async (inboxId: string) => {
+    setIsSavingWebhook(true);
+    try {
+      const { error } = await supabase
+        .from('inboxes')
+        .update({ webhook_url: editWebhookValue.trim() || null } as any)
+        .eq('id', inboxId);
+      if (error) throw error;
+      toast.success('Webhook URL atualizada!');
+      setEditingWebhookId(null);
+      fetchInboxes();
+    } catch (error: any) {
+      toast.error(error.message || 'Erro ao atualizar webhook');
+    } finally {
+      setIsSavingWebhook(false);
     }
   };
 
@@ -362,7 +385,34 @@ const InboxManagement = () => {
               </p>
 
               {/* Webhook URL */}
-              {inbox.webhook_url && (
+              {editingWebhookId === inbox.id ? (
+                <div className="flex items-center gap-2 mb-4">
+                  <Input
+                    className="h-8 text-xs"
+                    placeholder="https://seu-n8n.com/webhook/..."
+                    value={editWebhookValue}
+                    onChange={(e) => setEditWebhookValue(e.target.value)}
+                    autoFocus
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-primary"
+                    disabled={isSavingWebhook}
+                    onClick={() => handleSaveWebhook(inbox.id)}
+                  >
+                    {isSavingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={() => setEditingWebhookId(null)}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              ) : inbox.webhook_url ? (
                 <div className="flex items-center gap-2 mb-4 p-2 rounded-lg bg-muted/30">
                   <Link className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
                   <span className="text-xs text-muted-foreground truncate flex-1">
@@ -379,9 +429,34 @@ const InboxManagement = () => {
                   >
                     <Copy className="w-3 h-3" />
                   </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => {
+                      setEditingWebhookId(inbox.id);
+                      setEditWebhookValue(inbox.webhook_url || '');
+                    }}
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="mb-4">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground h-7 px-2"
+                    onClick={() => {
+                      setEditingWebhookId(inbox.id);
+                      setEditWebhookValue('');
+                    }}
+                  >
+                    <Link className="w-3 h-3 mr-1.5" />
+                    Adicionar Webhook URL
+                  </Button>
                 </div>
               )}
-              {!inbox.webhook_url && <div className="mb-4" />}
 
               {/* Actions */}
               <div className="flex gap-2 pt-3 border-t border-border/50">
