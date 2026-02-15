@@ -72,7 +72,7 @@ const CreateInboxUserDialog = ({ open, onOpenChange, onCreated }: CreateInboxUse
     () =>
       selectedInstanceIds.length > 0
         ? inboxes.filter((ib) => selectedInstanceIds.includes(ib.instance_id))
-        : inboxes,
+        : [],
     [inboxes, selectedInstanceIds]
   );
 
@@ -260,7 +260,7 @@ const CreateInboxUserDialog = ({ open, onOpenChange, onCreated }: CreateInboxUse
                 <p className="text-sm text-muted-foreground">
                   {selectedInstanceIds.length > 0
                     ? 'Nenhuma caixa para as instâncias selecionadas'
-                    : 'Nenhuma caixa de entrada disponível'}
+                    : 'Selecione uma instância primeiro'}
                 </p>
               ) : (
                 filteredInboxes.map((inbox) => {
