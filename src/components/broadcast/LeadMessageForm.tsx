@@ -687,25 +687,41 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       try {
         await sendCarouselToNumber(lead.jid, carouselData, accessToken);
         results.push({ name: displayName, success: true });
-        // Save to HelpDesk
-        saveToHelpdesk(instance.id, lead.jid, lead.phone, lead.name || null, {
-          content: carouselData.message || '📋 Carrossel enviado',
-          media_type: 'carousel',
-          media_url: JSON.stringify({
-            message: carouselData.message,
-            cards: carouselData.cards.map(c => ({
-              id: c.id,
-              text: c.text,
-              image: c.image,
-              buttons: c.buttons.map(b => ({
-                id: b.id,
-                type: b.type,
-                label: b.label,
-                value: b.url || b.phone || '',
-              })),
-            })),
-          }),
-        });
+        // Upload carousel images and save to HelpDesk
+        try {
+          const helpdeskCards = await Promise.all(
+            carouselData.cards.map(async (c) => {
+              let imageUrl = c.image || '';
+              if (c.imageFile) {
+                imageUrl = await uploadCarouselImage(c.imageFile);
+              } else if (c.image && c.image.startsWith('data:')) {
+                const file = await base64ToFile(c.image, `card-${c.id}.jpg`);
+                imageUrl = await uploadCarouselImage(file);
+              }
+              return {
+                id: c.id,
+                text: c.text,
+                image: imageUrl,
+                buttons: c.buttons.map(b => ({
+                  id: b.id,
+                  type: b.type,
+                  label: b.label,
+                  value: b.url || b.phone || '',
+                })),
+              };
+            })
+          );
+          saveToHelpdesk(instance.id, lead.jid, lead.phone, lead.name || null, {
+            content: carouselData.message || '📋 Carrossel enviado',
+            media_type: 'carousel',
+            media_url: JSON.stringify({
+              message: carouselData.message,
+              cards: helpdeskCards,
+            }),
+          });
+        } catch (uploadErr) {
+          console.error('[LeadMessageForm] Error uploading carousel images for helpdesk:', uploadErr);
+        }
       } catch (error: any) {
         results.push({ name: displayName, success: false, error: error.message });
       }
