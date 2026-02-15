@@ -6,6 +6,7 @@ import { ChatInput } from './ChatInput';
 import { Button } from '@/components/ui/button';
 import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
+import type { Label } from './ConversationLabels';
 
 interface ChatPanelProps {
   conversation: Conversation | null;
@@ -16,9 +17,12 @@ interface ChatPanelProps {
   showingInfo?: boolean;
   onToggleList?: () => void;
   showingList?: boolean;
+  inboxLabels?: Label[];
+  assignedLabelIds?: string[];
+  onLabelsChanged?: () => void;
 }
 
-export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo, onToggleList, showingList }: ChatPanelProps) => {
+export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo, onToggleList, showingList, inboxLabels, assignedLabelIds, onLabelsChanged }: ChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -157,7 +161,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
       </div>
 
       {/* Input */}
-      <ChatInput conversation={conversation} onMessageSent={fetchMessages} />
+      <ChatInput conversation={conversation} onMessageSent={fetchMessages} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />
     </>
   );
 };

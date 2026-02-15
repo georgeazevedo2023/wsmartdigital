@@ -382,6 +382,9 @@ const HelpDesk = () => {
               onUpdateConversation={handleUpdateConversation}
               onBack={() => setMobileView('list')}
               onShowInfo={() => setMobileView('info')}
+              inboxLabels={inboxLabels}
+              assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}
+              onLabelsChanged={handleLabelsChanged}
             />
           </div>
         )}
@@ -419,6 +422,9 @@ const HelpDesk = () => {
             showingInfo={showContactInfo}
             onToggleList={() => setShowConversationList(prev => !prev)}
             showingList={showConversationList}
+            inboxLabels={inboxLabels}
+            assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}
+            onLabelsChanged={handleLabelsChanged}
           />
         </div>
 
