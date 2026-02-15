@@ -1,53 +1,55 @@
 
-# Corrigir Lista de Participantes Desaparecida e Permitir Envio para LIDs
+# Adicionar Emoji Picker nas Composicoes de Texto
 
-## Problema
-O enriquecimento automatico via `/group/info` esta SUBSTITUINDO todos os participantes do grupo pelos que tem PhoneNumber valido. Como `/group/info` tambem retorna numeros mascarados para contatos LID, o filtro remove a maioria dos participantes, resultando em "0 de 0 contatos" e "Nenhum membro regular encontrado".
+## Resumo
+Adicionar um botao de emoji ao lado dos campos de texto (mensagem e legenda) nos formularios de composicao de mensagens, tanto no Disparador de Grupos quanto no Disparador de Leads e no envio individual para grupo.
 
-Os logs confirmam: "Group xxx@g.us : 2 participants with valid phone" - apenas 2 de potencialmente dezenas de membros passam no filtro.
+## O que sera feito
 
-## Causa Raiz
-1. A acao `resolve-lids` filtra participantes que nao tem PhoneNumber valido e retorna so os que tem
-2. O frontend substitui TODOS os participantes pelos retornados (apenas 2), perdendo todos os outros
-3. O `useEffect` que sincroniza `enrichedGroups` com `selectedGroups` pode causar loops de reset
+1. **Criar componente `EmojiPicker`** - Um componente reutilizavel que exibe um popover com emojis organizados por categorias (Smileys, Gestos, Coracoes, Objetos, etc). Sera um picker nativo usando emojis Unicode, sem dependencia externa.
 
-## Solucao
+2. **Integrar nos 3 formularios:**
+   - `BroadcastMessageForm.tsx` (Disparador de Grupos) - no campo de texto da mensagem e na legenda de midia
+   - `LeadMessageForm.tsx` (Disparador de Leads) - no campo de texto da mensagem e na legenda de midia
+   - `SendMessageForm.tsx` (Envio individual para grupo) - no campo de texto da mensagem
 
-### Abordagem: Enriquecer sem substituir + permitir envio para LIDs
+3. **Comportamento:**
+   - Botao com icone de emoji (smile) posicionado ao lado do campo de texto
+   - Ao clicar, abre um popover com grid de emojis
+   - Ao selecionar um emoji, ele e inserido na posicao do cursor no textarea
+   - Campo de busca para filtrar emojis
 
-Em vez de substituir todos os participantes, apenas ENRIQUECER os que puderem ser enriquecidos e MANTER os LIDs como estao. A API UAZAPI aceita envio para qualquer JID valido (incluindo `@lid`) atraves do campo `number` no `/send/text`.
+## Secao Tecnica
 
-### Secao Tecnica
+### Novo arquivo: `src/components/ui/emoji-picker.tsx`
 
-**1. Reverter `enrichedGroups` em `BroadcastMessageForm.tsx`**
-- Remover o estado `enrichedGroups` e a logica de `effectiveGroups`
-- Voltar a passar `selectedGroups` diretamente ao `ParticipantSelector`
-- Remover o prop `onParticipantsUpdated`
-- Isso elimina o bug de substituicao total
+Componente que usa o Popover do Radix UI (ja instalado) para exibir um grid de emojis populares organizados por categoria. Inclui:
+- ~200 emojis populares organizados em categorias
+- Campo de busca
+- Tabs por categoria
+- Callback `onEmojiSelect(emoji: string)` para inserir no texto
 
-**2. Modificar `resolve-lids` no proxy (`uazapi-proxy/index.ts`)**
-- Retornar TODOS os participantes (incluindo os sem PhoneNumber valido)
-- Para os que tem PhoneNumber valido, incluir o phone
-- Para os que nao tem, retornar o JID original como identificador
-- Isso permite que o frontend enriqueca os que puder sem perder ninguem
+### Modificacoes nos formularios
 
-**3. Modificar `ParticipantSelector.tsx` - enriquecimento local sem callback**
-- Em vez de chamar `onParticipantsUpdated`, manter o enriquecimento local no componente
-- Criar um estado `enrichedMap` (Map de JID original -> dados enriquecidos)
-- No `useMemo` de `uniqueParticipants`, aplicar o `enrichedMap` para substituir displayName e phone quando disponivel
-- LID participants que nao foram enriquecidos continuam visiveis e selecionaveis
+Em cada formulario, adicionar um botao de emoji ao lado do textarea com a seguinte logica:
 
-**4. Permitir envio para LIDs (`BroadcastMessageForm.tsx`)**
-- Remover qualquer restricao que impeca envio para JIDs com `@lid`
-- A funcao `sendToNumber` ja usa o JID diretamente no campo `number` do payload
-- UAZAPI aceita `@lid` como destinatario valido - o gateway resolve internamente
+```text
++------------------------------------------+
+| Mensagem                          0/4096 |
+| +--------------------------------------+ |
+| | [textarea]                           | |
+| |                                      | |
+| +--------------------------------------+ |
+| [emoji-btn]                              |
++------------------------------------------+
+```
 
-**5. Melhorar exibicao de LIDs no `ParticipantSelector`**
-- Em vez de "[Sem numero]", exibir o PushName como label principal
-- Mostrar badge "LID" mas sem aviso/warning que impeca selecao
-- Remover o botao "Buscar numeros" e o banner de warning que sugere que LIDs sao problematicos
+- O botao de emoji usa o componente `EmojiPicker`
+- Ao selecionar emoji, insere no final do texto atual (simples e confiavel)
+- Aplicado tanto no campo "Mensagem" (tab Texto) quanto no campo "Legenda" (tab Midia)
 
-**Arquivos modificados:**
-- `src/components/broadcast/BroadcastMessageForm.tsx` (reverter enrichedGroups, voltar a usar selectedGroups direto)
-- `src/components/broadcast/ParticipantSelector.tsx` (enriquecimento local, permitir LIDs, remover warning)
-- `supabase/functions/uazapi-proxy/index.ts` (retornar todos participantes, nao so os com phone valido)
+### Arquivos modificados:
+- `src/components/ui/emoji-picker.tsx` (novo)
+- `src/components/broadcast/BroadcastMessageForm.tsx` (adicionar emoji picker nos campos de texto e legenda)
+- `src/components/broadcast/LeadMessageForm.tsx` (adicionar emoji picker nos campos de texto e legenda)
+- `src/components/group/SendMessageForm.tsx` (adicionar emoji picker no campo de texto)
