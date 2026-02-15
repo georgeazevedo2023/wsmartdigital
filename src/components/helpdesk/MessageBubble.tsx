@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ImageIcon, ExternalLink, FileText, Download, Loader2 } from 'lucide-react';
+import { ImageIcon, ExternalLink, FileText, Download, Loader2, LayoutGrid, Link, Phone, MessageSquare } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { supabase } from '@/integrations/supabase/client';
+import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import type { Message } from '@/pages/dashboard/HelpDesk';
 
 interface MessageBubbleProps {
@@ -16,6 +17,24 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
   const isNote = message.direction === 'private_note';
   const [imgError, setImgError] = useState(false);
   const [downloading, setDownloading] = useState(false);
+
+  // Parse carousel data from media_url when media_type is 'carousel'
+  const carouselData = useMemo(() => {
+    if (message.media_type !== 'carousel' || !message.media_url) return null;
+    try {
+      return JSON.parse(message.media_url) as {
+        message?: string;
+        cards?: Array<{
+          id?: string;
+          text?: string;
+          image?: string;
+          buttons?: Array<{ type: string; label: string; value?: string }>;
+        }>;
+      };
+    } catch {
+      return null;
+    }
+  }, [message.media_type, message.media_url]);
 
   const handleDocumentOpen = async () => {
     if (!message.media_url || !instanceId) return;
@@ -180,7 +199,60 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
           );
         })()}
 
-        {message.media_type !== 'document' && message.content && typeof message.content === 'string' && (
+        {/* Carousel */}
+        {message.media_type === 'carousel' && carouselData && (
+          <div className="mb-1">
+            {carouselData.message && (
+              <p className="whitespace-pre-wrap break-words mb-2 font-medium flex items-center gap-1.5">
+                <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                {carouselData.message}
+              </p>
+            )}
+            {carouselData.cards && carouselData.cards.length > 0 && (
+              <ScrollArea className="w-full">
+                <div className="flex gap-2 pb-2">
+                  {carouselData.cards.map((card, idx) => (
+                    <div
+                      key={card.id || idx}
+                      className="shrink-0 w-48 rounded-lg border border-border bg-muted/30 overflow-hidden"
+                    >
+                      {card.image && (
+                        <div className="aspect-[4/3] overflow-hidden">
+                          <img
+                            src={card.image}
+                            alt={`Card ${idx + 1}`}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                      )}
+                      {card.text && (
+                        <p className="text-xs p-2 whitespace-pre-wrap break-words">{card.text}</p>
+                      )}
+                      {card.buttons && card.buttons.length > 0 && (
+                        <div className="px-2 pb-2 space-y-1">
+                          {card.buttons.map((btn, bIdx) => (
+                            <div
+                              key={bIdx}
+                              className="flex items-center gap-1 text-[10px] text-primary truncate"
+                            >
+                              {btn.type === 'URL' && <Link className="h-3 w-3 shrink-0" />}
+                              {btn.type === 'CALL' && <Phone className="h-3 w-3 shrink-0" />}
+                              {btn.type === 'REPLY' && <MessageSquare className="h-3 w-3 shrink-0" />}
+                              <span className="truncate">{btn.label}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <ScrollBar orientation="horizontal" />
+              </ScrollArea>
+            )}
+          </div>
+        )}
+
+        {message.media_type !== 'document' && message.media_type !== 'carousel' && message.content && typeof message.content === 'string' && (
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         )}
         {message.content && typeof message.content === 'object' && (
