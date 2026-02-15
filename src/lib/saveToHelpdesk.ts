@@ -59,17 +59,49 @@ export const saveToHelpdesk = async (
           .eq('id', contactId);
       }
     } else {
-      // Fallback: search by phone number (last 8 digits match)
-      const normalizedPhone = normalizePhone(contactPhone);
-      const { data: phoneContacts } = await supabase
-        .from('contacts')
-        .select('id, phone, jid')
-        .limit(50);
+      // Fallback 1: Try JID variation (Brazilian 9th digit issue)
+      // e.g. 5581993856099@s.whatsapp.net vs 558193856099@s.whatsapp.net
+      const jidNumber = contactJid.replace('@s.whatsapp.net', '');
+      let altJid = '';
+      // If number has 13 digits (55 + 2-digit DDD + 9 + 8 digits), try without the 9
+      if (jidNumber.length === 13 && jidNumber.startsWith('55')) {
+        altJid = '55' + jidNumber.slice(2, 4) + jidNumber.slice(5) + '@s.whatsapp.net';
+      }
+      // If number has 12 digits (55 + 2-digit DDD + 8 digits), try with the 9
+      else if (jidNumber.length === 12 && jidNumber.startsWith('55')) {
+        altJid = '55' + jidNumber.slice(2, 4) + '9' + jidNumber.slice(4) + '@s.whatsapp.net';
+      }
 
-      if (phoneContacts) {
-        const match = phoneContacts.find(c => normalizePhone(c.phone) === normalizedPhone);
-        if (match) {
-          contactId = match.id;
+      if (altJid) {
+        const { data: altContact } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('jid', altJid)
+          .maybeSingle();
+
+        if (altContact) {
+          contactId = altContact.id;
+          if (contactName) {
+            await supabase
+              .from('contacts')
+              .update({ name: contactName })
+              .eq('id', contactId);
+          }
+        }
+      }
+
+      // Fallback 2: Search by phone suffix (last 8 digits) directly in DB
+      if (!contactId) {
+        const suffix = normalizePhone(contactPhone);
+        const { data: phoneMatch } = await supabase
+          .from('contacts')
+          .select('id')
+          .ilike('phone', `%${suffix}`)
+          .limit(1)
+          .maybeSingle();
+
+        if (phoneMatch) {
+          contactId = phoneMatch.id;
           if (contactName) {
             await supabase
               .from('contacts')
