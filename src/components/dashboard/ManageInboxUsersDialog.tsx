@@ -51,14 +51,12 @@ const ROLE_LABELS: Record<InboxRole, string> = {
   admin: 'Admin',
   gestor: 'Gestor',
   agente: 'Agente',
-  vendedor: 'Vendedor',
 };
 
 const ROLE_COLORS: Record<InboxRole, string> = {
   admin: 'bg-primary/10 text-primary border-primary/20',
   gestor: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
   agente: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  vendedor: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
 };
 
 const ManageInboxUsersDialog = ({
