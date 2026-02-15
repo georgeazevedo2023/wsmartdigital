@@ -74,8 +74,13 @@ Deno.serve(async (req) => {
     const rawPayload = await req.json()
     console.log('Webhook raw received:', JSON.stringify(rawPayload).substring(0, 500))
 
-    // Unwrap if n8n wraps the UAZAPI payload inside a "Body" key
-    const payload = rawPayload.Body?.EventType ? rawPayload.Body : rawPayload
+    // Unwrap: n8n pode enviar como array e/ou encapsular em body/Body
+    let unwrapped = rawPayload
+    if (Array.isArray(unwrapped)) {
+      unwrapped = unwrapped[0]
+    }
+    const inner = unwrapped?.body || unwrapped?.Body
+    const payload = (inner?.EventType || inner?.eventType) ? inner : unwrapped
     console.log('Webhook unwrapped EventType:', payload.EventType || payload.eventType || 'none')
 
     // UAZAPI sends EventType field
