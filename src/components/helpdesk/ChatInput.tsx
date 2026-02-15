@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2 } from 'lucide-react';
+import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
@@ -521,6 +522,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
           >
             {sendingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
           </Button>
+          <EmojiPicker onEmojiSelect={(emoji) => setText(prev => prev + emoji)} disabled={sending} />
           <Textarea
             value={text}
             onChange={e => setText(e.target.value)}
