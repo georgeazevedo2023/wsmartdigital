@@ -88,25 +88,43 @@ const HelpDesk = () => {
   const [conversationLabelsMap, setConversationLabelsMap] = useState<Record<string, string[]>>({});
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
 
-  // Fetch user's inboxes
+  const { isSuperAdmin } = useAuth();
+
+  // Fetch user's inboxes (filtered by access for non-super-admins)
   useEffect(() => {
     const fetchInboxes = async () => {
       if (!user) return;
-      const { data, error } = await supabase
-        .from('inboxes')
-        .select('id, name, instance_id')
-        .order('name');
 
-      if (!error && data && data.length > 0) {
-        setInboxes(data);
-        const targetInbox = inboxParam && data.some(ib => ib.id === inboxParam)
+      let inboxData: Inbox[] = [];
+
+      if (isSuperAdmin) {
+        const { data, error } = await supabase
+          .from('inboxes')
+          .select('id, name, instance_id')
+          .order('name');
+        if (!error && data) inboxData = data;
+      } else {
+        const { data, error } = await supabase
+          .from('inbox_users')
+          .select('inboxes(id, name, instance_id)')
+          .eq('user_id', user.id);
+        if (!error && data) {
+          inboxData = data
+            .map((d: any) => d.inboxes)
+            .filter(Boolean) as Inbox[];
+        }
+      }
+
+      if (inboxData.length > 0) {
+        setInboxes(inboxData);
+        const targetInbox = inboxParam && inboxData.some(ib => ib.id === inboxParam)
           ? inboxParam
-          : data[0].id;
+          : inboxData[0].id;
         setSelectedInboxId(targetInbox);
       }
     };
     fetchInboxes();
-  }, [user, inboxParam]);
+  }, [user, inboxParam, isSuperAdmin]);
 
   // Fetch labels for selected inbox
   const fetchLabels = useCallback(async () => {

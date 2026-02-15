@@ -82,23 +82,58 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
 
   const fetchInstances = async () => {
     try {
-      const [instancesRes, inboxesRes] = await Promise.all([
-        supabase.from('instances').select('id, name, status').order('name'),
-        supabase.from('inboxes').select('id, name, instance_id').order('name'),
-      ]);
+      if (isSuperAdmin) {
+        const [instancesRes, inboxesRes] = await Promise.all([
+          supabase.from('instances').select('id, name, status').order('name'),
+          supabase.from('inboxes').select('id, name, instance_id').order('name'),
+        ]);
 
-      if (instancesRes.error) throw instancesRes.error;
-      const allInstances = instancesRes.data || [];
-      setInstances(allInstances);
+        if (instancesRes.error) throw instancesRes.error;
+        const allInstances = instancesRes.data || [];
+        setInstances(allInstances);
 
-      const allInboxes: InboxItem[] = inboxesRes.data || [];
-      const grouped: InstanceWithInboxes[] = allInstances
-        .map(inst => ({
-          ...inst,
-          inboxes: allInboxes.filter(ib => ib.instance_id === inst.id),
-        }))
-        .filter(inst => inst.inboxes.length > 0);
-      setInstancesWithInboxes(grouped);
+        const allInboxes: InboxItem[] = inboxesRes.data || [];
+        const grouped: InstanceWithInboxes[] = allInstances
+          .map(inst => ({
+            ...inst,
+            inboxes: allInboxes.filter(ib => ib.instance_id === inst.id),
+          }))
+          .filter(inst => inst.inboxes.length > 0);
+        setInstancesWithInboxes(grouped);
+      } else {
+        // Non-admin: fetch only inboxes user has access to
+        const { data: userInboxes } = await supabase
+          .from('inbox_users')
+          .select('inboxes(id, name, instance_id)')
+          .eq('user_id', user!.id);
+
+        const inboxList: InboxItem[] = (userInboxes || [])
+          .map((d: any) => d.inboxes)
+          .filter(Boolean);
+
+        // Get unique instance IDs from user's inboxes
+        const instanceIds = [...new Set(inboxList.map(ib => ib.instance_id))];
+        if (instanceIds.length > 0) {
+          const { data: instData } = await supabase
+            .from('instances')
+            .select('id, name, status')
+            .in('id', instanceIds)
+            .order('name');
+
+          const instList = instData || [];
+          setInstances(instList);
+          const grouped: InstanceWithInboxes[] = instList
+            .map(inst => ({
+              ...inst,
+              inboxes: inboxList.filter(ib => ib.instance_id === inst.id),
+            }))
+            .filter(inst => inst.inboxes.length > 0);
+          setInstancesWithInboxes(grouped);
+        } else {
+          setInstances([]);
+          setInstancesWithInboxes([]);
+        }
+      }
     } catch (error) {
       console.error('Error fetching instances:', error);
     }
@@ -169,7 +204,7 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
 
       {/* Navigation */}
       <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        {navItems.map((item) => (
+        {isSuperAdmin && navItems.map((item) => (
           <Tooltip key={item.path}>
             <TooltipTrigger asChild>
               <Link
@@ -267,8 +302,8 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
           </Tooltip>
         )}
 
-        {/* Disparador - Collapsible apenas quando NÃO colapsado */}
-        {!isCollapsed ? (
+        {/* Disparador - Collapsible apenas quando NÃO colapsado (apenas super admin) */}
+        {isSuperAdmin && (!isCollapsed ? (
           <Collapsible open={broadcastOpen} onOpenChange={setBroadcastOpen}>
             <CollapsibleTrigger asChild>
               <button
@@ -346,10 +381,10 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
             </TooltipTrigger>
             <TooltipContent side="right">Disparador</TooltipContent>
           </Tooltip>
-        )}
+        ))}
 
-        {/* Instâncias - Collapsible apenas quando NÃO colapsado */}
-        {!isCollapsed ? (
+        {/* Instâncias - Collapsible apenas quando NÃO colapsado (apenas super admin) */}
+        {isSuperAdmin && (!isCollapsed ? (
           <Collapsible open={instancesOpen} onOpenChange={setInstancesOpen}>
             <CollapsibleTrigger asChild>
               <button
@@ -433,7 +468,7 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
             </TooltipTrigger>
             <TooltipContent side="right">Instâncias</TooltipContent>
           </Tooltip>
-        )}
+        ))}
 
         {isSuperAdmin && (
           <>

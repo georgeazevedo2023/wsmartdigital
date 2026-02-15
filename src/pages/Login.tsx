@@ -7,10 +7,11 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Phone, Mail, Lock, User, ArrowRight, Loader2, Shield } from 'lucide-react';
 import { toast } from 'sonner';
+import { useEffect } from 'react';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signUp, isSuperAdmin, user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const [loginEmail, setLoginEmail] = useState('');
@@ -19,6 +20,13 @@ const Login = () => {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [signupName, setSignupName] = useState('');
+
+  // Redirecionar após login baseado no papel
+  useEffect(() => {
+    if (user) {
+      navigate(isSuperAdmin ? '/dashboard' : '/dashboard/helpdesk', { replace: true });
+    }
+  }, [user, isSuperAdmin, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +40,7 @@ const Login = () => {
       });
     } else {
       toast.success('Login realizado com sucesso!');
-      navigate('/dashboard');
+      // Redirecionamento será feito pelo useEffect abaixo após carregar o papel
     }
 
     setIsLoading(false);
