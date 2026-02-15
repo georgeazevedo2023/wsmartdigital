@@ -54,9 +54,9 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
-// Auth route wrapper (redirect to dashboard if already logged in)
+// Auth route wrapper (redirect based on role if already logged in)
 const AuthRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, loading } = useAuth();
+  const { user, loading, isSuperAdmin } = useAuth();
 
   if (loading) {
     return (
@@ -67,7 +67,26 @@ const AuthRoute = ({ children }: { children: React.ReactNode }) => {
   }
 
   if (user) {
-    return <Navigate to="/dashboard" replace />;
+    return <Navigate to={isSuperAdmin ? "/dashboard" : "/dashboard/helpdesk"} replace />;
+  }
+
+  return <>{children}</>;
+};
+
+// Admin-only route wrapper
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isSuperAdmin, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) {
+    return <Navigate to="/dashboard/helpdesk" replace />;
   }
 
   return <>{children}</>;
@@ -93,20 +112,20 @@ const AppRoutes = () => {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Suspense fallback={<PageLoader />}><DashboardHome /></Suspense>} />
-        <Route path="broadcast" element={<Suspense fallback={<PageLoader />}><Broadcaster /></Suspense>} />
-        <Route path="broadcast/history" element={<Suspense fallback={<PageLoader />}><BroadcastHistoryPage /></Suspense>} />
-        <Route path="broadcast/leads" element={<Suspense fallback={<PageLoader />}><LeadsBroadcaster /></Suspense>} />
-        <Route path="instances" element={<Suspense fallback={<PageLoader />}><Instances /></Suspense>} />
-        <Route path="instances/:id" element={<Suspense fallback={<PageLoader />}><InstanceDetails /></Suspense>} />
-        <Route path="instances/:instanceId/groups/:groupId" element={<Suspense fallback={<PageLoader />}><GroupDetails /></Suspense>} />
-        <Route path="instances/:instanceId/groups/:groupId/send" element={<Suspense fallback={<PageLoader />}><SendToGroup /></Suspense>} />
-        <Route path="users" element={<Suspense fallback={<PageLoader />}><UsersManagement /></Suspense>} />
-        <Route path="settings" element={<Suspense fallback={<PageLoader />}><Settings /></Suspense>} />
-        <Route path="scheduled" element={<Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense>} />
+        <Route index element={<AdminRoute><Suspense fallback={<PageLoader />}><DashboardHome /></Suspense></AdminRoute>} />
+        <Route path="broadcast" element={<AdminRoute><Suspense fallback={<PageLoader />}><Broadcaster /></Suspense></AdminRoute>} />
+        <Route path="broadcast/history" element={<AdminRoute><Suspense fallback={<PageLoader />}><BroadcastHistoryPage /></Suspense></AdminRoute>} />
+        <Route path="broadcast/leads" element={<AdminRoute><Suspense fallback={<PageLoader />}><LeadsBroadcaster /></Suspense></AdminRoute>} />
+        <Route path="instances" element={<AdminRoute><Suspense fallback={<PageLoader />}><Instances /></Suspense></AdminRoute>} />
+        <Route path="instances/:id" element={<AdminRoute><Suspense fallback={<PageLoader />}><InstanceDetails /></Suspense></AdminRoute>} />
+        <Route path="instances/:instanceId/groups/:groupId" element={<AdminRoute><Suspense fallback={<PageLoader />}><GroupDetails /></Suspense></AdminRoute>} />
+        <Route path="instances/:instanceId/groups/:groupId/send" element={<AdminRoute><Suspense fallback={<PageLoader />}><SendToGroup /></Suspense></AdminRoute>} />
+        <Route path="users" element={<AdminRoute><Suspense fallback={<PageLoader />}><UsersManagement /></Suspense></AdminRoute>} />
+        <Route path="settings" element={<AdminRoute><Suspense fallback={<PageLoader />}><Settings /></Suspense></AdminRoute>} />
+        <Route path="scheduled" element={<AdminRoute><Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense></AdminRoute>} />
         <Route path="helpdesk" element={<Suspense fallback={<PageLoader />}><HelpDesk /></Suspense>} />
-        <Route path="inboxes" element={<Suspense fallback={<PageLoader />}><InboxManagement /></Suspense>} />
-        <Route path="inbox-users" element={<Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense>} />
+        <Route path="inboxes" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxManagement /></Suspense></AdminRoute>} />
+        <Route path="inbox-users" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></AdminRoute>} />
         {/* Redirect alias for legacy/bookmarked URLs */}
         <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
       </Route>
