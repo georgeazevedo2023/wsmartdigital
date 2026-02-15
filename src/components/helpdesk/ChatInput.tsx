@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2 } from 'lucide-react';
+import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2, Plus, ImageIcon, Smile } from 'lucide-react';
 import { EmojiPicker } from '@/components/ui/emoji-picker';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { supabase } from '@/integrations/supabase/client';
@@ -18,6 +19,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [isNote, setIsNote] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -27,6 +29,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
   const [sendingFile, setSendingFile] = useState(false);
 
   useEffect(() => {
@@ -338,6 +341,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
     } finally {
       setSendingFile(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
+      if (imageInputRef.current) imageInputRef.current.value = '';
     }
   };
 
@@ -494,7 +498,7 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
             type="file"
             ref={fileInputRef}
             className="hidden"
-            accept=".jpg,.jpeg,.png,.gif,.webp,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar"
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) {
@@ -506,26 +510,71 @@ export const ChatInput = ({ conversation, onMessageSent }: ChatInputProps) => {
               }
             }}
           />
-          <Button
-            variant={isNote ? 'default' : 'ghost'}
-            size="icon"
-            className="shrink-0 h-9 w-9"
-            onClick={() => setIsNote(!isNote)}
-            title="Nota privada"
-          >
-            <StickyNote className="w-4 h-4" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="shrink-0 h-9 w-9"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isNote || sendingFile}
-            title="Enviar arquivo ou imagem"
-          >
-            {sendingFile ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
-          </Button>
-          <EmojiPicker onEmojiSelect={(emoji) => setText(prev => prev + emoji)} disabled={sending} />
+          <input
+            type="file"
+            ref={imageInputRef}
+            className="hidden"
+            accept=".jpg,.jpeg,.png,.gif,.webp"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                if (file.size > 20 * 1024 * 1024) {
+                  toast.error('Arquivo deve ter no máximo 20MB');
+                  return;
+                }
+                handleSendFile(file);
+              }
+            }}
+          />
+
+          {sendingFile ? (
+            <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" disabled>
+              <Loader2 className="w-4 h-4 animate-spin" />
+            </Button>
+          ) : (
+            <Popover open={menuOpen} onOpenChange={setMenuOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9">
+                  <Plus className="w-5 h-5" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent side="top" align="start" className="w-48 p-1.5">
+                <div className="flex flex-col gap-0.5">
+                  <button
+                    className={`flex items-center gap-2 w-full px-3 py-2 text-sm rounded-md transition-colors ${
+                      isNote
+                        ? 'bg-yellow-500/20 text-yellow-400'
+                        : 'hover:bg-accent text-foreground'
+                    }`}
+                    onClick={() => { setIsNote(!isNote); setMenuOpen(false); }}
+                  >
+                    <StickyNote className="w-4 h-4" />
+                    {isNote ? 'Desativar nota' : 'Nota privada'}
+                  </button>
+                  <button
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-md hover:bg-accent text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                    onClick={() => { imageInputRef.current?.click(); setMenuOpen(false); }}
+                    disabled={isNote}
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    Enviar imagem
+                  </button>
+                  <button
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-md hover:bg-accent text-foreground disabled:opacity-50 disabled:pointer-events-none"
+                    onClick={() => { fileInputRef.current?.click(); setMenuOpen(false); }}
+                    disabled={isNote}
+                  >
+                    <Paperclip className="w-4 h-4" />
+                    Enviar documento
+                  </button>
+                  <div className="px-1 py-1">
+                    <EmojiPicker onEmojiSelect={(emoji) => { setText(prev => prev + emoji); setMenuOpen(false); }} disabled={sending} />
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+
           <Textarea
             value={text}
             onChange={e => setText(e.target.value)}
