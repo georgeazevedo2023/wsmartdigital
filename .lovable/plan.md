@@ -1,61 +1,77 @@
 
-# Corrigir Duplicacao de Contato e Exibicao de Carrossel no HelpDesk
+# Corrigir Busca de Contato e Imagens do Carrossel no HelpDesk
 
-## Problemas Identificados
+## Problema 1: Conversa duplicada (contato nao encontrado)
 
-### Problema 1: Conversa duplicada
-O contato "George" ja existe no banco com o JID `558193856099@s.whatsapp.net` (sem o 9 extra). Porem, o lead no Disparador tem o telefone `81993856099`, que gera o JID `5581993856099@s.whatsapp.net`. Como os JIDs sao diferentes, o `saveToHelpdesk` nao encontra o contato existente e cria um novo, resultando em uma conversa separada.
+O banco tem dois contatos para George:
+- `558193856099@s.whatsapp.net` (George real, telefone `558193856099`)  
+- `5581993856099@s.whatsapp.net` (criado incorretamente, telefone `81993856099`)
 
-**Solucao**: Ao buscar o contato, alem de procurar pelo JID exato, tambem buscar pelo numero de telefone. Se encontrar pelo telefone, usar o contato existente.
+A busca por telefone carrega apenas 50 contatos sem filtro e compara localmente. Se George nao estiver entre os 50, ele nao e encontrado.
 
-### Problema 2: Carrossel aparece apenas como texto
-O carrossel esta sendo salvo com `media_type: 'text'` e apenas o titulo como conteudo. Os dados dos cards (imagens, textos, botoes) nao sao armazenados na mensagem do HelpDesk.
+**Solucao**: Usar uma query SQL com filtro `LIKE` nos ultimos 8 digitos do telefone, em vez de carregar contatos e filtrar no frontend.
 
-**Solucao**: Salvar o carrossel com `media_type: 'carousel'` e armazenar os dados dos cards no campo `media_url` como JSON serializado. No `MessageBubble`, adicionar renderizacao visual dos cards do carrossel.
+## Problema 2: Imagens dos cards nao aparecem
 
-## O que sera feito
+Quando o usuario seleciona um arquivo local, a imagem fica em `card.imageFile` (File object) e `card.image` pode ser base64 ou vazio. Ao salvar no helpdesk, estamos passando `c.image` diretamente, que pode ser base64 (nao renderiza bem) ou string vazia.
 
-1. **`src/lib/saveToHelpdesk.ts`**: Alterar a busca de contato para usar fallback por telefone (normalizado) quando o JID exato nao for encontrado. Adicionar suporte para dados de carrossel no campo `media_url`.
+**Solucao**: Antes de salvar no helpdesk, fazer upload das imagens dos cards para o storage (usando `uploadCarouselImage`) e usar as URLs resultantes.
 
-2. **`src/components/broadcast/LeadMessageForm.tsx`**: Alterar a chamada do `saveToHelpdesk` no envio de carrossel para incluir `media_type: 'carousel'` e os dados dos cards serializados.
+## Alteracoes
 
-3. **`src/components/helpdesk/MessageBubble.tsx`**: Adicionar renderizacao visual para mensagens do tipo `carousel`, exibindo os cards com imagens, textos e botoes.
+### 1. `src/lib/saveToHelpdesk.ts`
 
-## Secao Tecnica
-
-### Logica de busca de contato melhorada (saveToHelpdesk.ts)
+Substituir a busca de contatos por telefone (que carrega 50 e filtra local) por uma query com filtro `ilike` nos ultimos 8 digitos:
 
 ```text
-1. Buscar contato por JID exato
-2. Se nao encontrar, normalizar o telefone (remover DDI 55, comparar ultimos 8-10 digitos)
-3. Buscar contatos cujo telefone termine com os mesmos digitos
-4. Se encontrar match, usar o contato existente (e sua conversa)
-5. Se nao encontrar nenhum, criar novo contato
+// Antes: carrega 50 contatos e filtra no JS
+const { data: phoneContacts } = await supabase
+  .from('contacts').select('id, phone, jid').limit(50);
+const match = phoneContacts.find(...)
+
+// Depois: busca diretamente no banco
+const suffix = normalizePhone(contactPhone); // ultimos 8 digitos
+const { data: phoneMatch } = await supabase
+  .from('contacts')
+  .select('id')
+  .ilike('phone', `%${suffix}`)
+  .limit(1)
+  .maybeSingle();
 ```
 
-### Interface atualizada (saveToHelpdesk.ts)
+Tambem buscar pelo JID com variacao do nono digito (tentar ambas as formas):
+```text
+// Se JID original e 5581993856099@s.whatsapp.net, tambem tentar 558193856099@s.whatsapp.net
+```
 
-Adicionar campo opcional `carousel_data` na interface `HelpdeskMessageData` para permitir passar os dados completos do carrossel. Quando presente, serializar como JSON e armazenar no campo `media_url`.
+### 2. `src/components/broadcast/LeadMessageForm.tsx`
 
-### Chamada atualizada (LeadMessageForm.tsx)
+No `handleSendCarousel`, antes de chamar `saveToHelpdesk`, fazer upload das imagens dos cards que sao arquivos locais ou base64:
 
 ```text
-saveToHelpdesk(instance.id, lead.jid, lead.phone, lead.name, {
-  content: carouselData.message || 'Carrossel enviado',
-  media_type: 'carousel',
-  media_url: JSON.stringify(carouselData)  // dados completos dos cards
-})
+// Fazer upload de imagens antes de salvar no helpdesk
+const helpdeskCards = await Promise.all(
+  carouselData.cards.map(async (c) => {
+    let imageUrl = c.image || '';
+    if (c.imageFile) {
+      imageUrl = await uploadCarouselImage(c.imageFile);
+    } else if (c.image && c.image.startsWith('data:')) {
+      const file = await base64ToFile(c.image, `card-${c.id}.jpg`);
+      imageUrl = await uploadCarouselImage(file);
+    }
+    return { id: c.id, text: c.text, image: imageUrl, buttons: ... };
+  })
+);
+
+saveToHelpdesk(..., {
+  media_url: JSON.stringify({ message: ..., cards: helpdeskCards })
+});
 ```
 
-### Renderizacao no MessageBubble
+### 3. Limpeza do contato duplicado
 
-Para mensagens com `media_type === 'carousel'`, fazer parse do JSON em `media_url` e renderizar:
-- Titulo/mensagem principal
-- Cards com imagem (aspect-ratio 4:3), texto e botoes estilizados
-- Layout horizontal com scroll para os cards
+Apos corrigir o codigo, o contato duplicado `5581993856099@s.whatsapp.net` (id `1c9987f5-...`) criado erroneamente pode ser removido manualmente pelo banco, ou sera ignorado nas proximas buscas ja que George sera encontrado corretamente.
 
 ### Arquivos modificados:
-- `src/lib/saveToHelpdesk.ts` - Busca por telefone + suporte a carousel_data
-- `src/components/broadcast/LeadMessageForm.tsx` - Passar dados completos do carrossel
-- `src/components/broadcast/BroadcastMessageForm.tsx` - Mesmo ajuste para carrossel
-- `src/components/helpdesk/MessageBubble.tsx` - Renderizar cards de carrossel
+- `src/lib/saveToHelpdesk.ts` - Busca de contato com query SQL filtrada + variacao de JID
+- `src/components/broadcast/LeadMessageForm.tsx` - Upload de imagens dos cards antes de salvar no helpdesk
