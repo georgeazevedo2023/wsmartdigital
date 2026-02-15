@@ -1,76 +1,84 @@
 
 
-# Adicionar Campo de Webhook URL na Caixa de Entrada
+# Corrigir Download de Documentos no HelpDesk
 
-## Contexto
+## Problema
 
-Sim, o sistema precisa de um webhook do n8n (ou direto da UAZAPI) para receber mensagens no HelpDesk. Atualmente, o webhook endpoint e a edge function `whatsapp-webhook`, que recebe os eventos, identifica a instancia pelo `instanceName` no payload e roteia para a inbox correta.
+Ao clicar no botao de download de um documento PDF no HelpDesk, o sistema baixa o arquivo via proxy, cria uma blob URL (`blob:https://...`) e tenta abrir em nova aba. O Chrome bloqueia essa URL, exibindo "ERR_BLOCKED_BY_CLIENT".
 
-O campo de webhook URL na inbox serve para o admin registrar/visualizar a URL do n8n que deve ser configurada na UAZAPI para aquela instancia, facilitando o gerenciamento.
+Isso acontece porque documentos recebidos (incoming) sao armazenados com a URL da UAZAPI (que requer autenticacao), e o sistema precisa usar o proxy para baixar. O blob URL resultante nao funciona em nova aba.
+
+## Solucao
+
+Fazer upload dos documentos recebidos para o Storage (bucket `helpdesk-media`) no momento do webhook, armazenando a URL publica no banco. Assim, o download funciona com link direto, sem proxy nem blob.
 
 ## Alteracoes
 
-### 1. Migracacao do Banco de Dados
+### 1. Edge Function `whatsapp-webhook/index.ts`
 
-Adicionar coluna `webhook_url` (texto, nullable) na tabela `inboxes`:
+Quando um documento (ou qualquer midia exceto audio, que ja tem tratamento proprio) chegar via webhook:
 
-```text
-ALTER TABLE public.inboxes ADD COLUMN webhook_url text;
-```
+1. Baixar o arquivo da URL da UAZAPI
+2. Fazer upload para o bucket `helpdesk-media` no Storage
+3. Salvar a URL publica resultante no campo `media_url`
 
-### 2. Formulario de Criacao (`InboxManagement.tsx`)
+Isso se aplica a documentos e imagens recebidas. Audios ja sao tratados separadamente.
 
-Adicionar campo "Webhook URL (n8n)" no dialog de criacao, abaixo do seletor de instancia:
+### 2. Componente `MessageBubble.tsx`
 
-- Label: "Webhook URL (n8n)"
-- Placeholder: "https://seu-n8n.com/webhook/..."
-- Campo opcional
-- Incluir texto de ajuda explicando que esta URL deve ser configurada no n8n para receber mensagens desta instancia
+Simplificar o `handleDocumentOpen`:
 
-### 3. Card da Inbox
-
-Exibir a webhook URL configurada no card da inbox (truncada), com botao de copiar para facilitar o uso.
+- Se a `media_url` ja for uma URL publica do Storage (contendo o dominio do projeto), abrir diretamente com `window.open(url, '_blank')`
+- Manter o fallback via proxy apenas para URLs legadas da UAZAPI
 
 ## Secao Tecnica
 
-### Estado adicional no componente
+### Webhook - Upload para Storage
+
+Apos obter a URL persistente da UAZAPI, adicionar logica para:
 
 ```text
-const [webhookUrl, setWebhookUrl] = useState('');
-```
-
-### Campo no formulario (apos o Select de instancia)
-
-```text
-<div className="space-y-2">
-  <Label>Webhook URL (n8n)</Label>
-  <Input
-    placeholder="https://seu-n8n.com/webhook/..."
-    value={webhookUrl}
-    onChange={(e) => setWebhookUrl(e.target.value)}
-  />
-  <p className="text-xs text-muted-foreground">
-    URL do webhook do n8n que encaminha mensagens da UAZAPI para o HelpDesk
-  </p>
-</div>
-```
-
-### Insert atualizado
-
-```text
-await supabase.from('inboxes').insert({
-  name: newName.trim(),
-  instance_id: selectedInstanceId,
-  created_by: user!.id,
-  webhook_url: webhookUrl.trim() || null,
+// Baixar o arquivo da UAZAPI
+const mediaResponse = await fetch(mediaUrl, {
+  headers: { token: instance.token }
 });
+const fileBlob = await mediaResponse.arrayBuffer();
+
+// Gerar path no storage
+const ext = mime-to-extension ou fallback
+const storagePath = `webhook/${conversation.id}/${Date.now()}.${ext}`;
+
+// Upload para helpdesk-media
+await supabase.storage.from('helpdesk-media').upload(storagePath, fileBlob, {
+  contentType: mimetype
+});
+
+// Obter URL publica
+const publicUrl = supabase.storage.from('helpdesk-media').getPublicUrl(storagePath);
+mediaUrl = publicUrl.data.publicUrl;
 ```
 
-### Exibicao no card
+### MessageBubble - Abertura direta
 
-Adicionar linha com icone `Link` mostrando a URL truncada e botao de copiar ao lado, visivel apenas quando `webhook_url` estiver preenchido.
+```text
+const handleDocumentOpen = async () => {
+  if (!message.media_url) return;
+  
+  // Se ja e URL publica (Storage), abrir direto
+  const isPublicUrl = message.media_url.includes('supabase') 
+    || message.media_url.startsWith('https://');
+  
+  if (isPublicUrl && !message.media_url.includes('uazapi')) {
+    window.open(message.media_url, '_blank');
+    return;
+  }
+  
+  // Fallback: proxy para URLs legadas
+  // ... logica existente do proxy ...
+};
+```
 
 ### Arquivos modificados:
-- **Migracao SQL**: Adicionar coluna `webhook_url` na tabela `inboxes`
-- **`src/pages/dashboard/InboxManagement.tsx`**: Campo no dialog de criacao + exibicao no card
+- `supabase/functions/whatsapp-webhook/index.ts` - Upload de midia para Storage
+- `src/components/helpdesk/MessageBubble.tsx` - Abertura direta de URLs publicas
 
