@@ -18,6 +18,7 @@ import ParticipantSelector from './ParticipantSelector';
 import MessagePreview from './MessagePreview';
 import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor';
 import { uploadCarouselImage, base64ToFile } from '@/lib/uploadCarouselImage';
+import { saveToHelpdesk } from '@/lib/saveToHelpdesk';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Group } from './GroupSelector';
@@ -686,6 +687,12 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           try {
             await sendToNumber(membersToSend[j].jid, trimmedMessage, accessToken);
             successCount++;
+            // Save to HelpDesk
+            const phone = membersToSend[j].jid.replace('@s.whatsapp.net', '');
+            saveToHelpdesk(instance.id, membersToSend[j].jid, phone, null, {
+              content: trimmedMessage,
+              media_type: 'text',
+            });
           } catch (err) {
             console.error(`Erro ao enviar para ${membersToSend[j].jid}:`, err);
             failCount++;
@@ -963,6 +970,13 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
           try {
             await sendMediaToNumber(membersToSend[j].jid, finalMediaUrl, sendType, caption.trim(), docName, accessToken);
             successCount++;
+            // Save to HelpDesk
+            const phone = membersToSend[j].jid.replace('@s.whatsapp.net', '');
+            saveToHelpdesk(instance.id, membersToSend[j].jid, phone, null, {
+              content: caption.trim() || null,
+              media_type: sendType === 'ptt' ? 'audio' : sendType === 'document' ? 'document' : sendType,
+              media_url: mediaUrl.trim() || null,
+            });
           } catch (err) {
             console.error(`Erro ao enviar mídia para ${membersToSend[j].jid}:`, err);
             failCount++;
@@ -1252,6 +1266,12 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
 
             await sendCarouselToNumber(member.jid, carouselData, accessToken);
             results.push({ groupName: member.jid, success: true });
+            // Save to HelpDesk
+            const phone = member.jid.replace('@s.whatsapp.net', '');
+            saveToHelpdesk(instance.id, member.jid, phone, null, {
+              content: carouselData.message || '📋 Carrossel enviado',
+              media_type: 'text',
+            });
           } catch (error) {
             console.error(`Erro ao enviar carrossel para ${member.jid}:`, error);
             results.push({
