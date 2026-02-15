@@ -18,6 +18,7 @@ import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor'
 import { CarouselPreview } from './CarouselPreview';
 import { TemplateSelector } from './TemplateSelector';
 import { uploadCarouselImage, base64ToFile } from '@/lib/uploadCarouselImage';
+import { saveToHelpdesk } from '@/lib/saveToHelpdesk';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from './InstanceSelector';
 import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
@@ -686,6 +687,11 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       try {
         await sendCarouselToNumber(lead.jid, carouselData, accessToken);
         results.push({ name: displayName, success: true });
+        // Save to HelpDesk
+        saveToHelpdesk(instance.id, lead.jid, lead.phone, lead.name || null, {
+          content: carouselData.message || '📋 Carrossel enviado',
+          media_type: 'text',
+        });
       } catch (error: any) {
         results.push({ name: displayName, success: false, error: error.message });
       }
@@ -792,6 +798,11 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       try {
         await sendToNumber(lead.jid, message.trim(), accessToken);
         results.push({ name: displayName, success: true });
+        // Save to HelpDesk
+        saveToHelpdesk(instance.id, lead.jid, lead.phone, lead.name || null, {
+          content: message.trim(),
+          media_type: 'text',
+        });
       } catch (error: any) {
         results.push({ name: displayName, success: false, error: error.message });
       }
@@ -900,6 +911,12 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
           accessToken
         );
         results.push({ name: displayName, success: true });
+        // Save to HelpDesk
+        saveToHelpdesk(instance.id, lead.jid, lead.phone, lead.name || null, {
+          content: caption || null,
+          media_type: actualMediaType === 'ptt' ? 'audio' : mediaType === 'file' ? 'document' : actualMediaType,
+          media_url: mediaUrl || null,
+        });
       } catch (error: any) {
         results.push({ name: displayName, success: false, error: error.message });
       }
