@@ -37,7 +37,18 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
   }, [message.media_type, message.media_url]);
 
   const handleDocumentOpen = async () => {
-    if (!message.media_url || !instanceId) return;
+    if (!message.media_url) return;
+
+    // If it's a public Storage URL (not UAZAPI), open directly
+    const isPublicUrl = message.media_url.includes('supabase.co/storage') || 
+                        message.media_url.includes('lovable.dev/storage');
+    if (isPublicUrl) {
+      window.open(message.media_url, '_blank');
+      return;
+    }
+
+    // Fallback: proxy for legacy UAZAPI URLs
+    if (!instanceId) return;
     setDownloading(true);
     try {
       const { data, error } = await supabase.functions.invoke('uazapi-proxy', {
@@ -46,13 +57,11 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
 
       if (error) throw error;
 
-      // data is already a Blob when responseType isn't json
       const blob = data instanceof Blob ? data : new Blob([JSON.stringify(data)], { type: 'application/octet-stream' });
       const blobUrl = URL.createObjectURL(blob);
       window.open(blobUrl, '_blank');
     } catch (err) {
       console.error('Error downloading document:', err);
-      // Fallback: try direct link
       window.open(message.media_url, '_blank');
     } finally {
       setDownloading(false);
