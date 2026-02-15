@@ -31,7 +31,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Search, Inbox, Loader2, Users, Trash2, MonitorSmartphone } from 'lucide-react';
+import { Plus, Search, Inbox, Loader2, Users, Trash2, MonitorSmartphone, Link, Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Navigate } from 'react-router-dom';
@@ -45,6 +45,7 @@ interface InboxWithDetails {
   created_by: string;
   created_at: string;
   member_count: number;
+  webhook_url: string | null;
 }
 
 interface Instance {
@@ -64,6 +65,7 @@ const InboxManagement = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
   const [selectedInstanceId, setSelectedInstanceId] = useState('');
+  const [webhookUrl, setWebhookUrl] = useState('');
   const [instances, setInstances] = useState<Instance[]>([]);
 
   // Delete dialog
@@ -124,6 +126,7 @@ const InboxManagement = () => {
         created_by: inbox.created_by,
         created_at: inbox.created_at,
         member_count: memberCounts.get(inbox.id) || 0,
+        webhook_url: (inbox as any).webhook_url || null,
       }));
 
       setInboxes(enriched);
@@ -156,7 +159,8 @@ const InboxManagement = () => {
         name: newName.trim(),
         instance_id: selectedInstanceId,
         created_by: user!.id,
-      });
+        webhook_url: webhookUrl.trim() || null,
+      } as any);
 
       if (error) throw error;
 
@@ -164,6 +168,7 @@ const InboxManagement = () => {
       setIsCreateOpen(false);
       setNewName('');
       setSelectedInstanceId('');
+      setWebhookUrl('');
       fetchInboxes();
     } catch (error: any) {
       console.error('Error creating inbox:', error);
@@ -271,6 +276,17 @@ const InboxManagement = () => {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <Label>Webhook URL (n8n)</Label>
+                <Input
+                  placeholder="https://seu-n8n.com/webhook/..."
+                  value={webhookUrl}
+                  onChange={(e) => setWebhookUrl(e.target.value)}
+                />
+                <p className="text-xs text-muted-foreground">
+                  URL do webhook do n8n que encaminha mensagens da UAZAPI para o HelpDesk
+                </p>
+              </div>
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateOpen(false)}>
@@ -341,9 +357,31 @@ const InboxManagement = () => {
               </div>
 
               {/* Info */}
-              <p className="text-xs text-muted-foreground mb-4">
+              <p className="text-xs text-muted-foreground mb-2">
                 Criada em {new Date(inbox.created_at).toLocaleDateString('pt-BR')}
               </p>
+
+              {/* Webhook URL */}
+              {inbox.webhook_url && (
+                <div className="flex items-center gap-2 mb-4 p-2 rounded-lg bg-muted/30">
+                  <Link className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-xs text-muted-foreground truncate flex-1">
+                    {inbox.webhook_url}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0"
+                    onClick={() => {
+                      navigator.clipboard.writeText(inbox.webhook_url!);
+                      toast.success('URL copiada!');
+                    }}
+                  >
+                    <Copy className="w-3 h-3" />
+                  </Button>
+                </div>
+              )}
+              {!inbox.webhook_url && <div className="mb-4" />}
 
               {/* Actions */}
               <div className="flex gap-2 pt-3 border-t border-border/50">
