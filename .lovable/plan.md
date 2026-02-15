@@ -1,62 +1,67 @@
 
-# Etiquetas (Labels) no HelpDesk
+# Adicionar Etiquetas no Chat e Remocao Rapida
 
-## Resumo
+## Objetivo
 
-Adicionar sistema de etiquetas coloridas por caixa de entrada, com gerenciamento (criar, editar, excluir) e atribuicao de etiquetas a conversas. As tabelas `labels` e `conversation_labels` ja existem no banco de dados.
+1. Adicionar opcao "Etiquetas" no menu "+" do ChatInput (junto com Nota privada, Enviar imagem, Enviar documento)
+2. Permitir remover etiquetas rapidamente clicando no "x" dos badges no ContactInfoPanel
 
-## Funcionalidades
+## Alteracoes
 
-### 1. Gerenciamento de Etiquetas
-- Botao no cabecalho da lista de conversas (ou no seletor de inbox) para abrir dialog de gerenciamento
-- Criar etiqueta: nome + cor (paleta pre-definida)
-- Editar e excluir etiquetas existentes
-- Etiquetas sao por caixa de entrada (inbox)
+### 1. ChatInput.tsx - Adicionar opcao de etiquetas no menu "+"
 
-### 2. Atribuir Etiquetas a Conversas
-- No painel de informacoes do contato (`ContactInfoPanel`), secao "Etiquetas" com as etiquetas atuais
-- Botao "+" para abrir popover/dropdown com etiquetas disponiveis da inbox
-- Clicar em uma etiqueta adiciona/remove da conversa (toggle)
-- Etiquetas exibidas como badges coloridos
+- Adicionar um item "Etiquetas" no popover do menu "+" que abre um sub-popover com a lista de etiquetas (usando LabelPicker)
+- O componente precisa receber novas props: `inboxLabels`, `assignedLabelIds`, `conversationId`, e `onLabelsChanged`
+- Ao clicar em "Etiquetas" no menu, abre o LabelPicker inline dentro do popover
 
-### 3. Exibir Etiquetas na Lista de Conversas
-- No `ConversationItem`, exibir badges pequenos das etiquetas atribuidas abaixo da ultima mensagem
+### 2. ChatPanel.tsx - Passar props de labels para ChatInput
 
-### 4. Filtrar por Etiqueta (bonus)
-- Dropdown de filtro por etiqueta na lista de conversas
+- Receber as props `inboxLabels`, `assignedLabelIds` e `onLabelsChanged` do HelpDesk
+- Repassar para o ChatInput
+
+### 3. HelpDesk.tsx - Passar props de labels para ChatPanel
+
+- Passar `inboxLabels`, `assignedLabelIds` (do mapa) e `onLabelsChanged` para o ChatPanel (tanto desktop quanto mobile)
+
+### 4. ConversationLabels.tsx - Adicionar botao de remover
+
+- Adicionar prop opcional `onRemove(labelId)` que, quando presente, exibe um botao "x" em cada badge
+- Ao clicar no "x", chama `onRemove` com o id da etiqueta
+
+### 5. ContactInfoPanel.tsx - Usar remocao rapida
+
+- Passar callback `onRemove` para o ConversationLabels que remove a etiqueta da conversa via Supabase (delete na tabela `conversation_labels`) e chama `onLabelsChanged`
 
 ## Secao Tecnica
 
-### Banco de Dados
-Nenhuma migracao necessaria. As tabelas ja existem:
-- `labels` (id, inbox_id, name, color) com RLS por inbox
-- `conversation_labels` (id, conversation_id, label_id) com RLS por inbox via conversation
+### ChatInput.tsx
+- Importar `LabelPicker` e tipos
+- Novas props na interface: `inboxLabels?: Label[]`, `assignedLabelIds?: string[]`, `onLabelsChanged?: () => void`
+- Adicionar item no menu popover com icone `Tags` e texto "Etiquetas"
+- Ao clicar, mostra as etiquetas inline no menu (lista com checkboxes, similar ao LabelPicker)
 
-### Novos Componentes
-1. **`src/components/helpdesk/ManageLabelsDialog.tsx`**
-   - Dialog com lista de etiquetas da inbox selecionada
-   - Formulario inline para criar nova etiqueta (nome + seletor de cor)
-   - Botoes editar/excluir por etiqueta
-   - CRUD via Supabase nas tabelas `labels`
+### ChatPanel.tsx
+- Novas props: `inboxLabels`, `assignedLabelIds`, `onLabelsChanged`
+- Passar para `<ChatInput ... inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />`
 
-2. **`src/components/helpdesk/ConversationLabels.tsx`**
-   - Componente reutilizavel que exibe badges das etiquetas de uma conversa
-   - Usado no `ContactInfoPanel` e no `ConversationItem`
+### HelpDesk.tsx
+- Nas duas renderizacoes de ChatPanel (mobile e desktop), passar:
+  - `inboxLabels={inboxLabels}`
+  - `assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}`
+  - `onLabelsChanged={handleLabelsChanged}`
 
-3. **`src/components/helpdesk/LabelPicker.tsx`**
-   - Popover com lista de etiquetas da inbox
-   - Toggle (checkbox) para adicionar/remover de uma conversa
-   - Usado no `ContactInfoPanel`
+### ConversationLabels.tsx
+- Nova prop opcional: `onRemove?: (labelId: string) => void`
+- Quando presente, cada badge exibe um botao "x" (icone X de 8px) no final
+- Ao clicar no "x", chama `onRemove(label.id)`
 
-### Alteracoes em Arquivos Existentes
-- **`ContactInfoPanel.tsx`**: Adicionar secao "Etiquetas" com `ConversationLabels` + `LabelPicker` + botao para abrir `ManageLabelsDialog`
-- **`ConversationItem.tsx`**: Exibir `ConversationLabels` (badges pequenos) na area da ultima mensagem
-- **`ConversationList.tsx`**: Adicionar botao de gerenciar etiquetas no cabecalho e filtro por etiqueta
-- **`HelpDesk.tsx`**: Buscar labels e conversation_labels junto com as conversas, passar como props
+### ContactInfoPanel.tsx
+- Criar funcao `handleRemoveLabel` que faz delete na `conversation_labels` e chama `onLabelsChanged`
+- Passar `onRemove={handleRemoveLabel}` para `<ConversationLabels />`
 
-### Fluxo de Dados
-1. `HelpDesk.tsx` busca `labels` da inbox selecionada e `conversation_labels` das conversas carregadas
-2. Passa as labels e conversation_labels como props para os componentes filhos
-3. `ContactInfoPanel` permite adicionar/remover etiquetas via `LabelPicker`
-4. `ManageLabelsDialog` faz CRUD direto na tabela `labels`
-5. Ao alterar etiquetas, refaz o fetch para atualizar a UI
+### Arquivos modificados:
+- `src/components/helpdesk/ChatInput.tsx`
+- `src/components/helpdesk/ChatPanel.tsx`
+- `src/pages/dashboard/HelpDesk.tsx`
+- `src/components/helpdesk/ConversationLabels.tsx`
+- `src/components/helpdesk/ContactInfoPanel.tsx`
