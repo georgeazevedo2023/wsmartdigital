@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { Send, Users, Clock } from 'lucide-react';
+import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { toast } from '@/hooks/use-toast';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
 import { ScheduleMessageDialog, ScheduleConfig } from './ScheduleMessageDialog';
@@ -241,6 +242,7 @@ const SendMessageForm = ({ instanceToken, groupJid, groupName, participants, onM
         />
         
         <div className="flex items-center justify-between">
+          <EmojiPicker onEmojiSelect={(emoji) => setMessage(prev => prev + emoji)} disabled={isSending} />
           <span className={`text-xs ${isOverLimit ? 'text-destructive' : 'text-muted-foreground'}`}>
             {characterCount.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()} caracteres
           </span>

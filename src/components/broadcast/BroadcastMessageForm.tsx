@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/integrations/supabase/client';
 import { Send, Users, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer, StopCircle, LayoutGrid } from 'lucide-react';
+import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { toast } from 'sonner';
 import { ScheduleMessageDialog, ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 import { TemplateSelector } from './TemplateSelector';
@@ -1930,6 +1931,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
               />
               
               <div className="flex items-center justify-between">
+                <EmojiPicker onEmojiSelect={(emoji) => setMessage(prev => prev + emoji)} disabled={isSending} />
                 <span className={`text-xs ${isOverLimit ? 'text-destructive' : 'text-muted-foreground'}`}>
                   {characterCount.toLocaleString()}/{MAX_MESSAGE_LENGTH.toLocaleString()} caracteres
                 </span>
@@ -2114,6 +2116,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
                   disabled={isSending}
                   className="min-h-[80px] resize-none"
                 />
+                <EmojiPicker onEmojiSelect={(emoji) => setCaption(prev => prev + emoji)} disabled={isSending} />
               </div>
             </TabsContent>
 

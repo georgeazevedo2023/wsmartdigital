@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
 import { Send, MessageSquare, Image, Loader2, CheckCircle2, XCircle, Clock, Video, Mic, FileIcon, Upload, X, Pause, Play, Timer, StopCircle, Shield, LayoutGrid } from 'lucide-react';
+import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { toast } from 'sonner';
 import MessagePreview from './MessagePreview';
 import { CarouselEditor, CarouselData, createEmptyCard } from './CarouselEditor';
@@ -1016,6 +1017,7 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
                   rows={6}
                   maxLength={MAX_MESSAGE_LENGTH}
                 />
+                <EmojiPicker onEmojiSelect={(emoji) => setMessage(prev => prev + emoji)} />
               </div>
             </TabsContent>
 
@@ -1111,6 +1113,7 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
                     onChange={(e) => setCaption(e.target.value)}
                     rows={3}
                   />
+                  <EmojiPicker onEmojiSelect={(emoji) => setCaption(prev => prev + emoji)} />
                 </div>
               )}
             </TabsContent>
