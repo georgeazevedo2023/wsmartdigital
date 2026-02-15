@@ -267,10 +267,11 @@ Deno.serve(async (req) => {
       }
 
       case 'send-media': {
-        // Send media (image or document) to group using unified /send/media endpoint
-        if (!instanceToken || !groupjid || !body.mediaUrl || !body.mediaType) {
+        // Send media (image or document) to group or contact using unified /send/media endpoint
+        const mediaDestination = groupjid || body.jid
+        if (!instanceToken || !mediaDestination || !body.mediaUrl || !body.mediaType) {
           return new Response(
-            JSON.stringify({ error: 'Token, groupjid, mediaUrl and mediaType required' }),
+            JSON.stringify({ error: 'Token, groupjid/jid, mediaUrl and mediaType required' }),
             { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           )
         }
@@ -285,7 +286,7 @@ Deno.serve(async (req) => {
         
         // Build payload according to UAZAPI documentation
         const mediaBody: Record<string, unknown> = {
-          number: groupjid,
+          number: mediaDestination,
           type: body.mediaType,  // 'image' or 'document'
           file: fileValue,
           text: body.caption || '',  // UAZAPI uses 'text' not 'caption'
