@@ -80,8 +80,21 @@ Deno.serve(async (req) => {
       unwrapped = unwrapped[0]
     }
     const inner = unwrapped?.body || unwrapped?.Body
-    const payload = (inner?.EventType || inner?.eventType) ? inner : unwrapped
+    let payload = (inner?.EventType || inner?.eventType) ? inner : unwrapped
     console.log('Webhook unwrapped EventType:', payload.EventType || payload.eventType || 'none')
+
+    // Detect raw UAZAPI message format (e.g. from n8n agent output)
+    // Has chatid/fromMe but no EventType — it's a message object itself, not wrapped
+    const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.messageid) && payload.fromMe !== undefined
+    if (isRawMessage) {
+      console.log('Detected raw UAZAPI message format (agent output), synthesizing payload')
+      payload = {
+        EventType: 'messages',
+        instanceName: payload.owner || '',
+        message: payload,
+        chat: null,
+      }
+    }
 
     // UAZAPI sends EventType field
     const eventType = payload.EventType || payload.eventType || payload.event || ''
@@ -122,15 +135,18 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Find instance by name or id
-    const { data: instance } = await supabase
+    // Find instance by name, id, or owner_jid (for raw agent payloads where instanceName = owner phone)
+    let instanceQuery = supabase
       .from('instances')
       .select('id, name, token')
-      .or(`id.eq.${instanceName},name.eq.${instanceName}`)
-      .maybeSingle()
+    
+    const ownerJid = `${instanceName}@s.whatsapp.net`
+    instanceQuery = instanceQuery.or(`id.eq.${instanceName},name.eq.${instanceName},owner_jid.eq.${ownerJid}`)
+    
+    const { data: instance } = await instanceQuery.maybeSingle()
 
     if (!instance) {
-      console.error('Instance not found:', instanceName)
+      console.error('Instance not found:', instanceName, 'ownerJid:', ownerJid)
       return new Response(JSON.stringify({ error: 'Instance not found' }), {
         status: 404,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -169,6 +185,10 @@ Deno.serve(async (req) => {
     let content = typeof rawContent === 'string' ? rawContent : ''
     if (!content && typeof message.content === 'string') {
       content = message.content
+    }
+    // Agent output: content can be { text: "..." }
+    if (!content && typeof message.content === 'object' && message.content?.text) {
+      content = message.content.text
     }
 
     // Fallback content for media without caption
