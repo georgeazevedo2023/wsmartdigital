@@ -1,31 +1,32 @@
 
+# Modernizar o cabecalho do chat no Helpdesk
 
-# Correcao do nome do contato no Helpdesk
+## Problema atual
 
-## Problema
+O cabecalho do chat exibe o numero de telefone duas vezes:
+- Uma vez como texto simples (`contact.phone`)
+- Outra vez dentro de um badge verde (`contact.jid.split('@')[0]`)
 
-O contato com telefone `558193856099` (que e o George) esta registrado no banco com o nome "Neo Blindados". Isso faz com que tanto a lista lateral quanto o cabecalho do chat exibam "Neo Blindados" em vez de "George".
-
-Existe apenas **1 registro** de contato (`be02bb05-c06a-469e-8a82-3f41a924cf1e`) vinculado a **2 conversas** diferentes. Ao corrigir o nome nesse unico registro, ambas as conversas serao atualizadas.
+Alem disso, o layout esta desorganizado: nome, telefone, badge e seletor de status ficam empilhados de forma confusa.
 
 ## Solucao
 
-1. **Atualizar o nome do contato** no banco de dados de "Neo Blindados" para "George"
-   - Tabela: `contacts`
-   - ID: `be02bb05-c06a-469e-8a82-3f41a924cf1e`
-   - Campo `name`: "Neo Blindados" -> "George"
+Redesenhar o bloco central do cabecalho (linhas 119-155 de `ChatPanel.tsx`) com um layout mais limpo e moderno:
 
-2. **Investigar o webhook** para entender por que o nome esta sendo sobrescrito (o webhook pode estar atualizando o nome do contato com o `pushName` ou `verifiedBizName` vindo da API, o que sobrescreve nomes ja corrigidos manualmente)
+1. **Primeira linha**: Nome do contato (fonte maior, semibold) + numero de telefone formatado (apenas uma vez, sem badge verde duplicado)
+2. **Segunda linha**: Seletor de status com indicador colorido
 
-## Observacao importante
-
-Se o webhook continuar sobrescrevendo o nome com dados da API, a correcao manual sera temporaria. Caso isso aconteca, sera necessario ajustar a logica do webhook para nao sobrescrever nomes de contatos ja existentes, ou dar prioridade a nomes editados manualmente.
+O badge verde com o JID sera removido, pois e redundante (o numero ja aparece no texto).
 
 ## Detalhes tecnicos
 
-- Query de correcao:
-```text
-UPDATE contacts SET name = 'George' WHERE id = 'be02bb05-c06a-469e-8a82-3f41a924cf1e';
-```
-- Verificar no `whatsapp-webhook/index.ts` se ha logica de upsert que sobrescreve o campo `name` do contato a cada mensagem recebida
+**Arquivo**: `src/components/helpdesk/ChatPanel.tsx`
 
+Alteracoes no bloco de linhas 119-155:
+
+- Remover o badge verde que exibe `contact.jid.split('@')[0]` (linhas 125-129)
+- Manter apenas `contact.phone` como informacao secundaria ao lado do nome
+- Reorganizar o layout para que nome e telefone fiquem na mesma linha (ou nome em cima, telefone + status embaixo)
+- Manter o seletor de status com os indicadores coloridos
+
+Nenhuma alteracao de backend, banco de dados ou outros componentes necessaria.
