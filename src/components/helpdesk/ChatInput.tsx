@@ -55,26 +55,26 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         .eq('id', inbox?.instance_id || '')
         .maybeSingle();
 
-      await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        mode: 'no-cors',
-        body: JSON.stringify({
-          timestamp: new Date().toISOString(),
-          instance_name: instanceInfo?.name || '',
-          instance_id: inbox?.instance_id || '',
-          inbox_name: inbox?.name || '',
-          inbox_id: inbox?.id || conversation.inbox_id,
-          contact_name: conversation.contact?.name || '',
-          remotejid: conversation.contact?.jid,
-          fromMe: true,
-          agent_name: profile?.full_name || user.email,
-          agent_id: user.id,
-          pausar_agente: 'sim',
-          message_type: messageData.message_type,
-          message: messageData.content,
-          media_url: messageData.media_url,
-        }),
+      await supabase.functions.invoke('fire-outgoing-webhook', {
+        body: {
+          webhook_url: webhookUrl,
+          payload: {
+            timestamp: new Date().toISOString(),
+            instance_name: instanceInfo?.name || '',
+            instance_id: inbox?.instance_id || '',
+            inbox_name: inbox?.name || '',
+            inbox_id: inbox?.id || conversation.inbox_id,
+            contact_name: conversation.contact?.name || '',
+            remotejid: conversation.contact?.jid,
+            fromMe: true,
+            agent_name: profile?.full_name || user.email,
+            agent_id: user.id,
+            pausar_agente: 'sim',
+            message_type: messageData.message_type,
+            message: messageData.content,
+            media_url: messageData.media_url,
+          },
+        },
       });
     } catch (err) {
       console.error('Outgoing webhook error:', err);
