@@ -148,10 +148,11 @@ export const saveToHelpdesk = async (
 
     if (existingConv) {
       conversationId = existingConv.id;
-      // Update last_message_at
+      const lastPreview = messageData.content || (messageData.media_type === 'image' ? '📷 Foto' : messageData.media_type === 'video' ? '🎥 Vídeo' : messageData.media_type === 'audio' ? '🎵 Áudio' : messageData.media_type === 'document' ? '📎 Documento' : '');
+      // Update last_message_at and last_message
       await supabase
         .from('conversations')
-        .update({ last_message_at: now, updated_at: now })
+        .update({ last_message_at: now, updated_at: now, last_message: lastPreview } as any)
         .eq('id', conversationId);
     } else {
       const { data: newConv, error: convErr } = await supabase

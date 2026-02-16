@@ -323,8 +323,11 @@ Deno.serve(async (req) => {
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
           )
           if (sorted.length > 0) {
+            const lastMsg = sorted[0]
+            const lastPreview = lastMsg.content || (lastMsg.media_type === 'image' ? '📷 Foto' : lastMsg.media_type === 'video' ? '🎥 Vídeo' : lastMsg.media_type === 'audio' ? '🎵 Áudio' : lastMsg.media_type === 'document' ? '📎 Documento' : '')
             await supabase.from('conversations').update({
               last_message_at: sorted[0].created_at,
+              last_message: lastPreview,
             }).eq('id', conversationId)
           }
         }
