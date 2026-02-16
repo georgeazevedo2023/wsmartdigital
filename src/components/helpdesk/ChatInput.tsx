@@ -33,6 +33,33 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
       console.error('Auto-assign error:', err);
     }
   };
+
+  const fireOutgoingWebhook = async () => {
+    const webhookUrl = (conversation.inbox as any)?.webhook_outgoing_url;
+    if (!webhookUrl || !user) return;
+    try {
+      const { data: profile } = await supabase
+        .from('user_profiles')
+        .select('full_name')
+        .eq('id', user.id)
+        .single();
+
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        mode: 'no-cors',
+        body: JSON.stringify({
+          remotejid: conversation.contact?.jid,
+          fromMe: true,
+          agent_name: profile?.full_name || user.email,
+          agent_id: user.id,
+          pausar_agente: 'sim',
+        }),
+      });
+    } catch (err) {
+      console.error('Outgoing webhook error:', err);
+    }
+  };
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [isNote, setIsNote] = useState(false);
@@ -240,6 +267,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
       });
 
       await autoAssignAgent();
+      await fireOutgoingWebhook();
       onMessageSent();
     } catch (err: any) {
       console.error('Send audio error:', err);
@@ -354,6 +382,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
       });
 
       await autoAssignAgent();
+      await fireOutgoingWebhook();
       onMessageSent();
       toast.success(isImage ? 'Imagem enviada!' : 'Documento enviado!');
     } catch (err: any) {
@@ -452,6 +481,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
 
       if (!isNote) {
         await autoAssignAgent();
+        await fireOutgoingWebhook();
       }
       setText('');
       onMessageSent();
