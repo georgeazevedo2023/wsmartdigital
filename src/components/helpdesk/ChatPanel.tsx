@@ -22,9 +22,10 @@ interface ChatPanelProps {
   inboxLabels?: Label[];
   assignedLabelIds?: string[];
   onLabelsChanged?: () => void;
+  agentNamesMap?: Record<string, string>;
 }
 
-export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo, onToggleList, showingList, inboxLabels, assignedLabelIds, onLabelsChanged }: ChatPanelProps) => {
+export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo, onToggleList, showingList, inboxLabels, assignedLabelIds, onLabelsChanged, agentNamesMap }: ChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -192,7 +193,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
         ) : (
           <div className="space-y-2">
             {messages.map(msg => (
-              <MessageBubble key={msg.id} message={msg} instanceId={conversation.inbox?.instance_id} />
+              <MessageBubble key={msg.id} message={msg} instanceId={conversation.inbox?.instance_id} agentNamesMap={agentNamesMap} />
             ))}
           </div>
         )}
