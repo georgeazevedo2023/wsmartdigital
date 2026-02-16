@@ -121,16 +121,6 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
 
   return (
     <>
-      {/* Floating back button for mobile */}
-      {onBack && (
-        <button
-          onClick={onBack}
-          className="fixed top-4 left-4 z-50 h-12 w-12 rounded-full bg-card border border-border shadow-lg flex items-center justify-center md:hidden"
-        >
-          <ArrowLeft className="w-6 h-6" />
-        </button>
-      )}
-
       {/* Header */}
       <div className="h-16 md:h-14 px-3 md:px-4 flex items-center gap-2 md:gap-3 border-b border-border/50 bg-card shrink-0 z-10 relative overflow-hidden">
         {onBack && (
