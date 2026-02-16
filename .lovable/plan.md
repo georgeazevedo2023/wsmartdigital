@@ -1,30 +1,26 @@
 
 
-# Corrigir hora cortada na lista de conversas mobile
+# Corrigir hora cortada na lista de conversas
 
 ## Problema
 
-O texto da hora (ex: "08:56", "13/02") no lado direito de cada conversa esta sendo cortado pela borda da tela. O componente ScrollArea reserva espaco para a barra de rolagem, reduzindo a area util e cortando o conteudo no limite direito.
+O componente `ScrollArea` do Radix reserva `w-2.5` (10px) para a barra de rolagem vertical, que se sobrepoe ao conteudo. Combinado com o `overflow-hidden` no container raiz, o timestamp no lado direito de cada conversa fica cortado. Aumentar apenas o padding do item nao resolve porque o proprio container esta limitando a area visivel.
 
 ## Solucao
 
-Aumentar o padding direito do `ConversationItem` para compensar o espaco ocupado pelo ScrollArea, garantindo que a hora fique completamente visivel.
+Duas alteracoes complementares:
 
-## Alteracao tecnica
-
-### `src/components/helpdesk/ConversationItem.tsx`
-
-Alterar o padding do botao principal de `px-4` para `pl-4 pr-5`, adicionando um pouco mais de espaco a direita para acomodar o texto da hora sem corte:
+### 1. `src/components/helpdesk/ConversationList.tsx`
+Adicionar `pr-2.5` ao `ScrollArea` para compensar o espaco da barra de rolagem:
 
 ```
-// De:
-'w-full text-left px-4 py-3.5 ...'
-
-// Para:
-'w-full text-left pl-4 pr-5 py-3.5 ...'
+<ScrollArea className="flex-1 pr-2.5">
 ```
+
+### 2. `src/components/helpdesk/ConversationItem.tsx`
+Manter o padding assimetrico atual (`pl-4 pr-5`) que ja esta aplicado. Se necessario apos o teste, pode ser ajustado.
 
 ## Arquivos afetados
 
-- `src/components/helpdesk/ConversationItem.tsx` - ajustar padding direito
+- `src/components/helpdesk/ConversationList.tsx` - adicionar padding direito ao ScrollArea
 
