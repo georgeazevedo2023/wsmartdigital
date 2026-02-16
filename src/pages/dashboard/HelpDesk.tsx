@@ -91,6 +91,7 @@ const HelpDesk = () => {
   const [inboxLabels, setInboxLabels] = useState<Label[]>([]);
   const [conversationLabelsMap, setConversationLabelsMap] = useState<Record<string, string[]>>({});
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
+  const [agentNamesMap, setAgentNamesMap] = useState<Record<string, string>>({});
 
   const { isSuperAdmin } = useAuth();
 
@@ -144,6 +145,28 @@ const HelpDesk = () => {
   useEffect(() => {
     fetchLabels();
   }, [fetchLabels]);
+
+  // Fetch agent names for current inbox
+  const fetchAgentNames = useCallback(async () => {
+    if (!selectedInboxId) return;
+    const { data } = await supabase
+      .from('inbox_users')
+      .select('user_id, user_profiles(full_name)')
+      .eq('inbox_id', selectedInboxId);
+    if (data) {
+      const map: Record<string, string> = {};
+      data.forEach((d: any) => {
+        if (d.user_id && d.user_profiles?.full_name) {
+          map[d.user_id] = d.user_profiles.full_name;
+        }
+      });
+      setAgentNamesMap(map);
+    }
+  }, [selectedInboxId]);
+
+  useEffect(() => {
+    fetchAgentNames();
+  }, [fetchAgentNames]);
 
   // Fetch conversation_labels for loaded conversations
   const fetchConversationLabels = useCallback(async (convIds: string[]) => {
@@ -420,6 +443,7 @@ const HelpDesk = () => {
     onLabelFilterChange: setLabelFilter,
     inboxId: selectedInboxId,
     onLabelsChanged: handleLabelsChanged,
+    agentNamesMap,
   };
 
   if (isMobile) {

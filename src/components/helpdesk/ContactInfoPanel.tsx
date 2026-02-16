@@ -1,16 +1,22 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Phone, ArrowLeft, Tags, Settings2 } from 'lucide-react';
+import { Phone, ArrowLeft, Tags, Settings2, UserCheck } from 'lucide-react';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
 import { ConversationLabels, type Label } from './ConversationLabels';
 import { LabelPicker } from './LabelPicker';
 import { ManageLabelsDialog } from './ManageLabelsDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+
+interface InboxAgent {
+  user_id: string;
+  full_name: string;
+  role: string;
+}
 
 interface ContactInfoPanelProps {
   conversation: Conversation;
@@ -44,6 +50,29 @@ export const ContactInfoPanel = ({
   const contact = conversation.contact;
   const name = contact?.name || contact?.phone || 'Desconhecido';
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
+  const [agents, setAgents] = useState<InboxAgent[]>([]);
+
+  // Fetch agents for this inbox
+  useEffect(() => {
+    const fetchAgents = async () => {
+      if (!conversation.inbox_id) return;
+      const { data } = await supabase
+        .from('inbox_users')
+        .select('user_id, role, user_profiles(full_name)')
+        .eq('inbox_id', conversation.inbox_id);
+
+      if (data) {
+        const mapped = data.map((d: any) => ({
+          user_id: d.user_id,
+          full_name: d.user_profiles?.full_name || d.user_id.slice(0, 8),
+          role: d.role,
+        }));
+        mapped.sort((a: InboxAgent, b: InboxAgent) => a.full_name.localeCompare(b.full_name));
+        setAgents(mapped);
+      }
+    };
+    fetchAgents();
+  }, [conversation.inbox_id]);
 
   const assignedLabels = inboxLabels.filter(l => assignedLabelIds.includes(l.id));
 
@@ -145,6 +174,38 @@ export const ContactInfoPanel = ({
                 <div className="flex items-center gap-2">
                   <span className={cn('w-2 h-2 rounded-full', opt.color.split(' ')[0])} />
                   {opt.label}
+                </div>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Agent Assignment */}
+      <div className="space-y-1.5">
+        <label className="text-xs text-muted-foreground font-medium flex items-center gap-1">
+          <UserCheck className="w-3 h-3" />
+          Agente Responsável
+        </label>
+        <Select
+          value={conversation.assigned_to || '__none__'}
+          onValueChange={(v) => {
+            const agentId = v === '__none__' ? null : v;
+            onUpdateConversation(conversation.id, { assigned_to: agentId } as any);
+            const agentName = agents.find(a => a.user_id === agentId)?.full_name;
+            toast.success(agentId ? `Atribuído a ${agentName}` : 'Agente removido');
+          }}
+        >
+          <SelectTrigger className="h-8 text-sm">
+            <SelectValue placeholder="Nenhum" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="__none__">Nenhum</SelectItem>
+            {agents.map(agent => (
+              <SelectItem key={agent.user_id} value={agent.user_id}>
+                <div className="flex items-center gap-2">
+                  <span>{agent.full_name}</span>
+                  <span className="text-muted-foreground text-[10px]">({agent.role})</span>
                 </div>
               </SelectItem>
             ))}

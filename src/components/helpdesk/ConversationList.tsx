@@ -27,6 +27,7 @@ interface ConversationListProps {
   onLabelFilterChange?: (labelId: string | null) => void;
   inboxId?: string;
   onLabelsChanged?: () => void;
+  agentNamesMap?: Record<string, string>;
 }
 
 const statusTabs = [
@@ -53,6 +54,7 @@ export const ConversationList = ({
   onLabelFilterChange,
   inboxId,
   onLabelsChanged,
+  agentNamesMap = {},
 }: ConversationListProps) => {
   const unreadCount = conversations.filter(c => !c.is_read).length;
   const [manageOpen, setManageOpen] = useState(false);
@@ -133,6 +135,7 @@ export const ConversationList = ({
                 isSelected={c.id === selectedId}
                 onClick={() => onSelect(c)}
                 labels={inboxLabels.filter(l => (conversationLabelsMap[c.id] || []).includes(l.id))}
+                agentName={c.assigned_to ? agentNamesMap[c.assigned_to] || null : null}
               />
             ))}
           </div>
