@@ -65,6 +65,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
           instance_id: inbox?.instance_id || '',
           inbox_name: inbox?.name || '',
           inbox_id: inbox?.id || conversation.inbox_id,
+          contact_name: conversation.contact?.name || '',
           remotejid: conversation.contact?.jid,
           fromMe: true,
           agent_name: profile?.full_name || user.email,
