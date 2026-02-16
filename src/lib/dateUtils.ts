@@ -1,5 +1,5 @@
 import { formatInTimeZone, toZonedTime } from 'date-fns-tz';
-import { formatDistanceToNow, isToday, isYesterday } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
 const BRAZIL_TZ = 'America/Sao_Paulo';
@@ -36,8 +36,13 @@ export function timeAgoBR(date: string | Date): string {
 export function smartDateBR(date: string | Date): string {
   const d = typeof date === 'string' ? new Date(date) : date;
   const zoned = toZonedTime(d, BRAZIL_TZ);
-  if (isToday(zoned)) return formatInTimeZone(d, BRAZIL_TZ, 'HH:mm', { locale: ptBR });
-  if (isYesterday(zoned)) return 'Ontem';
+  const nowZoned = toZonedTime(new Date(), BRAZIL_TZ);
+
+  const startOfToday = new Date(nowZoned.getFullYear(), nowZoned.getMonth(), nowZoned.getDate());
+  const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
+
+  if (zoned >= startOfToday) return formatInTimeZone(d, BRAZIL_TZ, 'HH:mm', { locale: ptBR });
+  if (zoned >= startOfYesterday) return 'Ontem';
   return formatInTimeZone(d, BRAZIL_TZ, 'dd/MM', { locale: ptBR });
 }
 

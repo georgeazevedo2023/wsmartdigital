@@ -313,7 +313,9 @@ Deno.serve(async (req) => {
     // Extract contact info
     const contactJid = fromMe ? chatId : (message.sender_pn || message.sender || chatId)
     const contactPhone = extractPhone(contactJid)
-    const contactName = chat?.wa_contactName || chat?.name || message.senderName || contactPhone
+    const contactName = fromMe
+      ? (chat?.wa_contactName || chat?.name || contactPhone)
+      : (chat?.wa_contactName || chat?.name || message.senderName || contactPhone)
 
     // Upsert contact — preserve existing name to avoid overwriting manual edits
     let { data: contact } = await supabase
