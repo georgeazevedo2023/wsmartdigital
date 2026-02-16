@@ -1,30 +1,30 @@
 
 
-# Remover botao voltar flutuante redundante
+# Corrigir hora cortada na lista de conversas mobile
 
-## O que fazer
+## Problema
 
-Agora que o header do chat esta visivel no mobile (com a seta voltar ao lado do nome "George"), o botao flutuante fixo que adicionamos anteriormente e redundante e deve ser removido.
+O texto da hora (ex: "08:56", "13/02") no lado direito de cada conversa esta sendo cortado pela borda da tela. O componente ScrollArea reserva espaco para a barra de rolagem, reduzindo a area util e cortando o conteudo no limite direito.
+
+## Solucao
+
+Aumentar o padding direito do `ConversationItem` para compensar o espaco ocupado pelo ScrollArea, garantindo que a hora fique completamente visivel.
 
 ## Alteracao tecnica
 
-### `src/components/helpdesk/ChatPanel.tsx`
+### `src/components/helpdesk/ConversationItem.tsx`
 
-Remover o bloco do botao flutuante fixo (linhas 124-132 aproximadamente):
+Alterar o padding do botao principal de `px-4` para `pl-4 pr-5`, adicionando um pouco mais de espaco a direita para acomodar o texto da hora sem corte:
 
-```typescript
-// REMOVER este bloco inteiro:
-{onBack && (
-  <button
-    onClick={onBack}
-    className="fixed top-4 left-4 z-50 h-12 w-12 rounded-full bg-card border border-border shadow-lg flex items-center justify-center md:hidden"
-  >
-    <ArrowLeft className="w-6 h-6" />
-  </button>
-)}
+```
+// De:
+'w-full text-left px-4 py-3.5 ...'
+
+// Para:
+'w-full text-left pl-4 pr-5 py-3.5 ...'
 ```
 
 ## Arquivos afetados
 
-- `src/components/helpdesk/ChatPanel.tsx` - remover botao flutuante fixo
+- `src/components/helpdesk/ConversationItem.tsx` - ajustar padding direito
 
