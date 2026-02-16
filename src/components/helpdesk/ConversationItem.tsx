@@ -28,7 +28,7 @@ export const ConversationItem = ({ conversation, isSelected, onClick, labels = [
     <button
       onClick={onClick}
       className={cn(
-        'w-full text-left px-3 py-3 md:py-3 min-h-[56px] flex items-start gap-3 transition-colors hover:bg-secondary/50 active:bg-secondary/70',
+        'w-full text-left px-4 py-3.5 min-h-[64px] flex items-start gap-3 transition-colors hover:bg-secondary/50 active:bg-secondary/70',
         isSelected && 'bg-primary/10 border-l-2 border-primary',
         !conversation.is_read && 'bg-secondary/30'
       )}
@@ -53,7 +53,7 @@ export const ConversationItem = ({ conversation, isSelected, onClick, labels = [
           <span className={cn('text-sm truncate', !conversation.is_read && 'font-bold')}>
             {name}
           </span>
-          <span className="text-[10px] text-muted-foreground shrink-0">
+          <span className="text-xs text-muted-foreground/80 shrink-0 tabular-nums">
             {conversation.last_message_at
               ? smartDateBR(conversation.last_message_at)
               : ''}

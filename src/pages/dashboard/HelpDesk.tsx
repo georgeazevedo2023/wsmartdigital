@@ -411,7 +411,7 @@ const HelpDesk = () => {
         <div className="flex items-center gap-2">
           <span className="text-xs text-muted-foreground">Caixa:</span>
           <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
-            <SelectTrigger className="w-48 h-7 text-xs border-border/30 bg-secondary/50">
+            <SelectTrigger className="w-32 md:w-48 h-7 text-xs border-border/30 bg-secondary/50">
               <SelectValue placeholder="Selecionar inbox" />
             </SelectTrigger>
             <SelectContent>
