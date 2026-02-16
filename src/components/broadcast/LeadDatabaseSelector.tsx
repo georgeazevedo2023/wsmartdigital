@@ -19,8 +19,7 @@ import {
 import { Database, Plus, Trash2, Users, Calendar, ChevronRight, FolderOpen, Pencil, MessageCircle, Settings2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatBR } from '@/lib/dateUtils';
 import EditDatabaseDialog from './EditDatabaseDialog';
 import ManageLeadDatabaseDialog from './ManageLeadDatabaseDialog';
 
@@ -112,7 +111,7 @@ const LeadDatabaseSelector = ({
   };
 
   const formatDate = (dateStr: string) => {
-    return format(new Date(dateStr), "dd 'de' MMM, yyyy", { locale: ptBR });
+    return formatBR(dateStr, "dd 'de' MMM, yyyy");
   };
 
   if (isLoading) {

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
+import { formatBR } from "@/lib/dateUtils";
 import {
   Calendar,
   Clock,
@@ -180,7 +179,7 @@ function ScheduledMessageCard({
           <div className="flex items-center gap-1 text-muted-foreground">
             <Calendar className="h-4 w-4" />
             <span>
-              Próximo: {format(new Date(message.next_run_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR })}
+              Próximo: {formatBR(message.next_run_at, "dd/MM/yyyy 'às' HH:mm")}
             </span>
           </div>
           {message.executions_count > 0 && (
@@ -279,7 +278,7 @@ function ScheduledMessageCard({
                           <XCircle className="h-4 w-4 text-destructive" />
                         )}
                         <span>
-                          {format(new Date(log.executed_at), "dd/MM/yyyy HH:mm", { locale: ptBR })}
+                          {formatBR(log.executed_at, "dd/MM/yyyy HH:mm")}
                         </span>
                       </div>
                       <span className="text-muted-foreground">

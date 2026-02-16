@@ -29,8 +29,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatBR } from '@/lib/dateUtils';
 
 interface Instance {
   id: string;
@@ -373,17 +372,13 @@ const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
           <div className="space-y-2">
             <Label className="text-muted-foreground text-xs uppercase">Criado em</Label>
             <p className="font-medium">
-              {format(new Date(instance.created_at), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                locale: ptBR,
-              })}
+              {formatBR(instance.created_at, "dd 'de' MMMM 'de' yyyy 'às' HH:mm")}
             </p>
           </div>
           <div className="space-y-2">
             <Label className="text-muted-foreground text-xs uppercase">Última atualização</Label>
             <p className="font-medium">
-              {format(new Date(instance.updated_at), "dd 'de' MMMM 'de' yyyy 'às' HH:mm", {
-                locale: ptBR,
-              })}
+              {formatBR(instance.updated_at, "dd 'de' MMMM 'de' yyyy 'às' HH:mm")}
             </p>
           </div>
         </CardContent>
