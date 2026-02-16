@@ -34,8 +34,13 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
     }
   };
 
-  const fireOutgoingWebhook = async () => {
-    const webhookUrl = (conversation.inbox as any)?.webhook_outgoing_url;
+  const fireOutgoingWebhook = async (messageData: {
+    message_type: string;
+    content: string | null;
+    media_url: string | null;
+  }) => {
+    const inbox = conversation.inbox as any;
+    const webhookUrl = inbox?.webhook_outgoing_url;
     if (!webhookUrl || !user) return;
     try {
       const { data: profile } = await supabase
@@ -44,16 +49,30 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         .eq('id', user.id)
         .single();
 
+      const { data: instanceInfo } = await supabase
+        .from('instances')
+        .select('name')
+        .eq('id', inbox?.instance_id || '')
+        .maybeSingle();
+
       await fetch(webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         mode: 'no-cors',
         body: JSON.stringify({
+          timestamp: new Date().toISOString(),
+          instance_name: instanceInfo?.name || '',
+          instance_id: inbox?.instance_id || '',
+          inbox_name: inbox?.name || '',
+          inbox_id: inbox?.id || conversation.inbox_id,
           remotejid: conversation.contact?.jid,
           fromMe: true,
           agent_name: profile?.full_name || user.email,
           agent_id: user.id,
           pausar_agente: 'sim',
+          message_type: messageData.message_type,
+          message: messageData.content,
+          media_url: messageData.media_url,
         }),
       });
     } catch (err) {
@@ -267,7 +286,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
       });
 
       await autoAssignAgent();
-      await fireOutgoingWebhook();
+      await fireOutgoingWebhook({ message_type: 'audio', content: null, media_url: audioPublicUrl });
       onMessageSent();
     } catch (err: any) {
       console.error('Send audio error:', err);
@@ -382,7 +401,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
       });
 
       await autoAssignAgent();
-      await fireOutgoingWebhook();
+      await fireOutgoingWebhook({ message_type: mediaType, content: isImage ? null : file.name, media_url: filePublicUrl });
       onMessageSent();
       toast.success(isImage ? 'Imagem enviada!' : 'Documento enviado!');
     } catch (err: any) {
@@ -481,7 +500,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
 
       if (!isNote) {
         await autoAssignAgent();
-        await fireOutgoingWebhook();
+        await fireOutgoingWebhook({ message_type: 'text', content: text.trim(), media_url: null });
       }
       setText('');
       onMessageSent();
