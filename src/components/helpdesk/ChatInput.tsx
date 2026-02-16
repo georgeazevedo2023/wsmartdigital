@@ -21,6 +21,18 @@ interface ChatInputProps {
 
 export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assignedLabelIds = [], onLabelsChanged }: ChatInputProps) => {
   const { user } = useAuth();
+
+  const autoAssignAgent = async () => {
+    if (!user || conversation.assigned_to === user.id) return;
+    try {
+      await supabase
+        .from('conversations')
+        .update({ assigned_to: user.id })
+        .eq('id', conversation.id);
+    } catch (err) {
+      console.error('Auto-assign error:', err);
+    }
+  };
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [isNote, setIsNote] = useState(false);
@@ -227,6 +239,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         },
       });
 
+      await autoAssignAgent();
       onMessageSent();
     } catch (err: any) {
       console.error('Send audio error:', err);
@@ -340,6 +353,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         },
       });
 
+      await autoAssignAgent();
       onMessageSent();
       toast.success(isImage ? 'Imagem enviada!' : 'Documento enviado!');
     } catch (err: any) {
@@ -436,6 +450,9 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         });
       }
 
+      if (!isNote) {
+        await autoAssignAgent();
+      }
       setText('');
       onMessageSent();
     } catch (err: any) {
