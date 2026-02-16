@@ -1,29 +1,31 @@
 
-# Redesign do Card de Contato no Helpdesk (estilo WhatsApp)
 
-## O que muda
+# Correcao do nome do contato no Helpdesk
 
-O card de contato atual exibe os dados em formato de lista (telefone, email, etc). O novo layout vai seguir o visual do WhatsApp:
+## Problema
 
-1. **Cabecalho**: Avatar circular com icone + Nome do contato em destaque + seta para a direita
-2. **Divisor**: Linha separadora
-3. **Botoes de acao**: Dois botoes lado a lado -- "Conversar" (abre chat no WhatsApp Web) e "Adicionar contato" (ainda sem acao real, apenas visual)
-4. **Sem bubble padrao**: O card tera fundo proprio (sem a bolha verde/cinza envolvendo), similar ao sticker
+O contato com telefone `558193856099` (que e o George) esta registrado no banco com o nome "Neo Blindados". Isso faz com que tanto a lista lateral quanto o cabecalho do chat exibam "Neo Blindados" em vez de "George".
 
-As cores seguem o tema dark do projeto (bordas `border`, fundo `muted/card`, texto `foreground`, destaque `primary`).
+Existe apenas **1 registro** de contato (`be02bb05-c06a-469e-8a82-3f41a924cf1e`) vinculado a **2 conversas** diferentes. Ao corrigir o nome nesse unico registro, ambas as conversas serao atualizadas.
 
----
+## Solucao
+
+1. **Atualizar o nome do contato** no banco de dados de "Neo Blindados" para "George"
+   - Tabela: `contacts`
+   - ID: `be02bb05-c06a-469e-8a82-3f41a924cf1e`
+   - Campo `name`: "Neo Blindados" -> "George"
+
+2. **Investigar o webhook** para entender por que o nome esta sendo sobrescrito (o webhook pode estar atualizando o nome do contato com o `pushName` ou `verifiedBizName` vindo da API, o que sobrescreve nomes ja corrigidos manualmente)
+
+## Observacao importante
+
+Se o webhook continuar sobrescrevendo o nome com dados da API, a correcao manual sera temporaria. Caso isso aconteca, sera necessario ajustar a logica do webhook para nao sobrescrever nomes de contatos ja existentes, ou dar prioridade a nomes editados manualmente.
 
 ## Detalhes tecnicos
 
-**Arquivo**: `src/components/helpdesk/MessageBubble.tsx`
+- Query de correcao:
+```text
+UPDATE contacts SET name = 'George' WHERE id = 'be02bb05-c06a-469e-8a82-3f41a924cf1e';
+```
+- Verificar no `whatsapp-webhook/index.ts` se ha logica de upsert que sobrescreve o campo `name` do contato a cada mensagem recebida
 
-- Alterar o bloco de renderizacao do `contact` (linhas 255-292) para o novo layout:
-  - Remover os campos de email, org, url e telefone em lista
-  - Adicionar cabecalho com avatar + nome + icone ChevronRight
-  - Adicionar divisor horizontal
-  - Adicionar dois botoes: "Conversar" (link `https://wa.me/{phone}`) e "Adicionar contato" (visual only)
-- Tratar o card como "sem bolha padrao" (similar ao sticker): o container externo nao aplica bg de bolha quando `media_type === 'contact'`
-- O horario continua aparecendo abaixo do card
-
-Nenhuma alteracao de backend ou banco de dados necessaria.
