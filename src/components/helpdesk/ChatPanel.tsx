@@ -2,10 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
+import { Badge } from '@/components/ui/badge';
 
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose, UserCheck } from 'lucide-react';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 import type { Label } from './ConversationLabels';
 
@@ -27,6 +28,21 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [agentName, setAgentName] = useState<string | null>(null);
+
+  // Fetch assigned agent name
+  useEffect(() => {
+    const fetchAgent = async () => {
+      if (!conversation?.assigned_to) { setAgentName(null); return; }
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('full_name')
+        .eq('id', conversation.assigned_to)
+        .maybeSingle();
+      setAgentName(data?.full_name || null);
+    };
+    fetchAgent();
+  }, [conversation?.assigned_to]);
 
   const fetchMessages = async () => {
     if (!conversation) return;
@@ -144,6 +160,12 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
               </SelectItem>
             </SelectContent>
           </Select>
+          {agentName && (
+            <Badge variant="secondary" className="text-[10px] h-5 gap-1 shrink-0 hidden sm:flex">
+              <UserCheck className="w-3 h-3" />
+              {agentName}
+            </Badge>
+          )}
         </div>
         {onShowInfo && (
           <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
