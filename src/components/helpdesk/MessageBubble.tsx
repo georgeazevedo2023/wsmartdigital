@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ImageIcon, ExternalLink, FileText, Download, Loader2, LayoutGrid, Link, Phone, MessageSquare, User, Mail, Globe, Building2 } from 'lucide-react';
+import { ImageIcon, ExternalLink, FileText, Download, Loader2, LayoutGrid, Link, Phone, MessageSquare, User, ChevronRight, UserPlus } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { supabase } from '@/integrations/supabase/client';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -134,7 +134,7 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
       <div
         className={cn(
           'max-w-[75%] rounded-xl px-3 py-2 text-sm',
-          message.media_type === 'sticker'
+          message.media_type === 'sticker' || message.media_type === 'contact'
             ? 'bg-transparent p-0'
             : isNote
               ? 'bg-yellow-500/15 border border-yellow-500/30 text-yellow-200 italic'
@@ -251,42 +251,43 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
           );
         })()}
 
-        {/* Contact Card (vCard) */}
+        {/* Contact Card (vCard) - WhatsApp style */}
         {message.media_type === 'contact' && contactData && (
-          <div className="mb-1 rounded-lg border border-border bg-muted/30 overflow-hidden min-w-[200px]">
+          <div className="rounded-xl border border-border bg-card overflow-hidden min-w-[240px] max-w-[280px]">
+            {/* Header: avatar + name + chevron */}
             <div className="flex items-center gap-3 p-3">
-              <div className="shrink-0 h-10 w-10 rounded-full bg-primary/15 flex items-center justify-center">
-                <User className="h-5 w-5 text-primary" />
+              <div className="shrink-0 h-10 w-10 rounded-full bg-muted flex items-center justify-center">
+                <User className="h-5 w-5 text-muted-foreground" />
               </div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-semibold truncate">{contactData.displayName}</span>
-                {contactData.org && (
-                  <span className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
-                    <Building2 className="h-3 w-3 shrink-0" />
-                    {contactData.org}
-                  </span>
-                )}
-              </div>
+              <span className="text-sm font-medium text-foreground truncate flex-1">
+                {contactData.displayName}
+              </span>
+              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
             </div>
-            <div className="border-t border-border px-3 py-2 space-y-1.5">
-              {contactData.phone && (
-                <a href={`tel:${contactData.phone}`} className="flex items-center gap-2 text-xs text-primary hover:underline truncate">
-                  <Phone className="h-3 w-3 shrink-0" />
-                  {contactData.phone}
+            {/* Divider */}
+            <div className="border-t border-border" />
+            {/* Action buttons */}
+            <div className="grid grid-cols-2 divide-x divide-border">
+              {contactData.phone ? (
+                <a
+                  href={`https://wa.me/${contactData.phone.replace(/\D/g, '')}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-1.5 py-2.5 text-xs text-primary hover:bg-muted/50 transition-colors"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Conversar
                 </a>
+              ) : (
+                <span className="flex items-center justify-center gap-1.5 py-2.5 text-xs text-muted-foreground">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Conversar
+                </span>
               )}
-              {contactData.email && (
-                <a href={`mailto:${contactData.email}`} className="flex items-center gap-2 text-xs text-primary hover:underline truncate">
-                  <Mail className="h-3 w-3 shrink-0" />
-                  {contactData.email}
-                </a>
-              )}
-              {contactData.url && (
-                <a href={contactData.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-primary hover:underline truncate">
-                  <Globe className="h-3 w-3 shrink-0" />
-                  {contactData.url}
-                </a>
-              )}
+              <button className="flex items-center justify-center gap-1.5 py-2.5 text-xs text-primary hover:bg-muted/50 transition-colors">
+                <UserPlus className="h-3.5 w-3.5" />
+                Adicionar
+              </button>
             </div>
           </div>
         )}
