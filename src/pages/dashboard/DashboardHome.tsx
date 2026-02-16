@@ -11,8 +11,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import InstanceFilterSelect from '@/components/dashboard/InstanceFilterSelect';
 import { toast } from 'sonner';
-import { startOfDay, subDays, format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { startOfDay, subDays } from 'date-fns';
+import { formatBR } from '@/lib/dateUtils';
 
 interface Instance {
   id: string;
@@ -205,16 +205,16 @@ const DashboardHome = () => {
       const dayMap = new Map<string, number>();
       for (let i = 6; i >= 0; i--) {
         const d = subDays(now, i);
-        dayMap.set(format(d, 'yyyy-MM-dd'), 0);
+        dayMap.set(formatBR(d, 'yyyy-MM-dd'), 0);
       }
       weekRes.data?.forEach((entry) => {
-        const dayKey = format(new Date(entry.created_at!), 'yyyy-MM-dd');
+        const dayKey = formatBR(entry.created_at!, 'yyyy-MM-dd');
         dayMap.set(dayKey, (dayMap.get(dayKey) || 0) + 1);
       });
 
       const dailyData = Array.from(dayMap.entries()).map(([day, count]) => ({
         day,
-        label: format(new Date(day), 'EEE', { locale: ptBR }),
+        label: formatBR(day, 'EEE'),
         leads: count,
       }));
 

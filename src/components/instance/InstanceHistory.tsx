@@ -3,8 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Wifi, WifiOff, QrCode, Clock, AlertCircle } from 'lucide-react';
-import { format } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { formatBR } from '@/lib/dateUtils';
 import { supabase } from '@/integrations/supabase/client';
 
 interface Instance {
@@ -163,9 +162,7 @@ const InstanceHistory = ({ instance }: InstanceHistoryProps) => {
                           )}
                         </div>
                         <Badge variant="outline" className="shrink-0 text-xs">
-                          {format(new Date(log.created_at), "dd/MM/yyyy 'às' HH:mm", {
-                            locale: ptBR,
-                          })}
+                          {formatBR(log.created_at, "dd/MM/yyyy 'às' HH:mm")}
                         </Badge>
                       </div>
                     </CardContent>

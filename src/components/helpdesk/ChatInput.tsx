@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
+import { nowBRISO } from '@/lib/dateUtils';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
 import type { Label } from './ConversationLabels';
 
@@ -59,7 +60,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         body: {
           webhook_url: webhookUrl,
           payload: {
-            timestamp: new Date().toISOString(),
+            timestamp: nowBRISO(),
             instance_name: instanceInfo?.name || '',
             instance_id: inbox?.instance_id || '',
             inbox_name: inbox?.name || '',

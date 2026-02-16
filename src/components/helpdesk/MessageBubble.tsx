@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { formatBR } from '@/lib/dateUtils';
 import { ImageIcon, ExternalLink, FileText, Download, Loader2, LayoutGrid, Link, Phone, MessageSquare, User, ChevronRight, UserPlus } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { supabase } from '@/integrations/supabase/client';
@@ -359,7 +359,7 @@ export const MessageBubble = ({ message, instanceId, agentNamesMap }: MessageBub
         )}
 
         <span className="text-[10px] text-muted-foreground block text-right mt-0.5">
-          {format(new Date(message.created_at), 'HH:mm')}
+          {formatBR(message.created_at, 'HH:mm')}
         </span>
       </div>
     </div>

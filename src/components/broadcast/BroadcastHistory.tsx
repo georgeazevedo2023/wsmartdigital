@@ -54,8 +54,8 @@ import {
   User,
   Search
 } from 'lucide-react';
-import { format, isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { isAfter, isBefore, startOfDay, endOfDay, parseISO } from 'date-fns';
+import { formatBR } from '@/lib/dateUtils';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/use-mobile';
@@ -1026,14 +1026,14 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                           <div className="flex items-center gap-2 text-muted-foreground">
                             <Play className="w-3.5 h-3.5 text-green-500" />
                             <span className="truncate">
-                              Início: {format(new Date(log.started_at), "dd/MM/yy 'às' HH:mm", { locale: ptBR })}
+                              Início: {formatBR(log.started_at, "dd/MM/yy 'às' HH:mm")}
                             </span>
                           </div>
                           {log.completed_at && (
                             <div className="flex items-center gap-2 text-muted-foreground">
                               <CheckCircle2 className="w-3.5 h-3.5 text-primary" />
                               <span className="truncate">
-                                Fim: {format(new Date(log.completed_at), "dd/MM/yy 'às' HH:mm", { locale: ptBR })}
+                                Fim: {formatBR(log.completed_at, "dd/MM/yy 'às' HH:mm")}
                               </span>
                             </div>
                           )}
@@ -1115,7 +1115,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                 <span className="block mt-2 text-sm">
                   <strong>Tipo:</strong> {getMessageTypeLabel(logToDelete.message_type)} • 
                   <strong> Grupos:</strong> {logToDelete.groups_targeted} • 
-                  <strong> Data:</strong> {format(new Date(logToDelete.created_at), "dd/MM/yyyy", { locale: ptBR })}
+                  <strong> Data:</strong> {formatBR(logToDelete.created_at, "dd/MM/yyyy")}
                 </span>
               )}
             </AlertDialogDescription>
