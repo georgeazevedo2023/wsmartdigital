@@ -3,7 +3,6 @@ import { Search, Inbox, RefreshCw, Tags } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { ConversationItem } from './ConversationItem';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ManageLabelsDialog } from './ManageLabelsDialog';
@@ -116,7 +115,7 @@ export const ConversationList = ({
       </div>
 
       {/* List */}
-      <ScrollArea className="flex-1">
+      <div className="flex-1 overflow-y-auto">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -127,7 +126,7 @@ export const ConversationList = ({
             <p className="text-sm">Nenhuma conversa</p>
           </div>
         ) : (
-          <div className="divide-y divide-border/30 pr-3">
+          <div className="divide-y divide-border/30">
             {conversations.map(c => (
               <ConversationItem
                 key={c.id}
@@ -140,7 +139,7 @@ export const ConversationList = ({
             ))}
           </div>
         )}
-      </ScrollArea>
+      </div>
 
       {/* Manage Labels Dialog */}
       {inboxId && onLabelsChanged && (
