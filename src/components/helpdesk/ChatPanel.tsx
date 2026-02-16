@@ -122,10 +122,10 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   return (
     <>
       {/* Header */}
-      <div className="h-14 px-3 md:px-4 flex items-center gap-2 md:gap-3 border-b border-border/50 bg-card/50 shrink-0 z-10 relative overflow-hidden">
+      <div className="h-16 md:h-14 px-3 md:px-4 flex items-center gap-2 md:gap-3 border-b border-border/50 bg-card shrink-0 z-10 relative overflow-hidden">
         {onBack && (
-          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onBack}>
-            <ArrowLeft className="w-5 h-5" />
+          <Button variant="ghost" size="icon" className="shrink-0 h-10 w-10" onClick={onBack}>
+            <ArrowLeft className="w-6 h-6" />
           </Button>
         )}
         {onToggleList && (
