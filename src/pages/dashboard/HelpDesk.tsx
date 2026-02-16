@@ -262,10 +262,13 @@ const HelpDesk = () => {
           setConversations(prev => {
             const exists = prev.some(c => c.id === data.conversation_id);
             if (exists) {
-              return prev.map(c =>
+              const updated = prev.map(c =>
                 c.id === data.conversation_id
                   ? { ...c, last_message: data.content || mediaPreview(data.media_type) || c.last_message, last_message_at: data.created_at, is_read: false }
                   : c
+              );
+              return updated.sort((a, b) =>
+                new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()
               );
             }
             fetchConversations();
