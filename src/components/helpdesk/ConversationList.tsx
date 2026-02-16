@@ -59,42 +59,8 @@ export const ConversationList = ({
 
   return (
     <>
-      {/* Header */}
+      {/* Filters */}
       <div className="p-3 border-b border-border/50">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-display font-bold text-lg">Atendimento</h2>
-          <div className="flex items-center gap-1">
-            {inboxId && onLabelsChanged && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setManageOpen(true)}
-                className="h-7 w-7"
-                title="Gerenciar etiquetas"
-              >
-                <Tags className="w-4 h-4" />
-              </Button>
-            )}
-            {onSync && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={onSync}
-                disabled={syncing}
-                className="h-7 w-7"
-                title="Sincronizar conversas"
-              >
-                <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
-              </Button>
-            )}
-            {unreadCount > 0 && (
-              <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">
-                {unreadCount}
-              </span>
-            )}
-          </div>
-        </div>
-
         {/* Status tabs */}
         <div className="flex gap-1 mb-3">
           {statusTabs.map(tab => (

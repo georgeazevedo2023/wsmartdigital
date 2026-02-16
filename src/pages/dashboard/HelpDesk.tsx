@@ -6,7 +6,11 @@ import { useIsMobile } from '@/hooks/use-mobile';
 import { ConversationList } from '@/components/helpdesk/ConversationList';
 import { ChatPanel } from '@/components/helpdesk/ChatPanel';
 import { ContactInfoPanel } from '@/components/helpdesk/ContactInfoPanel';
+import { ManageLabelsDialog } from '@/components/helpdesk/ManageLabelsDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
+import { RefreshCw, Tags } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import type { Label } from '@/components/helpdesk/ConversationLabels';
 
@@ -345,23 +349,59 @@ const HelpDesk = () => {
     return true;
   });
 
-  const inboxSelector = inboxes.length > 0 ? (
-    <div className="flex items-center gap-3 px-4 py-2 border-b border-border/50 bg-card/50 shrink-0">
-      <span className="text-sm text-muted-foreground font-medium">Caixa:</span>
-      <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
-        <SelectTrigger className="w-52 h-8 text-sm">
-          <SelectValue placeholder="Selecionar inbox" />
-        </SelectTrigger>
-        <SelectContent>
-          {inboxes.map(inbox => (
-            <SelectItem key={inbox.id} value={inbox.id}>
-              {inbox.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+  const unreadCount = conversations.filter(c => !c.is_read).length;
+  const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
+
+  const unifiedHeader = (
+    <div className="flex items-center justify-between px-4 py-2 border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
+      <div className="flex items-center gap-2">
+        <h2 className="font-display font-bold text-base">Atendimento</h2>
+        {selectedInboxId && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setManageLabelsOpen(true)}
+            className="h-7 w-7"
+            title="Gerenciar etiquetas"
+          >
+            <Tags className="w-4 h-4" />
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={handleSync}
+          disabled={syncing}
+          className="h-7 w-7"
+          title="Sincronizar conversas"
+        >
+          <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
+        </Button>
+        {unreadCount > 0 && (
+          <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">
+            {unreadCount}
+          </span>
+        )}
+      </div>
+      {inboxes.length > 0 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">Caixa:</span>
+          <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
+            <SelectTrigger className="w-48 h-7 text-xs border-border/30 bg-secondary/50">
+              <SelectValue placeholder="Selecionar inbox" />
+            </SelectTrigger>
+            <SelectContent>
+              {inboxes.map(inbox => (
+                <SelectItem key={inbox.id} value={inbox.id}>
+                  {inbox.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
     </div>
-  ) : null;
+  );
 
   const listProps = {
     conversations: filteredConversations,
@@ -387,7 +427,7 @@ const HelpDesk = () => {
       <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
         {mobileView === 'list' && (
           <>
-            {inboxSelector}
+            {unifiedHeader}
             <div className="flex-1 flex flex-col overflow-hidden">
               <ConversationList {...listProps} />
             </div>
@@ -418,13 +458,31 @@ const HelpDesk = () => {
             />
           </div>
         )}
+        {selectedInboxId && (
+          <ManageLabelsDialog
+            open={manageLabelsOpen}
+            onOpenChange={setManageLabelsOpen}
+            inboxId={selectedInboxId}
+            labels={inboxLabels}
+            onChanged={handleLabelsChanged}
+          />
+        )}
       </div>
     );
   }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] overflow-hidden">
-      {inboxSelector}
+      {unifiedHeader}
+      {selectedInboxId && (
+        <ManageLabelsDialog
+          open={manageLabelsOpen}
+          onOpenChange={setManageLabelsOpen}
+          inboxId={selectedInboxId}
+          labels={inboxLabels}
+          onChanged={handleLabelsChanged}
+        />
+      )}
       <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
         {showConversationList && (
           <div className="w-72 lg:w-80 border-r border-border/50 flex flex-col shrink-0 overflow-hidden">
