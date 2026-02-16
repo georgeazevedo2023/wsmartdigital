@@ -116,7 +116,7 @@ export const ConversationList = ({
       </div>
 
       {/* List */}
-      <ScrollArea className="flex-1 pr-2.5">
+      <ScrollArea className="flex-1">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -127,7 +127,7 @@ export const ConversationList = ({
             <p className="text-sm">Nenhuma conversa</p>
           </div>
         ) : (
-          <div className="divide-y divide-border/30">
+          <div className="divide-y divide-border/30 pr-3">
             {conversations.map(c => (
               <ConversationItem
                 key={c.id}
