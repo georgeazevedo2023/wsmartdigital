@@ -286,6 +286,17 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
           created_at: insertedMsg.created_at,
         },
       });
+      await supabase.channel('helpdesk-conversations').send({
+        type: 'broadcast',
+        event: 'new-message',
+        payload: {
+          conversation_id: conversation.id,
+          inbox_id: conversation.inbox_id,
+          content: null,
+          media_type: 'audio',
+          created_at: insertedMsg.created_at,
+        },
+      });
 
       await autoAssignAgent();
       await fireOutgoingWebhook({ message_type: 'audio', content: null, media_url: audioPublicUrl });
@@ -401,6 +412,17 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
           created_at: insertedMsg.created_at,
         },
       });
+      await supabase.channel('helpdesk-conversations').send({
+        type: 'broadcast',
+        event: 'new-message',
+        payload: {
+          conversation_id: conversation.id,
+          inbox_id: conversation.inbox_id,
+          content: isImage ? null : file.name,
+          media_type: mediaType,
+          created_at: insertedMsg.created_at,
+        },
+      });
 
       await autoAssignAgent();
       await fireOutgoingWebhook({ message_type: mediaType, content: isImage ? null : file.name, media_url: filePublicUrl });
@@ -495,6 +517,17 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
             media_type: 'text',
             content: text.trim(),
             media_url: null,
+            created_at: insertedMsg.created_at,
+          },
+        });
+        await supabase.channel('helpdesk-conversations').send({
+          type: 'broadcast',
+          event: 'new-message',
+          payload: {
+            conversation_id: conversation.id,
+            inbox_id: conversation.inbox_id,
+            content: text.trim(),
+            media_type: 'text',
             created_at: insertedMsg.created_at,
           },
         });
