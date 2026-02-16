@@ -1,91 +1,100 @@
 
-
-# Webhook Outgoing para Caixas de Entrada
+# Enriquecer payload do Webhook Outgoing
 
 ## Objetivo
 
-Adicionar um campo de "Webhook Outgoing" em cada caixa de entrada. Quando um agente responder pelo Helpdesk, o sistema envia um POST para essa URL com os dados: `remotejid`, `fromMe: true`, nome e ID do agente, e `pausar_agente: "sim"`.
+Adicionar mais dados ao payload do webhook outgoing: timestamp, instancia, caixa de entrada, tipo de mensagem, conteudo da mensagem e URL publica de midia/documento.
 
 ## Alteracoes
 
-### 1. Migracao de banco de dados
+### `src/components/helpdesk/ChatInput.tsx`
 
-Adicionar coluna `webhook_outgoing_url` na tabela `inboxes`:
+Modificar a funcao `fireOutgoingWebhook` para aceitar parametros com os dados da mensagem enviada e incluir todos os campos solicitados no payload.
 
-```sql
-ALTER TABLE public.inboxes ADD COLUMN webhook_outgoing_url text;
+**Assinatura atualizada:**
+
+```typescript
+const fireOutgoingWebhook = async (messageData: {
+  message_type: 'text' | 'audio' | 'image' | 'document';
+  content: string | null;
+  media_url: string | null;
+}) => { ... }
 ```
 
-### 2. `src/pages/dashboard/InboxManagement.tsx`
-
-- Adicionar estado e logica para editar/exibir o `webhook_outgoing_url` no card da inbox, similar ao `webhook_url` existente
-- O campo sera exibido abaixo do webhook atual, com icone e label "Webhook Outgoing"
-- Suportar edicao inline, copia e salvamento, seguindo o mesmo padrao visual do webhook existente
-- Adicionar campo "Webhook Outgoing URL" no dialog de criacao de nova inbox
-
-### 3. `src/components/helpdesk/ChatInput.tsx`
-
-- Receber via props o `webhook_outgoing_url` da inbox atual (ou buscar da tabela `inboxes` ao enviar)
-- Criar funcao `fireOutgoingWebhook` que faz POST (mode: "no-cors") para a URL configurada com o payload:
+**Payload completo enviado ao n8n:**
 
 ```json
 {
+  "timestamp": "2026-02-16T02:15:00.000Z",
+  "instance_name": "NeoBlindados",
+  "instance_id": "uuid-da-instancia",
+  "inbox_name": "Neo Blindados - Geral",
+  "inbox_id": "uuid-da-inbox",
   "remotejid": "5511999999999@s.whatsapp.net",
   "fromMe": true,
   "agent_name": "George Azevedo",
   "agent_id": "66de650f-...",
-  "pausar_agente": "sim"
+  "pausar_agente": "sim",
+  "message_type": "text",
+  "message": "Ola, como posso ajudar?",
+  "media_url": null
 }
 ```
 
-- Chamar `fireOutgoingWebhook` apos o envio bem-sucedido de texto, audio e arquivo (nos mesmos pontos onde `autoAssignAgent` e chamado, excluindo notas privadas)
+Para audio: `message_type: "audio"`, `message: null`, `media_url: "https://...storage.../audio.ogg"`
+Para imagem: `message_type: "image"`, `message: null`, `media_url: "https://...storage.../foto.jpg"`
+Para documento: `message_type: "document"`, `message: "arquivo.pdf"`, `media_url: "https://...storage.../arquivo.pdf"`
 
-### 4. Fluxo de dados
+**Chamadas atualizadas nos 3 pontos de envio:**
 
-- `HelpDesk.tsx` ja busca a inbox selecionada; passar o `webhook_outgoing_url` para `ChatPanel` e depois para `ChatInput`
-- Alternativamente, buscar direto no `ChatInput` usando `conversation.inbox_id` para simplificar
-
-### Exemplo visual no card da inbox
-
-```text
-  ┌──────────────────────────────────────────────┐
-  │  Neo Blindados - Geral              👥 1     │
-  │  📱 NeoBlindados                             │
-  │  Criada em 15/02/2026                        │
-  │                                              │
-  │  🔗 https://fluxwebhook.../neo_em_george     │  <- webhook (incoming)
-  │  📤 https://fluxwebhook.../outgoing_neo      │  <- webhook outgoing (NOVO)
-  │                                              │
-  │  [       Gerenciar Membros       ]  🗑       │
-  └──────────────────────────────────────────────┘
-```
+1. Envio de texto (handleSend): `fireOutgoingWebhook({ message_type: 'text', content: text.trim(), media_url: null })`
+2. Envio de audio (handleSendAudio): `fireOutgoingWebhook({ message_type: 'audio', content: null, media_url: audioPublicUrl })`
+3. Envio de arquivo (handleSendFile): `fireOutgoingWebhook({ message_type: mediaType, content: isImage ? null : file.name, media_url: filePublicUrl })`
 
 ### Detalhes tecnicos
 
-A funcao `fireOutgoingWebhook` no `ChatInput`:
+A funcao buscara os nomes da instancia e inbox diretamente do objeto `conversation.inbox` que ja contem `instance_id` e o nome da inbox. Para o nome da instancia, sera feita uma consulta rapida na tabela `instances`:
 
 ```typescript
-const fireOutgoingWebhook = async () => {
-  const webhookUrl = conversation.inbox?.webhook_outgoing_url;
+const fireOutgoingWebhook = async (messageData: {
+  message_type: string;
+  content: string | null;
+  media_url: string | null;
+}) => {
+  const inbox = conversation.inbox as any;
+  const webhookUrl = inbox?.webhook_outgoing_url;
   if (!webhookUrl || !user) return;
   try {
-    // Buscar nome do agente
     const { data: profile } = await supabase
       .from('user_profiles')
       .select('full_name')
       .eq('id', user.id)
       .single();
 
+    const { data: instanceInfo } = await supabase
+      .from('instances')
+      .select('name')
+      .eq('id', inbox?.instance_id || '')
+      .maybeSingle();
+
     await fetch(webhookUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       mode: 'no-cors',
       body: JSON.stringify({
+        timestamp: new Date().toISOString(),
+        instance_name: instanceInfo?.name || '',
+        instance_id: inbox?.instance_id || '',
+        inbox_name: inbox?.name || '',
+        inbox_id: inbox?.id || conversation.inbox_id,
         remotejid: conversation.contact?.jid,
         fromMe: true,
         agent_name: profile?.full_name || user.email,
         agent_id: user.id,
         pausar_agente: 'sim',
+        message_type: messageData.message_type,
+        message: messageData.content,
+        media_url: messageData.media_url,
       }),
     });
   } catch (err) {
@@ -94,10 +103,7 @@ const fireOutgoingWebhook = async () => {
 };
 ```
 
-### Arquivos afetados
-- Migracao SQL (nova coluna `webhook_outgoing_url`)
-- `src/pages/dashboard/InboxManagement.tsx` - exibir/editar webhook outgoing no card
-- `src/components/helpdesk/ChatInput.tsx` - disparar webhook ao enviar mensagem
-- `src/pages/dashboard/HelpDesk.tsx` - incluir `webhook_outgoing_url` no select da inbox
-- `src/components/helpdesk/ChatPanel.tsx` - passar prop adiante (se necessario)
+### Arquivo afetado
+- `src/components/helpdesk/ChatInput.tsx` - funcao `fireOutgoingWebhook` e suas 3 chamadas
 
+Nenhuma migracao necessaria.
