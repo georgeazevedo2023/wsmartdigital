@@ -13,6 +13,7 @@ function normalizeMediaType(raw: string): string {
   if (lower.includes('audio') || lower.includes('ptt')) return 'audio'
   if (lower.includes('document') || lower.includes('pdf')) return 'document'
   if (lower.includes('sticker')) return 'sticker'
+  if (lower.includes('contact')) return 'contact'
   return 'text'
 }
 
@@ -191,8 +192,19 @@ Deno.serve(async (req) => {
       content = message.content.text
     }
 
+    // Contact message: store vcard data in media_url as JSON
+    if (mediaType === 'contact' && typeof message.content === 'object' && message.content?.vcard) {
+      mediaUrl = JSON.stringify({
+        displayName: message.content.displayName || '',
+        vcard: message.content.vcard,
+      })
+      if (!content) {
+        content = message.content.displayName || message.text || 'Contato'
+      }
+    }
+
     // Fallback content for media without caption
-    if (mediaType !== 'text' && !content && message.fileName) {
+    if (mediaType !== 'text' && mediaType !== 'contact' && !content && message.fileName) {
       content = message.fileName
     }
 
