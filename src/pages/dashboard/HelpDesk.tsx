@@ -428,7 +428,7 @@ const HelpDesk = () => {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col h-[calc(100vh-3.5rem)] -m-4 overflow-hidden">
+      <div className="flex flex-col h-[calc(100dvh-3.5rem)] -m-4 overflow-hidden">
         {mobileView === 'list' && (
           <>
             {unifiedHeader}

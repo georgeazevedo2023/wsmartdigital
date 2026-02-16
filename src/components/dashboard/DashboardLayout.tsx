@@ -15,7 +15,7 @@ const DashboardLayout = () => {
 
   if (isMobile) {
     return (
-      <div className="flex flex-col h-screen bg-aurora">
+      <div className="flex flex-col h-[100dvh] bg-aurora">
         <MobileHeader onOpenMenu={() => setMobileMenuOpen(true)} />
         
         <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
