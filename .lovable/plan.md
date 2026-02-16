@@ -1,80 +1,68 @@
 
 
-# Corrigir lista de conversas: mensagem nova, horario e nome do contato
+# Corrigir toast de login persistente, horario na lista e melhorar mobile
 
 ## Problemas identificados
 
-### 1. Mensagem "teste4" nao aparece na lista
-O broadcast realtime atualiza o `last_message` da conversa existente, mas a lista nao e reordenada. A conversa atualizada permanece na mesma posicao visual em vez de subir para o topo.
+### 1. Toast "Login realizado com sucesso!" fica fixo na tela
+O componente Sonner esta configurado sem `duration`, e como nao usa o `next-themes` provider (o projeto usa classes CSS para tema), o `useTheme()` retorna valores incorretos, o que pode causar comportamentos inesperados no toast. A solucao e adicionar `duration={3000}` ao Sonner para garantir que os toasts desaparecam automaticamente.
 
-### 2. Horario nao aparece na lista
-A funcao `smartDateBR` esta sendo chamada corretamente, mas `isToday` e `isYesterday` do date-fns comparam com a data local do navegador. O problema e que `toZonedTime` cria um Date "falso" representando o horario de Brasilia, mas `isToday()` compara com `startOfDay(new Date())` que usa o timezone local. Se houver discrepancia, a funcao pode falhar silenciosamente. Alem disso, se `last_message_at` for `null`, nada e exibido.
+### 2. Horario nao aparece na lista de conversas (mobile)
+Olhando o screenshot, os nomes dos contatos aparecem sem nenhum horario ao lado. O `ConversationItem` renderiza o horario na linha 56-60 com `text-[10px]`, mas o layout `flex items-center justify-between` pode estar sendo comprimido no mobile. Alem disso, preciso verificar se o `last_message_at` esta chegando corretamente nas conversas. O `smartDateBR` esta correto agora, mas o texto pode estar muito pequeno ou invisivel.
 
-### 3. Nome mudou de "George" para "Wsmart"
-No webhook, linha 316: `contactName = chat?.wa_contactName || chat?.name || message.senderName || contactPhone`. Para mensagens **outgoing** (fromMe=true), o campo `senderName` contem o pushname da propria instancia ("Wsmart"), nao o nome do contato. Quando o webhook processa uma mensagem enviada e o contato ainda nao existe, ele cria o contato com o nome errado (o pushname da instancia).
+### 3. Melhorar design mobile-first
+O layout atual funciona mas pode ser mais moderno: melhorar espacamento, tipografia e visual geral da lista de conversas no mobile.
 
 ---
 
 ## Alteracoes
 
-### 1. Reordenar lista apos broadcast (`src/pages/dashboard/HelpDesk.tsx`)
+### 1. Corrigir toast persistente (`src/components/ui/sonner.tsx`)
 
-No handler de broadcast (linhas 262-274), apos atualizar a conversa com a nova mensagem, reordenar o array por `last_message_at` decrescente para que a conversa atualizada suba para o topo:
-
-```typescript
-setConversations(prev => {
-  const updated = prev.map(c =>
-    c.id === data.conversation_id
-      ? { ...c, last_message: data.content || mediaPreview(data.media_type) || c.last_message, last_message_at: data.created_at, is_read: false }
-      : c
-  );
-  // Reordenar: conversa mais recente no topo
-  return updated.sort((a, b) =>
-    new Date(b.last_message_at || 0).getTime() - new Date(a.last_message_at || 0).getTime()
-  );
-});
-```
-
-### 2. Corrigir `smartDateBR` (`src/lib/dateUtils.ts`)
-
-O problema e que `isToday(zoned)` compara com o "hoje" do navegador. Precisamos comparar ambos os lados no mesmo timezone. A correcao e usar `toZonedTime` tambem para o "agora":
+Adicionar `duration={3000}` e `richColors` ao Sonner para auto-dismiss e visual melhor:
 
 ```typescript
-export function smartDateBR(date: string | Date): string {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  const zoned = toZonedTime(d, BRAZIL_TZ);
-  const nowZoned = toZonedTime(new Date(), BRAZIL_TZ);
-
-  const startOfToday = new Date(nowZoned.getFullYear(), nowZoned.getMonth(), nowZoned.getDate());
-  const startOfYesterday = new Date(startOfToday.getTime() - 86400000);
-
-  if (zoned >= startOfToday) return formatInTimeZone(d, BRAZIL_TZ, 'HH:mm', { locale: ptBR });
-  if (zoned >= startOfYesterday) return 'Ontem';
-  return formatInTimeZone(d, BRAZIL_TZ, 'dd/MM', { locale: ptBR });
-}
+<Sonner
+  theme={theme as ToasterProps["theme"]}
+  className="toaster group"
+  duration={3000}
+  richColors
+  position="top-center"
+  // ... rest
+/>
 ```
 
-### 3. Corrigir nome do contato em mensagens outgoing (`supabase/functions/whatsapp-webhook/index.ts`)
+### 2. Garantir horario visivel no `ConversationItem` (`src/components/helpdesk/ConversationItem.tsx`)
 
-Na linha 316, para mensagens outgoing (`fromMe=true`), `message.senderName` e o pushname da instancia, nao do contato. A correcao e nao usar `senderName` quando `fromMe=true`:
+Aumentar tamanho do texto do horario de `text-[10px]` para `text-xs` e garantir que ele sempre apareca com cor mais visivel:
 
 ```typescript
-const contactName = fromMe
-  ? (chat?.wa_contactName || chat?.name || contactPhone)
-  : (chat?.wa_contactName || chat?.name || message.senderName || contactPhone);
+<span className="text-xs text-muted-foreground/80 shrink-0 tabular-nums">
+  {conversation.last_message_at
+    ? smartDateBR(conversation.last_message_at)
+    : ''}
+</span>
 ```
 
-Isso evita que o pushname da instancia seja usado como nome do contato.
+### 3. Melhorar layout mobile da lista de conversas
 
-### 4. Corrigir nome existente no banco (query manual)
+Ajustes no `ConversationItem` e `ConversationList` para um visual mais moderno:
+- Aumentar padding e espacamento para melhor toque
+- Melhorar hierarquia visual com tamanhos de fonte adequados
+- Garantir que nome + horario fiquem alinhados horizontalmente com espaco adequado
 
-O contato "Wsmart" que ja foi salvo incorretamente precisa ser corrigido manualmente. Sera necessario verificar na tabela `contacts` qual registro teve o nome alterado e atualizar de volta para o nome correto.
+### 4. Melhorar header mobile do Helpdesk (`HelpDesk.tsx`)
+
+Otimizar o header unificado para mobile:
+- Tornar o seletor de caixa responsivo (largura menor no mobile)
+- Empilhar elementos no mobile se necessario
 
 ---
 
 ## Arquivos afetados
 
-- `src/pages/dashboard/HelpDesk.tsx` - reordenar lista apos broadcast
-- `src/lib/dateUtils.ts` - corrigir comparacao de datas no timezone correto
-- `supabase/functions/whatsapp-webhook/index.ts` - nao usar senderName para mensagens outgoing
+- `src/components/ui/sonner.tsx` - adicionar duration e richColors
+- `src/components/helpdesk/ConversationItem.tsx` - melhorar visibilidade do horario e layout mobile
+- `src/components/helpdesk/ConversationList.tsx` - ajustes visuais mobile
+- `src/pages/dashboard/HelpDesk.tsx` - header responsivo
 
