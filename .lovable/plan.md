@@ -1,50 +1,38 @@
 
-# Otimizar mobile do Helpdesk: ocultar "Caixa", sincronizar e acelerar carregamento
 
-## 1. Ocultar label "Caixa:" no mobile
+# Corrigir botao voltar no mobile do Helpdesk
 
-Na linha 412 do `HelpDesk.tsx`, adicionar `hidden md:inline` ao span "Caixa:":
+## Problema
 
-```typescript
-<span className="hidden md:inline text-xs text-muted-foreground">Caixa:</span>
-```
+No mobile, o header do chat (que contem o botao voltar, nome do contato e status) esta sendo cortado/escondido pela barra de endereco do navegador. O botao de voltar existe no codigo mas fica inacessivel visualmente.
 
-## 2. Ocultar botao de sincronizar no mobile
+## Causa raiz
 
-Nas linhas 394-403 do `HelpDesk.tsx`, adicionar `hidden md:flex` ao botao de sync:
+O container do chat no mobile (`mobileView === 'chat'`) nao tem nenhum padding superior ou safe-area inset. O header `h-14` fica colado no topo e e encoberto pela interface do navegador mobile.
 
-```typescript
-<Button
-  variant="ghost"
-  size="icon"
-  onClick={handleSync}
-  disabled={syncing}
-  className="h-7 w-7 hidden md:flex"
-  title="Sincronizar conversas"
->
-```
+## Solucao
 
-## 3. Acelerar carregamento da lista de conversas
+### 1. Adicionar safe-area e destaque ao header do ChatPanel (`ChatPanel.tsx`)
 
-O principal gargalo de performance esta nas linhas 209-216: o sistema busca TODAS as mensagens de TODAS as conversas para extrair apenas a ultima de cada uma. Isso e extremamente ineficiente.
+- Aumentar o destaque visual do header no mobile com um background mais solido
+- Adicionar `pt-safe` ou padding extra no topo para evitar sobreposicao com a barra do navegador
 
-**Solucao**: Usar o campo `last_message` que ja existe na tabela `conversations` (preenchido pelo webhook/broadcast) em vez de buscar as mensagens separadamente. Se o campo estiver vazio, usar o fallback do `inbox.name`.
+### 2. Ajustar container mobile no HelpDesk.tsx
 
-Isso elimina a query extra de `conversation_messages` que e a mais pesada, reduzindo o tempo de carregamento significativamente.
+No bloco `mobileView === 'chat'` (linhas 440-452), o container usa `h-[calc(100vh-4rem)]` herdado do pai, mas dentro dele nao ha protecao para safe areas. Adicionar `safe-area-inset` ao container do chat.
 
-A query de `conversation_messages` sera removida, e o mapeamento simplificado:
+## Alteracoes tecnicas
 
-```typescript
-const mapped: Conversation[] = (data || []).map((c: any) => ({
-  ...c,
-  contact: c.contacts,
-  inbox: c.inboxes,
-  last_message: c.last_message || null,
-}));
-```
+### `src/components/helpdesk/ChatPanel.tsx`
+- Aumentar o tamanho do botao de voltar de `h-9 w-9` para `h-10 w-10` com icone maior
+- Tornar o background do header mais solido: `bg-card` em vez de `bg-card/50`
+- Aumentar a altura do header de `h-14` para `h-16` no mobile para dar mais espaco ao toque
 
-Se o campo `last_message` na tabela `conversations` nao estiver sendo populado consistentemente, adicionaremos uma abordagem hibrida: usar `last_message` da tabela quando disponivel, e so buscar de `conversation_messages` para os que nao tem.
+### `src/pages/dashboard/HelpDesk.tsx`
+- No container mobile do chat (linha 441), adicionar uma classe de padding-top seguro para evitar sobreposicao com a barra do navegador
 
 ## Arquivos afetados
 
-- `src/pages/dashboard/HelpDesk.tsx` - ocultar elementos no mobile + otimizar query
+- `src/components/helpdesk/ChatPanel.tsx` - header mais visivel e acessivel
+- `src/pages/dashboard/HelpDesk.tsx` - safe area no container mobile do chat
+
