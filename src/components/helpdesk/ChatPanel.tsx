@@ -116,43 +116,34 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
             {showingList ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
           </Button>
         )}
-        <div className="flex-1 min-w-0 flex items-center gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h3 className="font-semibold text-sm truncate">
-                {contact?.name || contact?.phone || 'Desconhecido'}
-              </h3>
-              {contact?.phone && (
-                <span className="text-xs text-muted-foreground hidden sm:inline">
-                  {contact.phone}
-                </span>
-              )}
-            </div>
-            <Select
-              value={conversation.status}
-              onValueChange={(status) => onUpdateConversation(conversation.id, { status })}
-            >
-              <SelectTrigger className="h-6 w-auto min-w-[100px] max-w-[120px] text-xs border-none bg-transparent shadow-none focus:ring-0 gap-1.5 px-0 mt-0.5">
-                <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${
-                  conversation.status === 'aberta' ? 'bg-emerald-500' :
-                  conversation.status === 'pendente' ? 'bg-yellow-500' :
-                  'bg-muted-foreground/50'
-                }`} />
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent className="bg-popover z-50">
-                <SelectItem value="aberta">
-                  <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Aberta</span>
-                </SelectItem>
-                <SelectItem value="pendente">
-                  <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500" /> Pendente</span>
-                </SelectItem>
-                <SelectItem value="resolvida">
-                  <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-muted-foreground/50" /> Resolvida</span>
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+        <div className="flex-1 min-w-0 flex items-center gap-2">
+          <h3 className="font-semibold text-sm truncate">
+            {contact?.name || contact?.phone || 'Desconhecido'}
+          </h3>
+          {contact?.phone && (
+            <span className="text-xs text-muted-foreground hidden sm:inline">
+              {contact.phone}
+            </span>
+          )}
+          <Select
+            value={conversation.status}
+            onValueChange={(status) => onUpdateConversation(conversation.id, { status })}
+          >
+            <SelectTrigger className="h-6 w-auto text-xs border-none bg-transparent shadow-none focus:ring-0 gap-1 px-1 [&>svg:last-child]:hidden">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-popover z-50">
+              <SelectItem value="aberta">
+                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Aberta</span>
+              </SelectItem>
+              <SelectItem value="pendente">
+                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-yellow-500" /> Pendente</span>
+              </SelectItem>
+              <SelectItem value="resolvida">
+                <span className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-muted-foreground/50" /> Resolvida</span>
+              </SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         {onShowInfo && (
           <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
