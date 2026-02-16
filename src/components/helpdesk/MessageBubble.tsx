@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { ImageIcon, ExternalLink, FileText, Download, Loader2, LayoutGrid, Link, Phone, MessageSquare } from 'lucide-react';
+import { ImageIcon, ExternalLink, FileText, Download, Loader2, LayoutGrid, Link, Phone, MessageSquare, User, Mail, Globe, Building2 } from 'lucide-react';
 import { AudioPlayer } from './AudioPlayer';
 import { supabase } from '@/integrations/supabase/client';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
@@ -30,6 +30,33 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
           image?: string;
           buttons?: Array<{ type: string; label: string; value?: string }>;
         }>;
+      };
+    } catch {
+      return null;
+    }
+  }, [message.media_type, message.media_url]);
+
+  // Parse contact (vCard) data from media_url when media_type is 'contact'
+  const contactData = useMemo(() => {
+    if (message.media_type !== 'contact' || !message.media_url) return null;
+    try {
+      const parsed = JSON.parse(message.media_url) as { displayName?: string; vcard?: string };
+      if (!parsed.vcard) return null;
+      // Parse vcard fields
+      const vcard = parsed.vcard;
+      const getField = (field: string) => {
+        const match = vcard.match(new RegExp(`${field}[^:]*:(.+)`, 'i'));
+        return match ? match[1].trim() : '';
+      };
+      // Extract phone from TEL line (handles waid format)
+      const telMatch = vcard.match(/TEL[^:]*:(\+?[\d]+)/i);
+      const phone = telMatch ? telMatch[1] : '';
+      return {
+        displayName: parsed.displayName || getField('FN') || 'Contato',
+        org: getField('ORG')?.replace(/;/g, '').trim(),
+        email: getField('EMAIL'),
+        url: getField('URL'),
+        phone,
       };
     } catch {
       return null;
@@ -224,6 +251,46 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
           );
         })()}
 
+        {/* Contact Card (vCard) */}
+        {message.media_type === 'contact' && contactData && (
+          <div className="mb-1 rounded-lg border border-border bg-muted/30 overflow-hidden min-w-[200px]">
+            <div className="flex items-center gap-3 p-3">
+              <div className="shrink-0 h-10 w-10 rounded-full bg-primary/15 flex items-center justify-center">
+                <User className="h-5 w-5 text-primary" />
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-sm font-semibold truncate">{contactData.displayName}</span>
+                {contactData.org && (
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
+                    <Building2 className="h-3 w-3 shrink-0" />
+                    {contactData.org}
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="border-t border-border px-3 py-2 space-y-1.5">
+              {contactData.phone && (
+                <a href={`tel:${contactData.phone}`} className="flex items-center gap-2 text-xs text-primary hover:underline truncate">
+                  <Phone className="h-3 w-3 shrink-0" />
+                  {contactData.phone}
+                </a>
+              )}
+              {contactData.email && (
+                <a href={`mailto:${contactData.email}`} className="flex items-center gap-2 text-xs text-primary hover:underline truncate">
+                  <Mail className="h-3 w-3 shrink-0" />
+                  {contactData.email}
+                </a>
+              )}
+              {contactData.url && (
+                <a href={contactData.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-primary hover:underline truncate">
+                  <Globe className="h-3 w-3 shrink-0" />
+                  {contactData.url}
+                </a>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Carousel */}
         {message.media_type === 'carousel' && carouselData && (
           <div className="mb-1">
@@ -277,7 +344,7 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
           </div>
         )}
 
-        {message.media_type !== 'document' && message.media_type !== 'carousel' && message.content && typeof message.content === 'string' && (
+        {message.media_type !== 'document' && message.media_type !== 'carousel' && message.media_type !== 'contact' && message.content && typeof message.content === 'string' && (
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         )}
         {message.content && typeof message.content === 'object' && (
