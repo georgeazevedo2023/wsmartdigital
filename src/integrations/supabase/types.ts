@@ -289,6 +289,7 @@ export type Database = {
           id: string
           instance_id: string
           name: string
+          webhook_outgoing_url: string | null
           webhook_url: string | null
         }
         Insert: {
@@ -297,6 +298,7 @@ export type Database = {
           id?: string
           instance_id: string
           name: string
+          webhook_outgoing_url?: string | null
           webhook_url?: string | null
         }
         Update: {
@@ -305,6 +307,7 @@ export type Database = {
           id?: string
           instance_id?: string
           name?: string
+          webhook_outgoing_url?: string | null
           webhook_url?: string | null
         }
         Relationships: [

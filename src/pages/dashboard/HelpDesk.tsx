@@ -36,6 +36,7 @@ export interface Conversation {
     id: string;
     name: string;
     instance_id: string;
+    webhook_outgoing_url?: string | null;
   };
   last_message?: string;
 }
@@ -67,6 +68,7 @@ interface Inbox {
   id: string;
   name: string;
   instance_id: string;
+  webhook_outgoing_url?: string | null;
 }
 
 const HelpDesk = () => {
@@ -105,13 +107,13 @@ const HelpDesk = () => {
       if (isSuperAdmin) {
         const { data, error } = await supabase
           .from('inboxes')
-          .select('id, name, instance_id')
+          .select('id, name, instance_id, webhook_outgoing_url')
           .order('name');
         if (!error && data) inboxData = data;
       } else {
         const { data, error } = await supabase
           .from('inbox_users')
-          .select('inboxes(id, name, instance_id)')
+          .select('inboxes(id, name, instance_id, webhook_outgoing_url)')
           .eq('user_id', user.id);
         if (!error && data) {
           inboxData = data
@@ -189,7 +191,7 @@ const HelpDesk = () => {
     try {
       let query = supabase
         .from('conversations')
-        .select('*, contacts(*), inboxes(id, name, instance_id)')
+        .select('*, contacts(*), inboxes(id, name, instance_id, webhook_outgoing_url)')
         .eq('inbox_id', selectedInboxId)
         .order('last_message_at', { ascending: false });
 
