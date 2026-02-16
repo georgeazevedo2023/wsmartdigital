@@ -146,23 +146,19 @@ const HelpDesk = () => {
     fetchLabels();
   }, [fetchLabels]);
 
-  // Fetch agent names for current inbox
+  // Fetch agent names from all user profiles
   const fetchAgentNames = useCallback(async () => {
-    if (!selectedInboxId) return;
     const { data } = await supabase
-      .from('inbox_users')
-      .select('user_id, user_profiles(full_name)')
-      .eq('inbox_id', selectedInboxId);
+      .from('user_profiles')
+      .select('id, full_name');
     if (data) {
       const map: Record<string, string> = {};
-      data.forEach((d: any) => {
-        if (d.user_id && d.user_profiles?.full_name) {
-          map[d.user_id] = d.user_profiles.full_name;
-        }
+      data.forEach(p => {
+        if (p.full_name) map[p.id] = p.full_name;
       });
       setAgentNamesMap(map);
     }
-  }, [selectedInboxId]);
+  }, []);
 
   useEffect(() => {
     fetchAgentNames();
