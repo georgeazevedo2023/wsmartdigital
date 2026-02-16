@@ -438,7 +438,7 @@ const HelpDesk = () => {
           </>
         )}
         {mobileView === 'chat' && (
-          <div className="flex-1 flex flex-col overflow-hidden pt-[env(safe-area-inset-top)]">
+          <div className="flex-1 flex flex-col overflow-hidden">
             <ChatPanel
               conversation={selectedConversation}
               onUpdateConversation={handleUpdateConversation}
