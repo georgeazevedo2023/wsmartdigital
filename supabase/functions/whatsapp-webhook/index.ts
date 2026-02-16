@@ -413,7 +413,8 @@ Deno.serve(async (req) => {
     }
 
     // Update conversation
-    const updateData: Record<string, unknown> = { last_message_at: msgTimestamp }
+    const lastMessagePreview = content || (mediaType === 'image' ? '📷 Foto' : mediaType === 'video' ? '🎥 Vídeo' : mediaType === 'audio' ? '🎵 Áudio' : mediaType === 'document' ? '📎 Documento' : '')
+    const updateData: Record<string, unknown> = { last_message_at: msgTimestamp, last_message: lastMessagePreview }
     if (direction === 'incoming') {
       updateData.is_read = false
     }

@@ -204,35 +204,14 @@ const HelpDesk = () => {
 
       const convIds = (data || []).map((c: any) => c.id);
 
-      // Fetch last message + conversation labels in parallel
-      let lastMsgMap: Record<string, string> = {};
-      const [msgsResult] = await Promise.all([
-        convIds.length > 0
-          ? supabase
-              .from('conversation_messages')
-              .select('conversation_id, content, media_type, created_at')
-              .in('conversation_id', convIds)
-              .order('created_at', { ascending: false })
-          : Promise.resolve({ data: null }),
-        fetchConversationLabels(convIds),
-      ]);
-
-      if (msgsResult.data) {
-        for (const msg of msgsResult.data) {
-          if (!lastMsgMap[msg.conversation_id]) {
-            const preview = msg.content || mediaPreview(msg.media_type);
-            if (preview) {
-              lastMsgMap[msg.conversation_id] = preview;
-            }
-          }
-        }
-      }
+      // Fetch conversation labels in parallel
+      await fetchConversationLabels(convIds);
 
       const mapped: Conversation[] = (data || []).map((c: any) => ({
         ...c,
         contact: c.contacts,
         inbox: c.inboxes,
-        last_message: lastMsgMap[c.id] || null,
+        last_message: c.last_message || null,
       }));
 
       setConversations(mapped);
@@ -396,7 +375,7 @@ const HelpDesk = () => {
           size="icon"
           onClick={handleSync}
           disabled={syncing}
-          className="h-7 w-7"
+          className="h-7 w-7 hidden md:flex"
           title="Sincronizar conversas"
         >
           <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
@@ -409,7 +388,7 @@ const HelpDesk = () => {
       </div>
       {inboxes.length > 0 && (
         <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground">Caixa:</span>
+          <span className="hidden md:inline text-xs text-muted-foreground">Caixa:</span>
           <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
             <SelectTrigger className="w-32 md:w-48 h-7 text-xs border-border/30 bg-secondary/50">
               <SelectValue placeholder="Selecionar inbox" />

@@ -201,6 +201,7 @@ export type Database = {
           id: string
           inbox_id: string
           is_read: boolean
+          last_message: string | null
           last_message_at: string | null
           priority: string
           status: string
@@ -213,6 +214,7 @@ export type Database = {
           id?: string
           inbox_id: string
           is_read?: boolean
+          last_message?: string | null
           last_message_at?: string | null
           priority?: string
           status?: string
@@ -225,6 +227,7 @@ export type Database = {
           id?: string
           inbox_id?: string
           is_read?: boolean
+          last_message?: string | null
           last_message_at?: string | null
           priority?: string
           status?: string
