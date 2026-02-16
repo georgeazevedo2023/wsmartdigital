@@ -10,9 +10,10 @@ import type { Message } from '@/pages/dashboard/HelpDesk';
 interface MessageBubbleProps {
   message: Message;
   instanceId?: string;
+  agentNamesMap?: Record<string, string>;
 }
 
-export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
+export const MessageBubble = ({ message, instanceId, agentNamesMap }: MessageBubbleProps) => {
   const isOutgoing = message.direction === 'outgoing';
   const isNote = message.direction === 'private_note';
   const [imgError, setImgError] = useState(false);
@@ -146,6 +147,11 @@ export const MessageBubble = ({ message, instanceId }: MessageBubbleProps) => {
         {isNote && (
           <span className="text-[10px] font-semibold text-yellow-400 block mb-0.5">
             📝 Nota privada
+          </span>
+        )}
+        {isOutgoing && !isNote && message.sender_id && agentNamesMap?.[message.sender_id] && (
+          <span className="text-[11px] text-emerald-400/70 block mb-0.5">
+            {agentNamesMap[message.sender_id]} · {message.sender_id.substring(0, 8)}
           </span>
         )}
 

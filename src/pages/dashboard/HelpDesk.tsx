@@ -467,6 +467,7 @@ const HelpDesk = () => {
               inboxLabels={inboxLabels}
               assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}
               onLabelsChanged={handleLabelsChanged}
+              agentNamesMap={agentNamesMap}
             />
           </div>
         )}
@@ -525,6 +526,7 @@ const HelpDesk = () => {
             inboxLabels={inboxLabels}
             assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}
             onLabelsChanged={handleLabelsChanged}
+            agentNamesMap={agentNamesMap}
           />
         </div>
 
