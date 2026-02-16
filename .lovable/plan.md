@@ -1,65 +1,29 @@
 
-# Corrigir Unwrap do Payload n8n no Webhook
+# Redesign do Card de Contato no Helpdesk (estilo WhatsApp)
 
-## Problema
+## O que muda
 
-O n8n envia o payload da UAZAPI encapsulado em um array com a seguinte estrutura:
+O card de contato atual exibe os dados em formato de lista (telefone, email, etc). O novo layout vai seguir o visual do WhatsApp:
 
-```text
-[
-  {
-    "headers": { ... },
-    "body": {
-      "EventType": "messages",
-      "instanceName": "NeoBlindados",
-      "message": { ... },
-      ...
-    }
-  }
-]
-```
+1. **Cabecalho**: Avatar circular com icone + Nome do contato em destaque + seta para a direita
+2. **Divisor**: Linha separadora
+3. **Botoes de acao**: Dois botoes lado a lado -- "Conversar" (abre chat no WhatsApp Web) e "Adicionar contato" (ainda sem acao real, apenas visual)
+4. **Sem bubble padrao**: O card tera fundo proprio (sem a bolha verde/cinza envolvendo), similar ao sticker
 
-A logica atual de unwrap (linha 78) so verifica `rawPayload.Body?.EventType`, mas nao lida com:
-1. Payload sendo um array (formato n8n)
-2. A chave `body` em minusculo (n8n usa `body`, nao `Body`)
+As cores seguem o tema dark do projeto (bordas `border`, fundo `muted/card`, texto `foreground`, destaque `primary`).
 
-Por isso o webhook recebe o array, nao encontra `EventType` na raiz, e descarta a mensagem com `not_message_event`.
+---
 
-## Alteracao
+## Detalhes tecnicos
 
-### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
+**Arquivo**: `src/components/helpdesk/MessageBubble.tsx`
 
-Expandir a logica de unwrap (linhas 77-78) para cobrir os formatos do n8n:
+- Alterar o bloco de renderizacao do `contact` (linhas 255-292) para o novo layout:
+  - Remover os campos de email, org, url e telefone em lista
+  - Adicionar cabecalho com avatar + nome + icone ChevronRight
+  - Adicionar divisor horizontal
+  - Adicionar dois botoes: "Conversar" (link `https://wa.me/{phone}`) e "Adicionar contato" (visual only)
+- Tratar o card como "sem bolha padrao" (similar ao sticker): o container externo nao aplica bg de bolha quando `media_type === 'contact'`
+- O horario continua aparecendo abaixo do card
 
-```text
-// Logica atual (insuficiente):
-const payload = rawPayload.Body?.EventType ? rawPayload.Body : rawPayload
-
-// Nova logica:
-1. Se rawPayload for um array, pegar rawPayload[0]
-2. Do item resultante, verificar se tem .body ou .Body com EventType
-3. Se sim, usar o conteudo de body/Body como payload
-4. Caso contrario, usar o item diretamente (payload direto da UAZAPI)
-```
-
-Codigo concreto:
-
-```text
-let unwrapped = rawPayload
-// n8n envia como array
-if (Array.isArray(unwrapped)) {
-  unwrapped = unwrapped[0]
-}
-// n8n encapsula em body/Body
-const inner = unwrapped?.body || unwrapped?.Body
-const payload = (inner?.EventType || inner?.eventType) ? inner : unwrapped
-```
-
-Isso cobre todos os cenarios:
-- Payload direto da UAZAPI (objeto com EventType na raiz)
-- Payload via n8n com Body maiusculo (formato antigo)
-- Payload via n8n com body minusculo dentro de array (formato atual do usuario)
-
-### Nenhum outro arquivo modificado
-
-Apenas a edge function `whatsapp-webhook/index.ts` precisa ser atualizada.
+Nenhuma alteracao de backend ou banco de dados necessaria.
