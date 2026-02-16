@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { timeAgoBR } from '@/lib/dateUtils';
+import { smartDateBR } from '@/lib/dateUtils';
 import { ConversationLabels, type Label } from './ConversationLabels';
 import { UserCheck } from 'lucide-react';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
@@ -55,7 +55,7 @@ export const ConversationItem = ({ conversation, isSelected, onClick, labels = [
           </span>
           <span className="text-[10px] text-muted-foreground shrink-0">
             {conversation.last_message_at
-              ? timeAgoBR(conversation.last_message_at)
+              ? smartDateBR(conversation.last_message_at)
               : ''}
           </span>
         </div>
