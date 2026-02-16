@@ -315,15 +315,21 @@ Deno.serve(async (req) => {
     const contactPhone = extractPhone(contactJid)
     const contactName = chat?.wa_contactName || chat?.name || message.senderName || contactPhone
 
-    // Upsert contact
-    const { data: contact } = await supabase
+    // Upsert contact — preserve existing name to avoid overwriting manual edits
+    let { data: contact } = await supabase
       .from('contacts')
-      .upsert(
-        { jid: contactJid, phone: contactPhone, name: contactName },
-        { onConflict: 'jid' }
-      )
       .select('id')
-      .single()
+      .eq('jid', contactJid)
+      .maybeSingle()
+
+    if (!contact) {
+      const { data: newContact } = await supabase
+        .from('contacts')
+        .insert({ jid: contactJid, phone: contactPhone, name: contactName })
+        .select('id')
+        .single()
+      contact = newContact
+    }
 
     if (!contact) {
       console.error('Failed to upsert contact')
