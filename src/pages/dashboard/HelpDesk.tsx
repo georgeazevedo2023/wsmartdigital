@@ -485,7 +485,7 @@ const HelpDesk = () => {
       )}
       <div className="flex flex-1 overflow-hidden rounded-xl border border-border/50 bg-card/30">
         {showConversationList && (
-          <div className="w-72 lg:w-80 border-r border-border/50 flex flex-col shrink-0 overflow-hidden">
+          <div className="w-80 lg:w-96 border-r border-border/50 flex flex-col shrink-0 overflow-hidden">
             <ConversationList {...listProps} />
           </div>
         )}
