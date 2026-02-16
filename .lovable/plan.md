@@ -1,51 +1,41 @@
 
 
-# Atribuicao de agentes e transferencia entre agentes
+# Auto-atribuir agente ao responder uma conversa
 
-## Visao geral
+## Objetivo
 
-Implementar a funcionalidade de atribuir uma conversa a um agente da equipe e permitir transferir para outro agente. O campo `assigned_to` ja existe na tabela `conversations` e a tabela `inbox_users` ja lista os agentes disponiveis por inbox.
+Quando um agente enviar uma mensagem (texto, audio ou arquivo) em uma conversa, atribuir automaticamente essa conversa para ele se ela ainda nao estiver atribuida, ou transferir para ele se estiver atribuida a outro agente.
 
-## Alteracoes
+## Alteracao
 
-### 1. `src/components/helpdesk/ContactInfoPanel.tsx`
-- Adicionar uma nova secao "Agente responsavel" abaixo de Prioridade
-- Buscar a lista de agentes da inbox atual via `inbox_users` com join em `user_profiles` para obter o nome
-- Renderizar um `Select` com os agentes disponiveis + opcao "Nenhum" para desatribuir
-- Ao selecionar, chamar `onUpdateConversation(id, { assigned_to: userId })` que ja existe
+### `src/components/helpdesk/ChatInput.tsx`
 
-### 2. `src/components/helpdesk/ChatPanel.tsx`
-- Exibir o nome do agente atribuido no header do chat (ao lado do status), como um badge discreto
-- Buscar o nome do agente via `user_profiles` quando `conversation.assigned_to` estiver preenchido
+Adicionar uma funcao auxiliar `autoAssignAgent` que sera chamada apos o envio bem-sucedido de qualquer tipo de mensagem (texto, audio, arquivo). A logica:
 
-### 3. `src/pages/dashboard/HelpDesk.tsx`
-- Incluir `assigned_to` no tipo `Conversation` (ja existe)
-- Ao buscar conversas, incluir o nome do agente atribuido via join ou fetch separado para exibir na lista
+1. Verificar se `conversation.assigned_to` ja e o usuario atual (`user.id`) - se sim, nao fazer nada
+2. Caso contrario, atualizar `conversations.assigned_to` para `user.id`
+3. Exibir um toast discreto informando a atribuicao automatica
 
-### 4. `src/components/helpdesk/ConversationItem.tsx`
-- Exibir um pequeno indicador do agente atribuido (iniciais ou icone) no item da lista de conversas
+Pontos de insercao da chamada `autoAssignAgent()`:
+- `handleSend()` - apos envio de texto (linha ~439, antes de `onMessageSent()`) - apenas para mensagens normais, nao para notas privadas
+- `handleSendAudio()` - apos envio de audio (linha ~230, antes de `onMessageSent()`)
+- `handleSendFile()` - apos envio de arquivo (linha ~343, antes de `onMessageSent()`)
 
-## Detalhes tecnicos
+### Funcao auxiliar
 
-**Nenhuma migracao necessaria** - o campo `assigned_to` ja existe na tabela `conversations` como `uuid nullable`.
-
-**Busca de agentes**: Query na tabela `inbox_users` com join em `user_profiles`:
-```sql
-SELECT iu.user_id, up.full_name, iu.role
-FROM inbox_users iu
-JOIN user_profiles up ON up.id = iu.user_id
-WHERE iu.inbox_id = :inboxId
-ORDER BY up.full_name
-```
-
-**Atribuicao/Transferencia**: Simples update no campo `assigned_to`:
 ```typescript
-await supabase.from('conversations').update({ assigned_to: agentId }).eq('id', conversationId);
+const autoAssignAgent = async () => {
+  if (!user || conversation.assigned_to === user.id) return;
+  try {
+    await supabase
+      .from('conversations')
+      .update({ assigned_to: user.id })
+      .eq('id', conversation.id);
+  } catch (err) {
+    console.error('Auto-assign error:', err);
+  }
+};
 ```
 
-**Componentes afetados**:
-- `ContactInfoPanel.tsx` - secao principal de atribuicao com Select de agentes
-- `ChatPanel.tsx` - badge do agente no header
-- `ConversationItem.tsx` - indicador visual na lista
-- `HelpDesk.tsx` - fetch dos nomes dos agentes para cache local
+Nenhuma migracao necessaria. Apenas uma alteracao em um arquivo.
 
