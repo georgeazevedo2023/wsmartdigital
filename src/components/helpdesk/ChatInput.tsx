@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2, Plus, ImageIcon, Smile, Tags } from 'lucide-react';
-import { EmojiPicker } from '@/components/ui/emoji-picker';
+import { EmojiPicker, EmojiPickerContent } from '@/components/ui/emoji-picker';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -721,9 +721,20 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
                       )}
                     </>
                   )}
-                  <div className="px-1 py-1">
-                    <EmojiPicker onEmojiSelect={(emoji) => { setText(prev => prev + emoji); setMenuOpen(false); }} disabled={sending} />
-                  </div>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-md hover:bg-accent text-foreground"
+                        disabled={sending}
+                      >
+                        <Smile className="w-4 h-4" />
+                        Enviar Emojis
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent side="right" align="start" className="w-[320px] p-0 z-[100]">
+                      <EmojiPickerContent onEmojiSelect={(emoji) => setText(prev => prev + emoji)} />
+                    </PopoverContent>
+                  </Popover>
                 </div>
               </PopoverContent>
             </Popover>
