@@ -1,39 +1,39 @@
 
-# Reorganizar o cabecalho do chat
+# Desativar IA ao enviar mensagem pelo Helpdesk
 
 ## Problema
 
-Os elementos do cabecalho (nome, telefone, seletor de status, badge IA, botoes) estao todos em uma unica linha sem separacao visual clara, ficando apertados e desorganizados, especialmente no mobile.
+O broadcast do Supabase Realtime nao entrega a mensagem de volta para o mesmo cliente que a enviou. Isso significa que quando o agente envia uma mensagem, o `status_ia: 'desligada'` no broadcast nao e recebido pelo proprio `ChatPanel` do agente. O banco de dados e atualizado corretamente, mas o estado visual (`iaAtivada`) nao muda imediatamente.
 
 ## Solucao
 
-Reorganizar o layout do cabecalho para separar os elementos em grupos logicos com melhor espacamento e hierarquia visual:
+Atualizar o `ChatPanel` para setar `iaAtivada = false` diretamente quando o agente envia uma mensagem, sem depender do broadcast.
 
-- **Esquerda**: botoes de navegacao (voltar, toggle lista) + nome do contato + telefone
-- **Centro/Direita**: seletor de status + badge/botao IA + botoes de info
+## Alteracao
 
-## Alteracoes em `src/components/helpdesk/ChatPanel.tsx`
+### `src/components/helpdesk/ChatPanel.tsx`
 
-### Estrutura do header (linhas 194-264)
+Trocar o callback `onMessageSent={fetchMessages}` por uma funcao que faz duas coisas:
+1. Chama `fetchMessages()` (como ja faz hoje)
+2. Seta `setIaAtivada(false)` imediatamente
 
-1. Mover o telefone para baixo do nome (empilhado vertical) em vez de ao lado, economizando espaco horizontal
-2. Separar visualmente o grupo de informacoes do contato (nome + telefone) do grupo de acoes (status + IA + botoes)
-3. Adicionar um separador sutil entre os grupos
-4. Ajustar o seletor de status para ficar mais compacto e alinhado com o badge IA
-5. Agrupar status + IA Ativada/Ativar IA juntos com gap menor
+Isso garante que:
+- Ao enviar texto, audio, imagem ou documento, o badge "IA Ativada" troca instantaneamente para o botao "Ativar IA"
+- O botao "Ativar IA" permanece visivel ate o webhook retornar `status_ia="ligada"`
+- Quando `status_ia="ligada"` chega (via broadcast do webhook), o badge verde "IA Ativada" volta a aparecer
 
-### Layout proposto
+### Codigo da alteracao (linha 295)
 
-```text
-[<] [||]  Nome do contato     [Status v] [IA Ativada] [i] [>>]
-           11 9999-9999
+De:
+```tsx
+<ChatInput conversation={conversation} onMessageSent={fetchMessages} ... />
 ```
 
-- Nome e telefone empilhados verticalmente no bloco da esquerda (flex-col)
-- Acoes agrupadas a direita com `gap-1.5`
-- Status selector e badge IA ficam lado a lado de forma compacta
-- Remover `overflow-hidden` do header que pode cortar elementos
+Para:
+```tsx
+<ChatInput conversation={conversation} onMessageSent={() => { fetchMessages(); setIaAtivada(false); }} ... />
+```
 
-### Arquivo afetado
+## Arquivo afetado
 
-- `src/components/helpdesk/ChatPanel.tsx` - apenas reestruturar o JSX do header (linhas 194-264)
+- `src/components/helpdesk/ChatPanel.tsx` - apenas 1 linha alterada
