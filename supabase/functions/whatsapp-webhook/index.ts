@@ -112,9 +112,13 @@ Deno.serve(async (req) => {
       }
 
       // Find instance
-      const iaInstanceName = payload.instanceName || payload.instance || unwrapped?.instanceName || unwrapped?.instance || ''
+      const iaInstanceName = payload.instanceName || payload.instance || payload.instance_name ||
+        unwrapped?.instanceName || unwrapped?.instance || unwrapped?.instance_name || ''
+      const iaInstanceId = payload.instance_id || unwrapped?.instance_id || ''
       let iaInstanceQuery = supabase.from('instances').select('id, name, token')
-      if (iaInstanceName) {
+      if (iaInstanceId) {
+        iaInstanceQuery = iaInstanceQuery.eq('id', iaInstanceId)
+      } else if (iaInstanceName) {
         const iaOwnerJid = `${iaInstanceName}@s.whatsapp.net`
         iaInstanceQuery = iaInstanceQuery.or(`id.eq.${iaInstanceName},name.eq.${iaInstanceName},owner_jid.eq.${iaOwnerJid}`)
       } else {

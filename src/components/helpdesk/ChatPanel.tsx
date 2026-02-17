@@ -185,6 +185,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
       const payload = {
         timestamp: nowBRISO(),
         instance_name: instanceData?.name || '',
+        instanceName: instanceData?.name || '',
         instance_id: instanceId,
         inbox_name: inboxData?.name || '',
         inbox_id: inboxId,
