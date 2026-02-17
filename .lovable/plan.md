@@ -1,58 +1,58 @@
 
+# Tratar payload de status_ia no webhook
 
-# Enviar payload completo ao ativar IA via webhook de outgoing
+## Problema
 
-## Situacao atual
-
-A funcao `activate-ia` envia um payload simplificado (`status_ia`, `chatid`, `phone`, `instanceId`) diretamente para o webhook. O usuario quer que o payload siga o mesmo modelo usado pelo `fire-outgoing-webhook` no `ChatInput`, com todos os metadados (timestamp, nomes, IDs, agente, etc.), usando `status_ia: "ligar"` e `pausar_agente: "nao"`.
+Quando o sistema externo envia um payload com `status_ia: "ligada"` para o `whatsapp-webhook`, ele nao tem `EventType` nem `fromMe`, entao nao e reconhecido como mensagem (linha 89) e e descartado como `not_message_event` (linha 104).
 
 ## Solucao
 
-Alterar o `ChatPanel.tsx` para parar de chamar a Edge Function `activate-ia` e, em vez disso, usar a mesma `fire-outgoing-webhook` ja usada pelo `ChatInput`, montando o payload completo com os dados dinamicos da conversa.
+Adicionar um bloco de tratamento no `whatsapp-webhook` entre a deteccao de raw message (linha 98) e o filtro de EventType (linha 104). Quando o payload contem `status_ia` mas nao e uma mensagem, o webhook deve:
+
+1. Encontrar a conversa pelo `chatid` (sender/remotejid) e inbox da instancia
+2. Atualizar `status_ia` na tabela `conversations`
+3. Fazer broadcast via Realtime para que o ChatPanel atualize a UI
 
 ## Alteracoes
 
-### 1. `src/components/helpdesk/ChatPanel.tsx` - funcao `handleActivateIA` (linhas 141-177)
+### `supabase/functions/whatsapp-webhook/index.ts`
 
-Reescrever para:
-1. Buscar o `webhook_outgoing_url` da inbox
-2. Buscar o nome do agente logado (via `user_profiles`)
-3. Buscar o nome da instancia (via `instances`)
-4. Chamar `fire-outgoing-webhook` com o payload completo
+Inserir entre as linhas 98 e 100 (apos o bloco `isRawMessage`, antes do filtro `eventType`):
 
-O payload enviado sera:
-```json
-{
-  "timestamp": "2026-02-17T00:04:51.126-03:00",
-  "instance_name": "NeoBlindados",
-  "instance_id": "rdef65c48caa3c9",
-  "inbox_name": "Neo Blindados - Geral",
-  "inbox_id": "79575754-...",
-  "contact_name": "George",
-  "remotejid": "558193856099@s.whatsapp.net",
-  "fromMe": true,
-  "agent_name": "George Azevedo",
-  "agent_id": "66de650f-...",
-  "pausar_agente": "nao",
-  "status_ia": "ligar",
-  "message_type": "text",
-  "message": null,
-  "media_url": null
+```typescript
+// Handle status_ia-only payloads (no EventType, no message — just a status update)
+const statusIaPayload = payload.status_ia || unwrapped?.status_ia || (inner?.status_ia);
+if (!payload.EventType && !payload.eventType && statusIaPayload && !isRawMessage) {
+  console.log('Detected status_ia-only payload:', statusIaPayload);
+  
+  const chatid = payload.chatid || payload.sender || unwrapped?.chatid || unwrapped?.sender || '';
+  if (!chatid) {
+    return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_no_chatid' }), {
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
+  // Find instance (reuse instanceName logic already above)
+  // ... lookup instance + inbox + contact + conversation
+  // Update conversation.status_ia
+  // Broadcast to helpdesk-realtime and helpdesk-conversations
+  
+  return new Response(JSON.stringify({ ok: true, status_ia: statusIaPayload }), { ... });
 }
 ```
 
-Os valores fixos sao `pausar_agente: "nao"` e `status_ia: "ligar"`. Todos os outros sao dinamicos, obtidos da conversa, inbox, instancia e agente logado.
+A logica completa:
+1. Extrair `chatid` do payload (pode vir como `chatid`, `sender` ou `remotejid`)
+2. Buscar instancia pelo `instanceName` ou `owner` (mesma logica ja existente no webhook)
+3. Buscar inbox da instancia
+4. Buscar contato pelo JID (`chatid`)
+5. Buscar conversa aberta/pendente para esse contato nessa inbox
+6. Atualizar `conversations.status_ia` com o valor recebido
+7. Broadcast via REST API nos topicos `helpdesk-realtime` e `helpdesk-conversations` com `{ conversation_id, status_ia }`
+8. Retornar sucesso
 
-### 2. `src/components/helpdesk/ChatPanel.tsx` - imports
+O ChatPanel ja escuta `status_ia === 'ligada'` no broadcast (linha 104 do ChatPanel) e seta `setIaAtivada(true)`, entao nenhuma alteracao e necessaria no frontend.
 
-Adicionar import de `nowBRISO` de `@/lib/dateUtils` (mesma funcao usada no ChatInput para timestamp no fuso BR).
+## Arquivo afetado
 
-Adicionar import de `useAuth` ou usar `supabase.auth.getUser()` para obter o ID do agente logado.
-
-### 3. Edge Function `activate-ia` permanece sem alteracao
-
-A funcao `activate-ia` nao sera mais chamada pelo botao "Ativar IA" - sera substituida pelo `fire-outgoing-webhook`. A funcao pode ser mantida como esta para outros usos futuros ou removida posteriormente.
-
-## Arquivos afetados
-
-- `src/components/helpdesk/ChatPanel.tsx` - reescrever `handleActivateIA` para usar `fire-outgoing-webhook` com payload completo
+- `supabase/functions/whatsapp-webhook/index.ts` - adicionar bloco de tratamento de status_ia antes do filtro de EventType
