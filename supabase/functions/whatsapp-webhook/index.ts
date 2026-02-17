@@ -97,6 +97,99 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Handle status_ia-only payloads (no EventType, no message — just a status update)
+    const statusIaPayload = payload.status_ia || unwrapped?.status_ia || inner?.status_ia
+    if (!payload.EventType && !payload.eventType && statusIaPayload && !isRawMessage) {
+      console.log('Detected status_ia-only payload:', statusIaPayload)
+
+      const chatid = payload.chatid || payload.sender || payload.remotejid ||
+        unwrapped?.chatid || unwrapped?.sender || unwrapped?.remotejid ||
+        inner?.chatid || inner?.sender || inner?.remotejid || ''
+      if (!chatid) {
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_no_chatid' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Find instance
+      const iaInstanceName = payload.instanceName || payload.instance || unwrapped?.instanceName || unwrapped?.instance || ''
+      let iaInstanceQuery = supabase.from('instances').select('id, name, token')
+      if (iaInstanceName) {
+        const iaOwnerJid = `${iaInstanceName}@s.whatsapp.net`
+        iaInstanceQuery = iaInstanceQuery.or(`id.eq.${iaInstanceName},name.eq.${iaInstanceName},owner_jid.eq.${iaOwnerJid}`)
+      } else {
+        // Try owner field
+        const ownerField = payload.owner || unwrapped?.owner || ''
+        if (ownerField) {
+          const ownerJidVal = ownerField.includes('@') ? ownerField : `${ownerField}@s.whatsapp.net`
+          iaInstanceQuery = iaInstanceQuery.eq('owner_jid', ownerJidVal)
+        }
+      }
+      const { data: iaInstance } = await iaInstanceQuery.maybeSingle()
+      if (!iaInstance) {
+        console.log('status_ia: instance not found')
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_instance_not_found' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Find inbox
+      const { data: iaInbox } = await supabase.from('inboxes').select('id').eq('instance_id', iaInstance.id).maybeSingle()
+      if (!iaInbox) {
+        console.log('status_ia: no inbox for instance', iaInstance.id)
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_no_inbox' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Find contact by JID
+      const { data: iaContact } = await supabase.from('contacts').select('id').eq('jid', chatid).maybeSingle()
+      if (!iaContact) {
+        console.log('status_ia: contact not found for jid', chatid)
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_contact_not_found' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Find open/pending conversation
+      const { data: iaConv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('inbox_id', iaInbox.id)
+        .eq('contact_id', iaContact.id)
+        .in('status', ['aberta', 'pendente'])
+        .order('created_at', { ascending: false })
+        .maybeSingle()
+      if (!iaConv) {
+        console.log('status_ia: no open conversation found')
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_no_conversation' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Update status_ia
+      await supabase.from('conversations').update({ status_ia: statusIaPayload } as any).eq('id', iaConv.id)
+      console.log('status_ia updated to', statusIaPayload, 'for conversation', iaConv.id)
+
+      // Broadcast via REST API
+      const SB_URL = Deno.env.get('SUPABASE_URL')!
+      const SB_ANON = Deno.env.get('SUPABASE_ANON_KEY')!
+      const iaBroadcast = { conversation_id: iaConv.id, status_ia: statusIaPayload }
+      await Promise.all(
+        ['helpdesk-realtime', 'helpdesk-conversations'].map(topic =>
+          fetch(`${SB_URL}/realtime/v1/api/broadcast`, {
+            method: 'POST',
+            headers: { 'apikey': SB_ANON, 'Content-Type': 'application/json', 'Authorization': `Bearer ${SB_ANON}` },
+            body: JSON.stringify({ messages: [{ topic, event: 'new-message', payload: iaBroadcast }] }),
+          })
+        )
+      )
+
+      return new Response(JSON.stringify({ ok: true, status_ia: statusIaPayload, conversation_id: iaConv.id }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+
     // UAZAPI sends EventType field
     const eventType = payload.EventType || payload.eventType || payload.event || ''
 
