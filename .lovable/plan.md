@@ -1,44 +1,38 @@
 
 
-# Botao "Ativar IA" no cabecalho do chat
+# Adicionar status_ia="desligada" ao enviar mensagens pelo Helpdesk
 
 ## Resumo
 
-Adicionar um botao "Ativar IA" no cabecalho do chat que envia um webhook para ativar a IA do agente n8n. Quando o webhook do n8n retornar mensagens com `status_ia="ligada"`, o botao sera substituido por um indicador verde "IA Ativada".
+Quando um agente envia qualquer mensagem (texto, audio, imagem ou documento) pelo Helpdesk, o sistema vai:
+1. Incluir `status_ia: "desligada"` no payload do webhook de saida
+2. Fazer broadcast de `status_ia: "desligada"` para o frontend
+3. O botao "IA Ativada" (verde) volta a ser "Ativar IA" (botao clicavel)
 
-## Como vai funcionar
-
-1. O usuario clica em "Ativar IA" no cabecalho do chat
-2. O sistema envia um POST para `https://fluxwebhook.wsmart.com.br/webhook/receb_out_neo` com `status_ia=ligar` e dados do contato/conversa
-3. Quando o n8n envia mensagens de volta com `status_ia="ligada"`, o botao muda para um badge verde "IA Ativada"
+O botao "Ativar IA" continua funcionando como antes: ao clicar, dispara `status_ia: "ligar"` para o webhook do n8n e aguarda o retorno com `status_ia: "ligada"` para trocar pelo badge verde.
 
 ## Alteracoes tecnicas
 
-### 1. `supabase/functions/whatsapp-webhook/index.ts`
-- Detectar o campo `status_ia` no payload recebido (tanto no formato raw quanto no unwrapped)
-- Quando `status_ia="ligada"`, incluir essa informacao no broadcast do realtime para o frontend
-- Adicionar `status_ia` ao payload de broadcast
+### 1. `src/components/helpdesk/ChatInput.tsx`
+- Na funcao `fireOutgoingWebhook`, adicionar `status_ia: "desligada"` ao payload enviado ao webhook
+- Nos broadcasts manuais (texto, audio, arquivo), incluir `status_ia: "desligada"` no payload do canal `helpdesk-realtime` para que o ChatPanel receba e resete o estado
 
 ### 2. `src/components/helpdesk/ChatPanel.tsx`
-- Adicionar estado `iaAtivada` (boolean) controlado por conversa
-- Renderizar botao "Ativar IA" ou badge "IA Ativada" no cabecalho, ao lado do seletor de status
-- Ao clicar "Ativar IA":
-  - Fazer POST via edge function proxy (para evitar CORS) para o webhook do n8n com payload contendo `status_ia: "ligar"`, `chatid`, `phone` e `instanceId`
-- Escutar eventos de broadcast com `status_ia="ligada"` para trocar o botao pelo badge verde
-- Resetar o estado ao trocar de conversa
+- No listener de broadcast, alem de detectar `status_ia === "ligada"`, tambem detectar `status_ia === "desligada"` e setar `iaAtivada = false`
 
-### 3. `supabase/functions/fire-outgoing-webhook/index.ts` (reutilizar como proxy)
-- Ja existe uma edge function proxy para webhooks de saida que contorna CORS
-- Vamos criar uma nova edge function simples `activate-ia` para enviar o POST ao webhook do n8n, ou reutilizar o proxy existente
+## Detalhes de implementacao
 
-### 4. Nova edge function `supabase/functions/activate-ia/index.ts`
-- Recebe `chatid`, `phone`, `instanceId` do frontend
-- Faz POST para `https://fluxwebhook.wsmart.com.br/webhook/receb_out_neo` com `status_ia: "ligar"` e os dados do contato
-- Retorna sucesso/erro
+### ChatInput.tsx - fireOutgoingWebhook (linha ~62-83)
+Adicionar `status_ia: 'desligada'` no objeto payload, ao lado de `pausar_agente: 'sim'`.
+
+### ChatInput.tsx - Broadcasts de texto (linha ~510-522), audio (linha ~276-288), arquivo (linha ~402-414)
+Adicionar `status_ia: 'desligada'` em cada payload de broadcast no canal `helpdesk-realtime`.
+
+### ChatPanel.tsx - Listener de broadcast (linha ~91-94)
+Adicionar condicao: se `status_ia === 'desligada'`, setar `iaAtivada(false)`.
 
 ## Arquivos afetados
 
-- `supabase/functions/whatsapp-webhook/index.ts` - propagar `status_ia` no broadcast
-- `supabase/functions/activate-ia/index.ts` - nova edge function para disparar webhook
-- `src/components/helpdesk/ChatPanel.tsx` - botao/badge + logica de estado
+- `src/components/helpdesk/ChatInput.tsx` - adicionar status_ia nos payloads
+- `src/components/helpdesk/ChatPanel.tsx` - detectar status_ia desligada no broadcast
 
