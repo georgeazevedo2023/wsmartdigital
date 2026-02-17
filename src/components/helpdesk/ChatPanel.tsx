@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge';
 
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose, UserCheck } from 'lucide-react';
+import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose, Bot } from 'lucide-react';
+import { toast } from 'sonner';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 import type { Label } from './ConversationLabels';
 
@@ -30,6 +31,14 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const [agentName, setAgentName] = useState<string | null>(null);
+  const [iaAtivada, setIaAtivada] = useState(false);
+  const [ativandoIa, setAtivandoIa] = useState(false);
+
+  // Reset IA state when conversation changes
+  useEffect(() => {
+    setIaAtivada(false);
+    setAtivandoIa(false);
+  }, [conversation?.id]);
 
   // Fetch assigned agent name
   useEffect(() => {
@@ -78,6 +87,11 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
         console.log('[ChatPanel] broadcast received:', payload.payload?.conversation_id);
         if (payload.payload?.conversation_id === conversation.id) {
           fetchMessages();
+          // Check for status_ia
+          if (payload.payload?.status_ia === 'ligada') {
+            console.log('[ChatPanel] IA ativada via broadcast');
+            setIaAtivada(true);
+          }
         }
       })
       .on('broadcast', { event: 'transcription-updated' }, (payload) => {
@@ -106,6 +120,44 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
     }, 150);
     return () => clearTimeout(timer);
   }, [messages, loading]);
+
+  const handleActivateIA = async () => {
+    if (!conversation || ativandoIa) return;
+    setAtivandoIa(true);
+    try {
+      const contact = conversation.contact;
+      const chatid = contact?.jid || '';
+      const phone = contact?.phone || '';
+      const instanceId = conversation.inbox?.instance_id || '';
+
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData?.session?.access_token;
+
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/activate-ia`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+          body: JSON.stringify({ chatid, phone, instanceId }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Falha ao ativar IA');
+      }
+
+      toast.success('Solicitação de ativação da IA enviada');
+    } catch (err) {
+      console.error('Error activating IA:', err);
+      toast.error('Erro ao ativar IA');
+    } finally {
+      setAtivandoIa(false);
+    }
+  };
 
   if (!conversation) {
     return (
@@ -162,6 +214,26 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
             </SelectContent>
           </Select>
         </div>
+
+        {/* Ativar IA / IA Ativada */}
+        {iaAtivada ? (
+          <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 shrink-0">
+            <Bot className="w-3 h-3" />
+            IA Ativada
+          </Badge>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0 h-7 text-xs gap-1"
+            onClick={handleActivateIA}
+            disabled={ativandoIa}
+          >
+            <Bot className="w-3 h-3" />
+            {ativandoIa ? 'Ativando...' : 'Ativar IA'}
+          </Button>
+        )}
+
         {onShowInfo && (
           <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
             <User className="w-5 h-5" />
