@@ -270,7 +270,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
 
       await supabase
         .from('conversations')
-        .update({ last_message_at: new Date().toISOString(), last_message: '🎵 Áudio' } as any)
+        .update({ last_message_at: new Date().toISOString(), last_message: '🎵 Áudio', status_ia: 'desligada' } as any)
         .eq('id', conversation.id);
 
       // Broadcast manual para atualizar o ChatPanel em tempo real
@@ -397,7 +397,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
 
       await supabase
         .from('conversations')
-        .update({ last_message_at: new Date().toISOString(), last_message: mediaType === 'image' ? '📷 Foto' : '📎 Documento' } as any)
+        .update({ last_message_at: new Date().toISOString(), last_message: mediaType === 'image' ? '📷 Foto' : '📎 Documento', status_ia: 'desligada' } as any)
         .eq('id', conversation.id);
 
       // Broadcast for realtime
@@ -506,7 +506,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
 
         await supabase
           .from('conversations')
-          .update({ last_message_at: new Date().toISOString(), last_message: text.trim() } as any)
+          .update({ last_message_at: new Date().toISOString(), last_message: text.trim(), status_ia: 'desligada' } as any)
           .eq('id', conversation.id);
 
         // Broadcast manual para atualizar o ChatPanel em tempo real

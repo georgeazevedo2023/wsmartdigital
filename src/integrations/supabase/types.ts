@@ -205,6 +205,7 @@ export type Database = {
           last_message_at: string | null
           priority: string
           status: string
+          status_ia: string | null
           updated_at: string
         }
         Insert: {
@@ -218,6 +219,7 @@ export type Database = {
           last_message_at?: string | null
           priority?: string
           status?: string
+          status_ia?: string | null
           updated_at?: string
         }
         Update: {
@@ -231,6 +233,7 @@ export type Database = {
           last_message_at?: string | null
           priority?: string
           status?: string
+          status_ia?: string | null
           updated_at?: string
         }
         Relationships: [

@@ -34,10 +34,22 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   const [iaAtivada, setIaAtivada] = useState(false);
   const [ativandoIa, setAtivandoIa] = useState(false);
 
-  // Reset IA state when conversation changes
+  // Load IA state from database when conversation changes
   useEffect(() => {
-    setIaAtivada(false);
     setAtivandoIa(false);
+    if (!conversation?.id) {
+      setIaAtivada(false);
+      return;
+    }
+    const loadStatusIa = async () => {
+      const { data } = await supabase
+        .from('conversations')
+        .select('status_ia')
+        .eq('id', conversation.id)
+        .maybeSingle();
+      setIaAtivada((data as any)?.status_ia === 'ligada');
+    };
+    loadStatusIa();
   }, [conversation?.id]);
 
   // Fetch assigned agent name
@@ -87,13 +99,15 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
         console.log('[ChatPanel] broadcast received:', payload.payload?.conversation_id);
         if (payload.payload?.conversation_id === conversation.id) {
           fetchMessages();
-          // Check for status_ia
+          // Check for status_ia and sync to DB
           if (payload.payload?.status_ia === 'ligada') {
             console.log('[ChatPanel] IA ativada via broadcast');
             setIaAtivada(true);
+            supabase.from('conversations').update({ status_ia: 'ligada' } as any).eq('id', conversation.id).then();
           } else if (payload.payload?.status_ia === 'desligada') {
             console.log('[ChatPanel] IA desligada via broadcast');
             setIaAtivada(false);
+            supabase.from('conversations').update({ status_ia: 'desligada' } as any).eq('id', conversation.id).then();
           }
         }
       })
