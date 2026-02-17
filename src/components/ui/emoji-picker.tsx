@@ -132,3 +132,60 @@ export function EmojiPicker({ onEmojiSelect, disabled }: EmojiPickerProps) {
     </Popover>
   );
 }
+
+export function EmojiPickerContent({ onEmojiSelect }: { onEmojiSelect: (emoji: string) => void }) {
+  const [search, setSearch] = useState('');
+  const [activeCategory, setActiveCategory] = useState(0);
+
+  const filteredEmojis = useMemo(() => {
+    if (!search.trim()) return null;
+    const all: string[] = [];
+    for (const cat of EMOJI_CATEGORIES) {
+      all.push(...cat.emojis);
+    }
+    return all;
+  }, [search]);
+
+  return (
+    <>
+      <div className="flex border-b border-border px-1 pt-1 gap-0.5 overflow-x-auto">
+        {EMOJI_CATEGORIES.map((cat, i) => (
+          <button
+            key={cat.name}
+            type="button"
+            onClick={() => { setActiveCategory(i); setSearch(''); }}
+            className={cn(
+              'px-2 py-1.5 text-base rounded-t-md transition-colors flex-shrink-0',
+              activeCategory === i ? 'bg-muted' : 'hover:bg-muted/50'
+            )}
+            title={cat.name}
+          >
+            {cat.icon}
+          </button>
+        ))}
+      </div>
+      <div className="p-2 pb-0">
+        <Input
+          placeholder="Buscar emoji..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 text-sm"
+        />
+      </div>
+      <div className="p-2 h-[200px] overflow-y-auto">
+        <div className="grid grid-cols-8 gap-0.5">
+          {(filteredEmojis || EMOJI_CATEGORIES[activeCategory].emojis).map((emoji, i) => (
+            <button
+              key={`${emoji}-${i}`}
+              type="button"
+              onClick={() => onEmojiSelect(emoji)}
+              className="h-8 w-8 flex items-center justify-center text-lg rounded hover:bg-muted transition-colors"
+            >
+              {emoji}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
