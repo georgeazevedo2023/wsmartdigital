@@ -1,58 +1,39 @@
 
-# Tratar payload de status_ia no webhook
+
+# Garantir compatibilidade entre payload enviado e recebido no fluxo de IA
 
 ## Problema
 
-Quando o sistema externo envia um payload com `status_ia: "ligada"` para o `whatsapp-webhook`, ele nao tem `EventType` nem `fromMe`, entao nao e reconhecido como mensagem (linha 89) e e descartado como `not_message_event` (linha 104).
-
-## Solucao
-
-Adicionar um bloco de tratamento no `whatsapp-webhook` entre a deteccao de raw message (linha 98) e o filtro de EventType (linha 104). Quando o payload contem `status_ia` mas nao e uma mensagem, o webhook deve:
-
-1. Encontrar a conversa pelo `chatid` (sender/remotejid) e inbox da instancia
-2. Atualizar `status_ia` na tabela `conversations`
-3. Fazer broadcast via Realtime para que o ChatPanel atualize a UI
+O payload enviado pelo botao "Ativar IA" usa os campos `instance_name` e `instance_id` (com underscore), mas o webhook handler procura por `instanceName` ou `instance` (sem underscore). Quando o sistema externo devolve o payload com `status_ia: "ligada"`, o webhook nao consegue encontrar a instancia.
 
 ## Alteracoes
 
-### `supabase/functions/whatsapp-webhook/index.ts`
+### 1. `supabase/functions/whatsapp-webhook/index.ts` - ampliar busca de instancia (linha 115)
 
-Inserir entre as linhas 98 e 100 (apos o bloco `isRawMessage`, antes do filtro `eventType`):
+Incluir os campos `instance_name` e `instance_id` na logica de busca da instancia no bloco de `status_ia`:
 
-```typescript
-// Handle status_ia-only payloads (no EventType, no message — just a status update)
-const statusIaPayload = payload.status_ia || unwrapped?.status_ia || (inner?.status_ia);
-if (!payload.EventType && !payload.eventType && statusIaPayload && !isRawMessage) {
-  console.log('Detected status_ia-only payload:', statusIaPayload);
-  
-  const chatid = payload.chatid || payload.sender || unwrapped?.chatid || unwrapped?.sender || '';
-  if (!chatid) {
-    return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_no_chatid' }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
-  }
-
-  // Find instance (reuse instanceName logic already above)
-  // ... lookup instance + inbox + contact + conversation
-  // Update conversation.status_ia
-  // Broadcast to helpdesk-realtime and helpdesk-conversations
-  
-  return new Response(JSON.stringify({ ok: true, status_ia: statusIaPayload }), { ... });
-}
+```
+const iaInstanceName = payload.instanceName || payload.instance || payload.instance_name ||
+  unwrapped?.instanceName || unwrapped?.instance || unwrapped?.instance_name || ''
+const iaInstanceId = payload.instance_id || unwrapped?.instance_id || ''
 ```
 
-A logica completa:
-1. Extrair `chatid` do payload (pode vir como `chatid`, `sender` ou `remotejid`)
-2. Buscar instancia pelo `instanceName` ou `owner` (mesma logica ja existente no webhook)
-3. Buscar inbox da instancia
-4. Buscar contato pelo JID (`chatid`)
-5. Buscar conversa aberta/pendente para esse contato nessa inbox
-6. Atualizar `conversations.status_ia` com o valor recebido
-7. Broadcast via REST API nos topicos `helpdesk-realtime` e `helpdesk-conversations` com `{ conversation_id, status_ia }`
-8. Retornar sucesso
+E usar `iaInstanceId` como primeiro criterio de busca (match direto pelo ID), caindo para busca por nome apenas se nao houver ID.
 
-O ChatPanel ja escuta `status_ia === 'ligada'` no broadcast (linha 104 do ChatPanel) e seta `setIaAtivada(true)`, entao nenhuma alteracao e necessaria no frontend.
+### 2. `src/components/helpdesk/ChatPanel.tsx` - adicionar `instanceName` ao payload (linha 185-201)
 
-## Arquivo afetado
+Adicionar o campo `instanceName` (sem underscore) ao payload de saida, para manter compatibilidade direta com o webhook handler caso o sistema externo devolva os campos como recebeu:
 
-- `supabase/functions/whatsapp-webhook/index.ts` - adicionar bloco de tratamento de status_ia antes do filtro de EventType
+```
+instanceName: instanceData?.name || '',
+```
+
+## Resultado
+
+O sistema externo pode devolver qualquer combinacao dos campos (`instanceName`, `instance_name`, `instance_id`, `remotejid`, `chatid`, `sender`) e o webhook vai conseguir localizar a instancia, inbox, contato e conversa para atualizar o `status_ia` e exibir o badge "IA Ativada".
+
+## Arquivos afetados
+
+- `supabase/functions/whatsapp-webhook/index.ts` - ampliar campos aceitos na busca de instancia
+- `src/components/helpdesk/ChatPanel.tsx` - adicionar `instanceName` ao payload
+
