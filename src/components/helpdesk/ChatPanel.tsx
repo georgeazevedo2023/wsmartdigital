@@ -161,12 +161,6 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
               </SelectItem>
             </SelectContent>
           </Select>
-          {agentName && (
-            <Badge variant="secondary" className="text-[10px] h-5 gap-1 shrink-0 hidden sm:flex">
-              <UserCheck className="w-3 h-3" />
-              {agentName}
-            </Badge>
-          )}
         </div>
         {onShowInfo && (
           <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
