@@ -292,7 +292,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
       </div>
 
       {/* Input */}
-      <ChatInput conversation={conversation} onMessageSent={fetchMessages} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />
+      <ChatInput conversation={conversation} onMessageSent={() => { fetchMessages(); setIaAtivada(false); }} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />
     </>
   );
 };
