@@ -501,10 +501,16 @@ Deno.serve(async (req) => {
       })()
     }
 
+    // Extract status_ia from original message payload
+    const statusIa = message.status_ia || rawPayload?.status_ia || (Array.isArray(rawPayload) ? rawPayload[0]?.status_ia : null) || null
+    if (statusIa) {
+      console.log('status_ia detected:', statusIa)
+    }
+
     // Broadcast via REST API
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
     const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
-    const broadcastPayload = {
+    const broadcastPayload: Record<string, unknown> = {
       conversation_id: conversation.id,
       inbox_id: inbox.id,
       message_id: insertedMsg.id,
@@ -513,6 +519,9 @@ Deno.serve(async (req) => {
       media_type: mediaType,
       media_url: mediaUrl || null,
       created_at: msgTimestamp,
+    }
+    if (statusIa) {
+      broadcastPayload.status_ia = statusIa
     }
     const topics = ['helpdesk-realtime', 'helpdesk-conversations']
     const broadcastResults = await Promise.all(
