@@ -71,6 +71,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
             agent_name: profile?.full_name || user.email,
             agent_id: user.id,
             pausar_agente: 'sim',
+            status_ia: 'desligada',
             message_type: messageData.message_type,
             message: messageData.content,
             media_url: messageData.media_url,
@@ -284,6 +285,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
           content: null,
           media_url: audioPublicUrl,
           created_at: insertedMsg.created_at,
+          status_ia: 'desligada',
         },
       });
       await supabase.channel('helpdesk-conversations').send({
@@ -410,6 +412,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
           content: isImage ? null : file.name,
           media_url: filePublicUrl,
           created_at: insertedMsg.created_at,
+          status_ia: 'desligada',
         },
       });
       await supabase.channel('helpdesk-conversations').send({
@@ -518,6 +521,7 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
             content: text.trim(),
             media_url: null,
             created_at: insertedMsg.created_at,
+            status_ia: 'desligada',
           },
         });
         await supabase.channel('helpdesk-conversations').send({
