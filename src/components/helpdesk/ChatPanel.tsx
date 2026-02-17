@@ -191,31 +191,40 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   return (
     <>
       {/* Header */}
-      <div className="h-16 md:h-14 px-3 md:px-4 flex items-center gap-2 md:gap-3 border-b border-border/50 bg-card shrink-0 z-10 relative overflow-hidden">
-        {onBack && (
-          <Button variant="ghost" size="icon" className="shrink-0 h-10 w-10" onClick={onBack}>
-            <ArrowLeft className="w-6 h-6" />
-          </Button>
-        )}
-        {onToggleList && (
-          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onToggleList}>
-            {showingList ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
-          </Button>
-        )}
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <h3 className="font-semibold text-sm truncate">
+      <div className="min-h-[3.5rem] px-3 md:px-4 py-2 flex items-center gap-2 border-b border-border/50 bg-card shrink-0 z-10 relative">
+        {/* Left: nav buttons + contact info */}
+        <div className="flex items-center gap-1 shrink-0">
+          {onBack && (
+            <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onBack}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+          )}
+          {onToggleList && (
+            <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onToggleList}>
+              {showingList ? <PanelLeftClose className="w-5 h-5" /> : <PanelLeftOpen className="w-5 h-5" />}
+            </Button>
+          )}
+        </div>
+
+        {/* Contact name + phone stacked */}
+        <div className="flex-1 min-w-0 flex flex-col justify-center">
+          <h3 className="font-semibold text-sm truncate leading-tight">
             {contact?.name || contact?.phone || 'Desconhecido'}
           </h3>
           {contact?.phone && (
-            <span className="text-xs text-muted-foreground hidden sm:inline">
+            <span className="text-[11px] text-muted-foreground truncate leading-tight">
               {contact.phone}
             </span>
           )}
+        </div>
+
+        {/* Right: actions group */}
+        <div className="flex items-center gap-1.5 shrink-0">
           <Select
             value={conversation.status}
             onValueChange={(status) => onUpdateConversation(conversation.id, { status })}
           >
-            <SelectTrigger className="h-6 w-auto text-xs border-none bg-transparent shadow-none focus:ring-0 gap-1 px-1 [&>svg:last-child]:hidden">
+            <SelectTrigger className="h-7 w-auto text-xs border-border/50 bg-transparent shadow-none focus:ring-0 gap-1 px-2 [&>svg:last-child]:hidden">
               <SelectValue />
             </SelectTrigger>
             <SelectContent className="bg-popover z-50">
@@ -230,37 +239,36 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
               </SelectItem>
             </SelectContent>
           </Select>
+
+          {iaAtivada ? (
+            <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 shrink-0 text-[11px] px-2 py-0.5">
+              <Bot className="w-3 h-3" />
+              IA Ativada
+            </Badge>
+          ) : (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 h-7 text-xs gap-1"
+              onClick={handleActivateIA}
+              disabled={ativandoIa}
+            >
+              <Bot className="w-3 h-3" />
+              {ativandoIa ? 'Ativando...' : 'Ativar IA'}
+            </Button>
+          )}
+
+          {onShowInfo && (
+            <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8" onClick={onShowInfo}>
+              <User className="w-4 h-4" />
+            </Button>
+          )}
+          {onToggleInfo && (
+            <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8" onClick={onToggleInfo}>
+              {showingInfo ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+            </Button>
+          )}
         </div>
-
-        {/* Ativar IA / IA Ativada */}
-        {iaAtivada ? (
-          <Badge className="bg-emerald-500 hover:bg-emerald-600 text-white gap-1 shrink-0">
-            <Bot className="w-3 h-3" />
-            IA Ativada
-          </Badge>
-        ) : (
-          <Button
-            variant="outline"
-            size="sm"
-            className="shrink-0 h-7 text-xs gap-1"
-            onClick={handleActivateIA}
-            disabled={ativandoIa}
-          >
-            <Bot className="w-3 h-3" />
-            {ativandoIa ? 'Ativando...' : 'Ativar IA'}
-          </Button>
-        )}
-
-        {onShowInfo && (
-          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onShowInfo}>
-            <User className="w-5 h-5" />
-          </Button>
-        )}
-        {onToggleInfo && (
-          <Button variant="ghost" size="icon" className="shrink-0 h-9 w-9" onClick={onToggleInfo}>
-            {showingInfo ? <PanelRightClose className="w-5 h-5" /> : <PanelRightOpen className="w-5 h-5" />}
-          </Button>
-        )}
       </div>
 
       {/* Messages */}
