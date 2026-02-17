@@ -504,7 +504,11 @@ Deno.serve(async (req) => {
     // Extract status_ia from original message payload
     const statusIa = message.status_ia || rawPayload?.status_ia || (Array.isArray(rawPayload) ? rawPayload[0]?.status_ia : null) || null
     if (statusIa) {
-      console.log('status_ia detected:', statusIa)
+      console.log('status_ia detected:', statusIa, '— persisting to conversation', conversation.id)
+      await supabase
+        .from('conversations')
+        .update({ status_ia: statusIa } as any)
+        .eq('id', conversation.id)
     }
 
     // Broadcast via REST API
