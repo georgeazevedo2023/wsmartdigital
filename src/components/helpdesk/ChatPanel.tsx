@@ -3,6 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { Badge } from '@/components/ui/badge';
+import { nowBRISO } from '@/lib/dateUtils';
 
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -143,15 +144,64 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
     setAtivandoIa(true);
     try {
       const contact = conversation.contact;
-      const chatid = contact?.jid || '';
-      const phone = contact?.phone || '';
+      const inboxId = conversation.inbox_id;
       const instanceId = conversation.inbox?.instance_id || '';
 
+      // Fetch inbox webhook_outgoing_url and name
+      const { data: inboxData } = await supabase
+        .from('inboxes')
+        .select('webhook_outgoing_url, name')
+        .eq('id', inboxId)
+        .maybeSingle();
+
+      const webhookUrl = inboxData?.webhook_outgoing_url;
+      if (!webhookUrl) {
+        toast.error('Nenhum webhook de saída configurado para esta caixa');
+        return;
+      }
+
+      // Fetch instance name
+      const { data: instanceData } = await supabase
+        .from('instances')
+        .select('name')
+        .eq('id', instanceId)
+        .maybeSingle();
+
+      // Fetch logged-in agent info
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData?.session?.access_token;
+      const userId = sessionData?.session?.user?.id;
+
+      let currentAgentName = 'Agente';
+      if (userId) {
+        const { data: profileData } = await supabase
+          .from('user_profiles')
+          .select('full_name')
+          .eq('id', userId)
+          .maybeSingle();
+        currentAgentName = profileData?.full_name || 'Agente';
+      }
+
+      const payload = {
+        timestamp: nowBRISO(),
+        instance_name: instanceData?.name || '',
+        instance_id: instanceId,
+        inbox_name: inboxData?.name || '',
+        inbox_id: inboxId,
+        contact_name: contact?.name || contact?.phone || '',
+        remotejid: contact?.jid || '',
+        fromMe: true,
+        agent_name: currentAgentName,
+        agent_id: userId || '',
+        pausar_agente: 'nao',
+        status_ia: 'ligar',
+        message_type: 'text',
+        message: null,
+        media_url: null,
+      };
 
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/activate-ia`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/fire-outgoing-webhook`,
         {
           method: 'POST',
           headers: {
@@ -159,7 +209,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
             'Authorization': `Bearer ${token}`,
             'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
           },
-          body: JSON.stringify({ chatid, phone, instanceId }),
+          body: JSON.stringify({ webhook_url: webhookUrl, payload }),
         }
       );
 
