@@ -4,24 +4,18 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Phone, Mail, Lock, User, ArrowRight, Loader2, Shield } from 'lucide-react';
+import { Phone, Mail, Lock, ArrowRight, Loader2, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 import { useEffect } from 'react';
 
 const Login = () => {
   const navigate = useNavigate();
-  const { signIn, signUp, isSuperAdmin, user } = useAuth();
+  const { signIn, isSuperAdmin, user } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
 
-  const [signupEmail, setSignupEmail] = useState('');
-  const [signupPassword, setSignupPassword] = useState('');
-  const [signupName, setSignupName] = useState('');
-
-  // Redirecionar após login baseado no papel
   useEffect(() => {
     if (user) {
       navigate(isSuperAdmin ? '/dashboard' : '/dashboard/helpdesk', { replace: true });
@@ -40,26 +34,6 @@ const Login = () => {
       });
     } else {
       toast.success('Login realizado com sucesso!');
-      // Redirecionamento será feito pelo useEffect abaixo após carregar o papel
-    }
-
-    setIsLoading(false);
-  };
-
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    const { error } = await signUp(signupEmail, signupPassword, signupName);
-
-    if (error) {
-      toast.error('Erro ao criar conta', {
-        description: error.message,
-      });
-    } else {
-      toast.success('Conta criada com sucesso!', {
-        description: 'Você já pode fazer login.',
-      });
     }
 
     setIsLoading(false);
@@ -80,136 +54,56 @@ const Login = () => {
         <div className="glass-card p-6">
           <div className="text-center mb-6">
             <h2 className="text-xl font-semibold text-foreground">Bem-vindo</h2>
-            <p className="text-sm text-muted-foreground mt-1">Entre ou crie sua conta para continuar</p>
+            <p className="text-sm text-muted-foreground mt-1">Entre com sua conta para continuar</p>
           </div>
 
-          <Tabs defaultValue="login" className="w-full">
-            <TabsList className="grid w-full grid-cols-2 mb-6 bg-slate-800/50">
-              <TabsTrigger value="login" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                Entrar
-              </TabsTrigger>
-              <TabsTrigger value="signup" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                Criar Conta
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="login">
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="login-email" className="text-foreground">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="login-email"
-                      type="email"
-                      placeholder="seu@email.com"
-                      value={loginEmail}
-                      onChange={(e) => setLoginEmail(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="login-password" className="text-foreground">Senha</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="login-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
-                    />
-                  </div>
-                </div>
-                <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Entrando...
-                    </>
-                  ) : (
-                    <>
-                      Entrar
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
-
-            <TabsContent value="signup">
-              <form onSubmit={handleSignup} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="signup-name" className="text-foreground">Nome completo</Label>
-                  <div className="relative">
-                    <User className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      placeholder="Seu nome"
-                      value={signupName}
-                      onChange={(e) => setSignupName(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-email" className="text-foreground">Email</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder="seu@email.com"
-                      value={signupEmail}
-                      onChange={(e) => setSignupEmail(e.target.value)}
-                      required
-                      disabled={isLoading}
-                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
-                    />
-                  </div>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="signup-password" className="text-foreground">Senha</Label>
-                  <div className="relative">
-                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                    <Input
-                      id="signup-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={signupPassword}
-                      onChange={(e) => setSignupPassword(e.target.value)}
-                      required
-                      minLength={6}
-                      disabled={isLoading}
-                      className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
-                    />
-                  </div>
-                </div>
-                <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
-                  {isLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Criando conta...
-                    </>
-                  ) : (
-                    <>
-                      Criar Conta
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </>
-                  )}
-                </Button>
-              </form>
-            </TabsContent>
-          </Tabs>
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="login-email" className="text-foreground">Email</Label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  id="login-email"
+                  type="email"
+                  placeholder="seu@email.com"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  required
+                  disabled={isLoading}
+                  className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="login-password" className="text-foreground">Senha</Label>
+              <div className="relative">
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  id="login-password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  required
+                  disabled={isLoading}
+                  className="pl-12 pr-3 bg-slate-800/50 border-slate-700/50"
+                />
+              </div>
+            </div>
+            <Button type="submit" className="w-full bg-primary hover:bg-primary/90 text-primary-foreground" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Entrando...
+                </>
+              ) : (
+                <>
+                  Entrar
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </>
+              )}
+            </Button>
+          </form>
 
           {/* Security badge */}
           <div className="flex items-center justify-center gap-2 mt-6 pt-4 border-t border-slate-700/50">
