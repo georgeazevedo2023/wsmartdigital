@@ -91,6 +91,9 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
           if (payload.payload?.status_ia === 'ligada') {
             console.log('[ChatPanel] IA ativada via broadcast');
             setIaAtivada(true);
+          } else if (payload.payload?.status_ia === 'desligada') {
+            console.log('[ChatPanel] IA desligada via broadcast');
+            setIaAtivada(false);
           }
         }
       })
