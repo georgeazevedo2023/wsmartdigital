@@ -1,81 +1,117 @@
 
-# Bug: Milena salva como texto em vez de card de contato
+# Resumo Inteligente de Conversas por IA no Helpdesk
 
-## Diagnóstico definitivo (confirmado pelos logs)
+## Visão Geral
 
-Os logs da Edge Function mostram o payload exato que chegou da Milena:
+Adicionar um botão "✨ Resumir" no `ContactInfoPanel` (painel direito) que, ao ser clicado, usa IA (Gemini Flash) para gerar um resumo estruturado da conversa atual. O resultado é exibido como um card colapsável no painel de informações do contato, persistido no banco de dados para não precisar ser gerado novamente.
+
+## Experiência do Usuário
+
+```text
+┌──────────────────────────────────┐
+│  📋 Resumo da Conversa           │
+│  ─────────────────────────────── │
+│  🎯 Motivo do contato:           │
+│  Cliente perguntou sobre         │
+│  blindagem automotiva e pediu    │
+│  atendimento humano de vendas    │
+│  em Recife/PE.                   │
+│                                  │
+│  ✅ Resolvido: Contato de Milena │
+│  (consultora de vendas) enviado  │
+│                                  │
+│  📅 Gerado às 17:05              │
+│  [🔄 Atualizar]                  │
+└──────────────────────────────────┘
+```
+
+## Arquitetura
+
+### 1. Banco de dados — nova coluna `ai_summary`
+
+Adicionar a coluna `ai_summary` (jsonb) na tabela `conversations` para armazenar o resumo gerado, evitando reprocessamento.
+
+```sql
+ALTER TABLE conversations ADD COLUMN ai_summary jsonb DEFAULT NULL;
+```
+
+Estrutura do JSON armazenado:
 ```json
 {
-  "messageType": "ContactMessage",
-  "content": {
-    "displayName": "Milena",
-    "vcard": "BEGIN:VCARD..."
-  }
+  "summary": "Cliente perguntou sobre blindagem...",
+  "reason": "Interesse em compra de veículo blindado",
+  "resolution": "Contato de Milena (vendas) enviado",
+  "generated_at": "2026-02-18T17:05:00.000-03:00",
+  "message_count": 13
 }
 ```
 
-O log de processamento registrou: `mediaType=text` — provando que o tipo foi detectado errado.
+### 2. Nova Edge Function: `summarize-conversation`
 
-**Causa raiz:** A função `normalizeMediaType` (linha 277) usa:
-```ts
-normalizeMediaType(message.mediaType || message.type || '')
-```
+**Arquivo:** `supabase/functions/summarize-conversation/index.ts`
 
-Mas a UAZAPI envia o tipo como **`messageType`** (não `mediaType` nem `type`). O campo `messageType: "ContactMessage"` nunca é consultado.
+Fluxo:
+1. Recebe `{ conversation_id }` via POST
+2. Valida autenticação do usuário + acesso à conversa via `has_inbox_access`
+3. Busca todas as mensagens da conversa (`conversation_messages`)
+4. Formata o histórico como texto (ex: `[Cliente]: Bom dia! / [Bot]: Bem-vindo...`)
+5. Chama Gemini Flash via Lovable AI API com prompt em português:
+   - Motivo do contato
+   - Principais pontos discutidos
+   - Resolução/próximo passo
+6. Salva o resultado no campo `ai_summary` da conversa
+7. Retorna o JSON do resumo
 
-**Por que Eliane e Bruno funcionaram?** Provavelmente foram recebidos em um momento em que outro campo (`type` ou `mediaType`) estava preenchido, ou a UAZAPI enviou o payload com estrutura ligeiramente diferente naquele momento.
+### 3. UI — `ContactInfoPanel.tsx`
 
-**Confirmação no banco:**
-- Eliane: `media_type: contact`, `media_url: {"displayName":"Eliane","vcard":"..."}` — correto
-- Milena: `media_type: text`, `media_url: null` — incorreto (salva como texto puro)
+Adicionar uma seção "Resumo da Conversa" com:
+- Botão **"✨ Resumir conversa"** (estado inicial, sem resumo)
+- Estado de **loading** enquanto a IA processa
+- Card com o **resumo exibido** + botão de atualizar
+- Timestamp de quando foi gerado (ex: "Gerado hoje às 17:05")
 
-## Solução — 2 correções
+O componente vai:
+- Ao abrir, verificar se `conversation.ai_summary` já existe no banco
+- Se sim, exibir diretamente sem chamar a IA
+- Se não, mostrar o botão para gerar
 
-### Correção 1: `whatsapp-webhook/index.ts` — incluir `messageType` na detecção
+### 4. Passar `ai_summary` para o `ContactInfoPanel`
 
-**Linha 277, antes:**
-```ts
-const mediaType = normalizeMediaType(message.mediaType || message.type || '')
-```
-
-**Depois:**
-```ts
-const mediaType = normalizeMediaType(message.mediaType || message.messageType || message.type || '')
-```
-
-Isso garante que `"ContactMessage"` seja reconhecido e normalizado para `"contact"`.
-
-### Correção 2: Banco de dados — corrigir mensagens da Milena já salvas
-
-As duas mensagens da Milena no banco (`id: 7622978e...` e `id: 998ef56c...`) precisam ser corrigidas. O vCard já foi recebido corretamente nos logs — apenas não foi salvo certo.
-
-A migração SQL irá:
-1. Atualizar `media_type` de `text` → `contact`
-2. Atualizar `media_url` com o JSON da vCard correto
-3. Atualizar `content` para `"Milena"` (limpo, sem a formatação de texto)
-
-SQL a executar:
-```sql
--- Corrigir mensagem da Milena (20:02 de 18/02)
-UPDATE conversation_messages 
-SET 
-  media_type = 'contact',
-  media_url = '{"displayName":"Milena","vcard":"BEGIN:VCARD\nVERSION:3.0\nN:Milena\nFN:Milena\nORG:Neo Blindados;\nEMAIL:milena@neoblindados.com.br\nURL:https://neoblindados.com.br/\nitem1.TEL;waid=558193202137:5581993202137\nitem1.X-ABLabel:Celular\nEND:VCARD"}',
-  content = 'Milena'
-WHERE id IN (
-  '7622978e-1548-4f68-b2c9-45231a471f18',
-  '998ef56c-cc8e-4523-98a1-b22b33d0db1c'
-);
-```
+Em `HelpDesk.tsx`, o campo `ai_summary` já virá junto na query de conversas (já é da tabela `conversations`). Precisamos incluí-lo no `select` e na interface `Conversation`.
 
 ## Arquivos a modificar
 
-1. **`supabase/functions/whatsapp-webhook/index.ts`** — linha 277: adicionar `message.messageType` na cadeia de fallback
-2. **Migration SQL** — corrigir os registros da Milena já salvos no banco
+| Arquivo | Ação |
+|---|---|
+| `supabase/migrations/` | Adicionar coluna `ai_summary` jsonb na tabela `conversations` |
+| `supabase/functions/summarize-conversation/index.ts` | Nova Edge Function com chamada à IA |
+| `src/pages/dashboard/HelpDesk.tsx` | Incluir `ai_summary` na query e interface `Conversation` |
+| `src/components/helpdesk/ContactInfoPanel.tsx` | Adicionar seção de resumo com botão, loading e card |
+
+## Prompt da IA (em português)
+
+```
+Você é um assistente de atendimento ao cliente. Analise esta conversa de WhatsApp e gere um resumo estruturado em JSON com:
+- "reason": motivo principal do contato (máx. 1 frase)
+- "summary": resumo da conversa em 2-3 frases
+- "resolution": como foi resolvido ou qual o próximo passo
+
+Conversa:
+[Cliente]: Bom dia!
+[Atendente]: Bem-vindo a Neo Blindados...
+...
+
+Responda APENAS com o JSON, sem texto extra.
+```
+
+## Segurança
+
+- A Edge Function valida o token JWT do usuário
+- Verifica se o usuário tem acesso à conversa via `has_inbox_access`
+- O resumo só pode ser gerado/lido por usuários com acesso à caixa de entrada
 
 ## Impacto
 
-- Sem mudanças de UI
-- Zero risco de regressão: `messageType` é apenas um campo adicional de fallback
-- Todos os cards de contato futuros (independente de qual campo UAZAPI usar) serão detectados corretamente
-- Mensagens históricas da Milena serão corrigidas e exibidas como card no helpdesk imediatamente após o deploy
+- Zero risco de regressão: coluna opcional (`DEFAULT NULL`)
+- Resumos cached no banco — geração de IA acontece só uma vez (ou ao clicar "Atualizar")
+- Sem novas dependências externas: usa a IA nativa do Lovable (Gemini Flash)
