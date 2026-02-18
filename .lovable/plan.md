@@ -1,64 +1,63 @@
-# Notas Privadas: Substituir por Ícone + Painel de Notas
 
-## Problema Atual
+# Agente Responsável: Auto-atribuição, Transferência e Remoção
 
-As notas privadas aparecem inline no fluxo de mensagens, misturadas com as conversas normais. Isso polui o chat e as notas "sobem" conforme novas mensagens chegam.
+## Diagnóstico do Problema Atual
 
-## Solução Proposta
+Existem três pontos de falha:
 
-1. **Ocultar notas do fluxo de mensagens** — Mensagens com `direction === 'private_note'` não serão mais renderizadas no `ChatPanel` junto com as mensagens normais.
-2. **Ícone de notas no cabeçalho do chat** — Quando existir ao menos uma nota na conversa, um ícone 📝 aparece no cabeçalho do `ChatPanel` com um badge de contagem.
-3. **Painel de notas (Sheet/Dialog lateral)** — Ao clicar no ícone, abre um painel listando todas as notas com:
-  - Conteúdo da nota e agente que escreveu a nota
-  - Horário de criação
-  - Botão de excluir cada nota individualmente
-4. **Ícone na lista de conversas** — No `ConversationItem`, exibir um pequeno ícone 📝 quando a conversa possui notas, para sinalizar visualmente sem precisar abrir o chat.
+1. **Auto-atribuição não reflete na UI**: A função `autoAssignAgent()` no `ChatInput` atualiza o banco, mas o `selectedConversation` no `HelpDesk.tsx` não é sincronizado — a tela continua mostrando "Nenhum" como agente.
+
+2. **Lista de agentes vazia no ContactInfoPanel**: A query de `inbox_users` faz join com `user_profiles`, mas a política RLS de `user_profiles` só permite que cada usuário veja o próprio perfil. Agentes não conseguem listar outros agentes.
+
+3. **Badge de agente na lista não exibe nome**: O `agentNamesMap` é preenchido corretamente, mas como o `assigned_to` da conversa não é atualizado no estado local após a auto-atribuição, o badge nunca aparece.
+
+## Solução
+
+### 1. `src/components/helpdesk/ChatInput.tsx`
+- Após `autoAssignAgent()`, emitir um broadcast `assigned-agent` com o `conversation_id` e `assigned_to: user.id`
+- Isso notifica o `HelpDesk.tsx` para atualizar o estado local da conversa em tempo real
+
+### 2. `src/pages/dashboard/HelpDesk.tsx`
+- Subscrever ao evento broadcast `assigned-agent` no canal `helpdesk-conversations`
+- Ao receber, atualizar `conversations` e `selectedConversation` com o novo `assigned_to`
+
+### 3. `src/components/helpdesk/ContactInfoPanel.tsx`
+- Substituir a query de `inbox_users` (que falha por RLS) por uma alternativa que usa o `agentNamesMap` já disponível no `HelpDesk.tsx`
+- Receber `agentNamesMap` como prop e combinar com os membros da inbox via uma query que funciona para todos os papéis
+- Adicionar opção "Sem agente" para **remover** atribuição (já existe como `__none__` mas precisa disparar corretamente)
+- Ao atribuir/transferir, atualizar localmente via broadcast `assigned-agent`
+
+### 4. `src/components/helpdesk/ChatPanel.tsx`
+- Exibir o nome do agente responsável na área abaixo do nome do contato no header, usando `agentNamesMap`
+
+## Fluxo Completo
+
+```text
+Agente envia mensagem
+  → autoAssignAgent() → DB: conversations.assigned_to = user.id
+  → broadcast 'assigned-agent' { conversation_id, assigned_to: user.id }
+
+HelpDesk ouve broadcast 'assigned-agent'
+  → atualiza conversations[id].assigned_to
+  → atualiza selectedConversation.assigned_to
+  → ConversationItem mostra badge com nome do agente
+
+ContactInfoPanel (seletor manual)
+  → lista agentes via agentNamesMap (prop recebida)
+  → ao selecionar → onUpdateConversation → DB + broadcast 'assigned-agent'
+  → ao selecionar "Nenhum" → assigned_to = null + broadcast
+```
 
 ## Arquivos Afetados
 
-### `src/components/helpdesk/ChatPanel.tsx`
-
-- Separar mensagens normais das notas: `const notes = messages.filter(m => m.direction === 'private_note')`
-- Renderizar apenas `messages.filter(m => m.direction !== 'private_note')` no fluxo do chat
-- Adicionar botão com ícone `StickyNote` no header com badge de contagem quando `notes.length > 0`
-- Ao clicar no ícone, abrir um `Sheet` (painel lateral) com a lista de notas
-
-### `src/components/helpdesk/NotesPanel.tsx` *(novo)*
-
-- Componente `Sheet` com lista de notas
-- Cada nota exibe: texto, horário (formatBR), botão de excluir (ícone de lixeira)
-- Ao excluir, chama `supabase.from('conversation_messages').delete().eq('id', noteId)` e atualiza a lista localmente
-
-### `src/components/helpdesk/ConversationItem.tsx`
-
-- Receber prop `hasNotes?: boolean`
-- Exibir ícone `StickyNote` pequeno ao lado dos labels quando `hasNotes === true`
-
-### `src/components/helpdesk/ConversationList.tsx` / `src/pages/dashboard/HelpDesk.tsx`
-
-- Carregar se a conversa tem notas (query adicional ou incluída no fetch de mensagens)
-- Passar prop `hasNotes` ao `ConversationItem`
-
-## Fluxo de Dados
-
-```text
-ChatPanel.fetchMessages()
-  → messages = todos os tipos
-  → notes = messages.filter(direction === 'private_note')
-  → chatMessages = messages.filter(direction !== 'private_note')
-
-Header:
-  → notes.length > 0 → mostra botão StickyNote com badge
-  → onClick → abre NotesPanel
-
-NotesPanel:
-  → lista notes
-  → delete → supabase.delete → atualiza estado local
-```
+- **`src/components/helpdesk/ChatInput.tsx`**: broadcast após auto-atribuição
+- **`src/pages/dashboard/HelpDesk.tsx`**: escutar broadcast e atualizar estado; passar `agentNamesMap` ao `ContactInfoPanel`
+- **`src/components/helpdesk/ContactInfoPanel.tsx`**: receber `agentNamesMap` como prop para preencher lista de agentes sem depender de RLS; broadcast ao fazer atribuição manual
+- **`src/components/helpdesk/ChatPanel.tsx`**: mostrar nome do agente responsável no header
 
 ## Detalhes Técnicos
 
-- O `Sheet` do shadcn/ui já está disponível no projeto — será utilizado para o painel de notas
-- A exclusão é local (sem refresh) via `setMessages(prev => prev.filter(m => m.id !== id))` após confirmação do delete no banco
-- O ícone no `ConversationItem` requer apenas verificar se alguma mensagem da conversa é `private_note` — isso pode ser feito com uma coluna derivada ou com uma query separada no `HelpDesk.tsx`
-- Para evitar N+1 queries, a informação de "tem notas" pode ser carregada com um campo `has_notes` calculado no fetch de conversas via subquery SQL no Supabase
+- O broadcast `assigned-agent` usa o canal `helpdesk-conversations` já existente, sem criar canais novos
+- O `ContactInfoPanel` receberá a prop `agentNamesMap: Record<string, string>` — o `HelpDesk.tsx` já a possui e precisa apenas passá-la adiante
+- A remoção de atribuição (`__none__`) define `assigned_to: null` tanto no DB quanto no broadcast, e o badge some automaticamente
+- Para a lista de agentes no `ContactInfoPanel`, será feita uma query em `inbox_users` filtrando pelo `inbox_id` e cruzando os `user_id` com o `agentNamesMap` já carregado — evitando a necessidade de ler `user_profiles` diretamente
