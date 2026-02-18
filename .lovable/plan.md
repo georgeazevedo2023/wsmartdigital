@@ -1,266 +1,290 @@
 
-# Módulo Kanban CRM — Plano de Implementação por Etapas
+# Redesign de Permissões e UX — Plano por Etapas
 
-Este documento detalha a arquitetura e as etapas de implementação do módulo Kanban CRM para o WsmartQR. O módulo é dividido em 4 etapas sequenciais, cada uma entregando valor imediato e servindo de base para a próxima.
+## Diagnóstico Atual
 
----
+O sistema possui dois contextos de papéis que vivem em paralelo e precisam ser unificados:
 
-## Visão Geral da Arquitetura
+- **`app_role`** (tabela `user_roles`): `super_admin` | `user` — define quem é Super Admin vs. todo o resto. Apenas `super_admin` existe de forma significativa; `user` não confere nenhum privilégio especial.
+- **`inbox_role`** (tabela `inbox_users`): `admin` | `gestor` | `agente` — define o papel dentro de uma caixa de atendimento específica.
 
-```text
+**Problemas identificados:**
+
+1. O papel `app_role.user` é inútil — não confere acesso a módulos nem diferencia um gerente de um atendente.
+2. Não há um papel "Gerente" global — apenas papéis por caixa de inbox.
+3. O CRM não tem controle de acesso: qualquer usuário logado vê o botão "Novo Quadro", pode criar boards e duplicá-los.
+4. O `AuthContext` só expõe `isSuperAdmin` (booleano) — sem suporte a `gerente` no nível de aplicação.
+5. A tela AdminPanel usa a nomenclatura "Usuário" genérica, sem distinguir visualmente Gerentes de Atendentes.
+6. O `admin-create-user` Edge Function cria apenas `super_admin` ou `user` — sem opção `gerente`.
+
+## Modelo Unificado de 3 Papéis
+
+```
 ┌─────────────────────────────────────────────────────────────┐
-│                     KANBAN CRM MODULE                       │
-├─────────────────┬───────────────────┬───────────────────────┤
-│   ETAPA 1       │   ETAPA 2         │   ETAPA 3             │
-│   Fundação DB   │   Quadros + UI    │   Cards + Kanban      │
-│   + Quadros     │   Operacional     │   Drag & Drop         │
-├─────────────────┴───────────────────┴───────────────────────┤
-│   ETAPA 4: Automações WhatsApp por Coluna                   │
-└─────────────────────────────────────────────────────────────┘
+│              PAPÉIS GLOBAIS (app_role enum)                 │
+├──────────────┬──────────────┬──────────────────────────────┤
+│  super_admin │   gerente    │          user                │
+├──────────────┼──────────────┼──────────────────────────────┤
+│ Dashboard    │ ✗            │ ✗                            │
+│ Instâncias   │ ✗            │ ✗                            │
+│ Disparador   │ ✗            │ ✗                            │
+│ Agendamentos │ ✗            │ ✗                            │
+│ Administração│ ✗            │ ✗                            │
+│ Inteligência │ ✗            │ ✗                            │
+│ Configurações│ ✗            │ ✗                            │
+│ Atendimento  │ ✓ (todos)    │ ✓ (suas caixas)              │
+│ CRM - Criar  │ ✗            │ ✗                            │
+│ CRM - Editar │ ✗            │ ✗                            │
+│ CRM - Ver    │ ✓ (boards da │ ✓ (boards da sua inbox)      │
+│              │  sua inbox)  │                              │
+└──────────────┴──────────────┴──────────────────────────────┘
 ```
+
+**Clarificação:**
+- `super_admin`: acesso total a todo o sistema — é o dono/admin da plataforma
+- `gerente`: acessa Atendimento (todas as caixas nas quais está vinculado) e CRM (somente visualizar/operar boards vinculados à sua inbox). Sem acesso a configurações globais.
+- `user` (Atendente): acessa apenas Atendimento nas caixas que lhe foram atribuídas e boards CRM Privados onde for responsável.
+
+Os papéis por inbox (`admin`, `gestor`, `agente`) continuam funcionando para controle de permissões **dentro** de uma caixa de atendimento (quem pode gerenciar etiquetas, atribuir conversas etc.).
 
 ---
 
-## Etapa 1 — Fundação: Banco de Dados e Navegação
+## ETAPA 1 — Banco de Dados: Adicionar papel `gerente` ao enum
 
-### Objetivo
-Criar todas as tabelas necessárias para o módulo completo, as políticas de RLS e adicionar o item "CRM" na sidebar.
+### Migração SQL
 
-### Tabelas a criar
-
-**`kanban_boards`** — Quadros (Pipelines)
 ```sql
-id, name, description, created_by (uuid),
-visibility (enum: 'shared' | 'private'),
-inbox_id (uuid, nullable → FK inboxes),
-instance_id (text, nullable → FK instances),
-created_at, updated_at
+-- Adicionar 'gerente' ao enum app_role
+ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'gerente';
 ```
 
-**`kanban_columns`** — Colunas/Etapas do Funil
-```sql
-id, board_id (FK), name, color (#hex),
-position (integer), -- ordenação
-automation_message (text, nullable), -- Etapa 4
-created_at
-```
-
-**`kanban_fields`** — Campos Personalizados do Formulário
-```sql
-id, board_id (FK), name, field_type
-(enum: 'text' | 'currency' | 'date' | 'select'),
-options (jsonb, nullable), -- para campo Select
-position (integer), is_primary (boolean), -- campo destaque no card
-required (boolean), created_at
-```
-
-**`kanban_cards`** — Os Cards/Leads
-```sql
-id, board_id (FK), column_id (FK kanban_columns),
-title (nome do cliente/lead),
-assigned_to (uuid, nullable → user_profiles),
-created_by (uuid), position (integer),
-tags (text[]), created_at, updated_at
-```
-
-**`kanban_card_data`** — Valores dos Campos Personalizados
-```sql
-id, card_id (FK), field_id (FK kanban_fields),
-value (text), created_at
-```
-
-### Políticas de RLS
-- **Super Admin**: acesso total a todas as tabelas
-- **Usuários (boards)**: podem ver boards que criaram ou onde têm cards atribuídos
-- **Visibilidade `shared`**: todos os membros da inbox vinculada veem todos os cards
-- **Visibilidade `private`**: usuário só vê cards onde `created_by = auth.uid()` OR `assigned_to = auth.uid()`
-- **Columns/Fields**: herdado do board — quem acessa o board acessa suas colunas e campos
-- **Cards**: filtro por visibilidade do board aplicado via função `SECURITY DEFINER`
-
-### Mudanças de Frontend
-- Adicionar item "CRM" com ícone `Kanban` na Sidebar (visível para todos os usuários autenticados)
-- Criar rota `/dashboard/crm` no `App.tsx`
-- Criar página placeholder `src/pages/dashboard/KanbanCRM.tsx`
-
-### Arquivos afetados
-- 1 migração SQL (nova)
-- `src/components/dashboard/Sidebar.tsx`
-- `src/App.tsx`
-- `src/pages/dashboard/KanbanCRM.tsx` (novo)
+Isso é não-destrutivo. Os usuários existentes não são afetados.
 
 ---
 
-## Etapa 2 — Gestão de Quadros: CRUD Completo + Construtor
+## ETAPA 2 — AuthContext: Expor papel completo
 
-### Objetivo
-Tela onde admins gerenciam seus quadros: criar, editar, duplicar, excluir. Inclui o editor de colunas e editor de campos personalizados.
+### Mudança em `src/contexts/AuthContext.tsx`
 
-### Tela: Lista de Quadros (`/dashboard/crm`)
+Adicionar `userRole: 'super_admin' | 'gerente' | 'user' | null` e `isGerente: boolean` ao contexto, buscando o papel real do banco:
 
-**Layout**: grade de cards, cada card mostra:
-- Nome, descrição, badge de visibilidade (Compartilhado / Privado)
-- Instância/Inbox vinculada (se houver)
-- Número de colunas, número de cards
-- Botões: Abrir, Editar, Duplicar, Excluir
-
-**Botão "Criar Novo Quadro"**: abre Dialog com:
-- Nome (obrigatório), Descrição
-- Seletor de Inbox (lista as inboxes disponíveis)
-- Seletor de Visibilidade: `Compartilhado` / `Individual/Privado`
-
-**Botão "Duplicar"**: cria novo board com:
-- Cópia das `kanban_columns` (posição, nome, cor)
-- Cópia dos `kanban_fields` (tipo, nome, opções)
-- Sufixo " (Cópia)" no nome
-- Sem copiar `kanban_cards`
-
-### Dialog: Editor do Quadro (Aba "Processo")
-
-Divide-se em duas abas internas:
-
-**Aba "Colunas"**:
-- Lista ordenável de colunas com nome e cor
-- Botão "+ Adicionar Coluna"
-- Cada coluna: input de nome, color picker (paleta simples de 8 cores), botão excluir
-- Ordenação via botões ▲▼ (sem drag-and-drop nesta etapa)
-
-**Aba "Campos do Formulário"**:
-- Lista de campos com nome e tipo
-- Botão "+ Adicionar Campo"
-- Cada campo: input de nome, select de tipo, toggle "Campo Principal" (exibe no card), toggle "Obrigatório"
-- Para tipo "Seleção": área para adicionar opções separadas por vírgula
-
-### Arquivos a criar/editar
-- `src/pages/dashboard/KanbanCRM.tsx` (implementação completa da lista)
-- `src/components/kanban/BoardCard.tsx` (card de quadro na lista)
-- `src/components/kanban/CreateBoardDialog.tsx`
-- `src/components/kanban/EditBoardDialog.tsx` (inclui editor de colunas e campos)
-
----
-
-## Etapa 3 — Interface Operacional: O Kanban do Dia a Dia
-
-### Objetivo
-A tela principal onde os usuários trabalham: visualização kanban com colunas, cards e painel de detalhes.
-
-### Rota: `/dashboard/crm/:boardId`
-
-**Layout de 3 zonas**:
-```text
-┌──────────┬────────────────────────────────────────┬──────────────┐
-│  Header  │  Barra de Filtros (Busca, Responsável)  │              │
-├──────────┴────────────────────────────────────────┴──────────────┤
-│  [Coluna 1]    [Coluna 2]    [Coluna 3]    [+ Nova Coluna]       │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐                        │
-│  │ Card     │  │ Card     │  │          │                        │
-│  │ Nome     │  │ Nome     │  │          │                        │
-│  │ @resp    │  │ @resp    │  │          │                        │
-│  │ 🏷️ tag   │  │ Placa XX │  │          │                        │
-│  └──────────┘  └──────────┘  └──────────┘                        │
-└────────────────────────────────────────────────────────────────┘
-```
-
-**Card Visual** (capa do card):
-- Nome do cliente/lead (título)
-- Avatar + nome do responsável (se atribuído)
-- Tags como badges coloridos
-- Valor do campo marcado como "Principal" (ex: placa, valor)
-- Botão `+` ao fundo de cada coluna para criar novo card
-
-**Painel de Detalhes do Card** (Sheet lateral ao clicar):
-- Header: título editável, seletor de responsável, seletor de coluna
-- Seção de Tags: input para adicionar/remover tags
-- Formulário dinâmico: renderiza cada `kanban_field` do board com o input apropriado:
-  - `text` → Input
-  - `currency` → Input com máscara R$
-  - `date` → DatePicker
-  - `select` → Select com opções configuradas
-- Botão "Salvar" persiste dados em `kanban_card_data`
-- Botão "Excluir card"
-
-**Filtro de Privacidade** (aplicado automaticamente no frontend):
-- Se `board.visibility === 'private'` e usuário NÃO é super admin: query filtra `created_by = user.id OR assigned_to = user.id`
-- Se `board.visibility === 'shared'`: carrega todos os cards das colunas
-
-**Movimentação de Cards**:
-- Drag & Drop entre colunas usando `@dnd-kit/core` (biblioteca a instalar)
-- Ao mover, atualiza `kanban_cards.column_id` e dispara verificação de automação (Etapa 4)
-
-### Arquivos a criar
-- `src/pages/dashboard/KanbanBoard.tsx` (tela operacional)
-- `src/components/kanban/KanbanColumn.tsx`
-- `src/components/kanban/KanbanCardItem.tsx` (card visual)
-- `src/components/kanban/CardDetailSheet.tsx` (painel lateral)
-- `src/components/kanban/DynamicFormField.tsx` (renderizador de campo)
-
-### Rota adicional em `App.tsx`
 ```typescript
-<Route path="crm/:boardId" element={<Suspense ...><KanbanBoard /></Suspense>} />
+// Busca o papel mais elevado do usuário
+const { data: roles } = await supabase
+  .from('user_roles')
+  .select('role')
+  .eq('user_id', userId);
+
+const roleList = roles?.map(r => r.role) || [];
+const isSuperAdmin = roleList.includes('super_admin');
+const isGerente = roleList.includes('gerente');
+```
+
+O contexto passa a exportar: `isSuperAdmin`, `isGerente`, `userRole` (papel efetivo de mais alto nível).
+
+---
+
+## ETAPA 3 — Sidebar: Visibilidade por papel
+
+### Mapa de Acesso por Item de Menu
+
+| Item | super_admin | gerente | user (atendente) |
+|---|---|---|---|
+| Dashboard | ✓ | ✗ | ✗ |
+| Agendamentos | ✓ | ✗ | ✗ |
+| Atendimento | ✓ | ✓ | ✓ |
+| CRM | ✓ | ✓ | ✗* |
+| Disparador | ✓ | ✗ | ✗ |
+| Instâncias | ✓ | ✗ | ✗ |
+| Administração | ✓ | ✗ | ✗ |
+| Inteligência | ✓ | ✗ | ✗ |
+| Configurações | ✓ | ✗ | ✗ |
+
+\* Atendentes (role `user`) NÃO veem CRM no menu — eles acessam apenas os boards onde têm cards atribuídos, mas não navegam ativamente pelo módulo.
+
+### Mudança de Redirecionamento Pós-Login
+
+| Papel | Redireciona para |
+|---|---|
+| `super_admin` | `/dashboard` |
+| `gerente` | `/dashboard/helpdesk` |
+| `user` | `/dashboard/helpdesk` |
+
+---
+
+## ETAPA 4 — CRM: Controle de Acesso Granular
+
+### Regras de Acesso ao CRM por Papel
+
+| Ação | super_admin | gerente | user |
+|---|---|---|---|
+| Ver lista de boards | ✓ todos | ✓ apenas linked à sua inbox | ✗ |
+| Criar board | ✓ | ✗ | ✗ |
+| Editar board | ✓ | ✗ | ✗ |
+| Duplicar board | ✓ | ✗ | ✗ |
+| Excluir board | ✓ | ✗ | ✗ |
+| Abrir board e ver cards | ✓ | ✓ (shared) / parcial (private) | ✗ |
+| Criar card | ✓ | ✓ | ✗ |
+| Editar card | ✓ | ✓ (próprio/atribuído) | ✗ |
+| Mover card | ✓ | ✓ (próprio/atribuído) | ✗ |
+
+### Mudanças no Frontend do CRM
+
+**`KanbanCRM.tsx`:**
+- Esconder botão "Novo Quadro" para não-super-admins
+- Empty state diferenciado: gerente vê "Você não tem quadros vinculados à sua inbox" (sem botão de criar)
+- Super Admin continua com empty state + botão de criar
+
+**`BoardCard.tsx`:**
+- O `DropdownMenu` com Editar/Duplicar/Excluir só aparece para `isSuperAdmin`
+- Gerentes veem apenas o botão "Abrir Quadro"
+
+**`KanbanBoard.tsx`:**
+- Botão "+ Novo Card" só aparece para `isSuperAdmin` ou `isGerente`
+- Atendentes (`user`) não acessam a rota `/dashboard/crm` — rota protegida
+
+### Mudança na Rota CRM (App.tsx)
+
+A rota CRM passa de aberta (`<Suspense>`) para restrita:
+
+```typescript
+// Rota CRM — apenas super_admin e gerente
+<Route path="crm" element={
+  <CrmRoute>
+    <Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense>
+  </CrmRoute>
+} />
 ```
 
 ---
 
-## Etapa 4 — Automações: Mensagens por Coluna via WhatsApp
+## ETAPA 5 — AdminPanel: Gestão Unificada de Usuários com 3 Papéis
 
-### Objetivo
-Para boards vinculados a uma inbox/instância, permitir configurar mensagens automáticas que são enviadas quando um card é movido para uma coluna específica.
+### Redesign da Aba "Usuários"
 
-### Configuração (dentro do Editor de Colunas - Etapa 2)
-- Campo "Mensagem Automática" (textarea) em cada coluna
-- Suporte a variáveis: `{{nome}}`, `{{responsavel}}`, `{{data}}`
-- Toggle para ativar/desativar por coluna
+Atualmente: toggle "Super Admin / Usuário"
+Novo: seletor de papel com 3 opções visuais
 
-### Lógica de Disparo
-Ao mover um card para uma coluna que tenha `automation_message` preenchida:
-
-1. Frontend detecta o move no handler do DnD
-2. Verifica se o board tem `inbox_id` e se a coluna tem `automation_message`
-3. Se sim, verifica se o card tem um número de telefone associado (campo do tipo `text` marcado como "telefone" ou o nome do contato do HelpDesk)
-4. Exibe modal de confirmação: "Enviar mensagem automática para [contato]?"
-5. Ao confirmar, chama a edge function `uazapi-proxy` com a mensagem formatada
-
-### Variáveis de Template
-```text
-{{nome}}        → kanban_cards.title
-{{responsavel}} → nome do assigned_to
-{{data}}        → data atual formatada
-{{campo:NOME}}  → valor de campo personalizado por nome
+**Card de usuário novo design:**
+```
+┌─────────────────────────────────────────────────┐
+│  [Avatar] Nome do Usuário         [Badge: Papel] │
+│           email@exemplo.com                      │
+│                                                  │
+│  [🔧 Instâncias] [📋 Papel: ▼ Gerente] [🗑️]      │
+└─────────────────────────────────────────────────┘
 ```
 
-### Arquivos afetados
-- `src/components/kanban/CardDetailSheet.tsx` (lógica de automação)
-- `src/pages/dashboard/KanbanBoard.tsx` (modal de confirmação de disparo)
-- `src/components/kanban/AutomationConfirmDialog.tsx` (novo)
-- Editor de colunas em `EditBoardDialog.tsx` (campo de mensagem)
+**Badges visuais por papel:**
+- `super_admin`: Badge violeta com ícone de escudo — "Super Admin"
+- `gerente`: Badge azul com ícone de briefcase — "Gerente"
+- `user`: Badge cinza com ícone de headphones — "Atendente"
+
+### Mudança no Dialog "Criar Usuário"
+
+Remove o toggle `Super Admin on/off`. Adiciona um seletor de papel:
+```
+○ Super Admin  — Acesso total ao sistema
+● Gerente      — Acesso a atendimento e CRM
+○ Atendente    — Acesso apenas às caixas atribuídas
+```
+
+### Mudança na Edge Function `admin-create-user`
+
+Recebe `role: 'super_admin' | 'gerente' | 'user'` e insere o papel correto na `user_roles`:
+
+```typescript
+const { role } = body; // 'super_admin' | 'gerente' | 'user'
+if (newUser.user) {
+  await adminClient.from('user_roles').insert({ 
+    user_id: newUser.user.id, 
+    role: role || 'user' 
+  });
+}
+```
+
+### Ação "Alterar Papel" no AdminPanel
+
+Remove o botão "Tornar Admin / Remover Admin" atual. Adiciona um `Select` inline para mudar o papel:
+
+```typescript
+// Remove papel antigo, insere novo
+await supabase.from('user_roles').delete().eq('user_id', userId).neq('role', null);
+await supabase.from('user_roles').insert({ user_id: userId, role: newRole });
+```
 
 ---
 
-## Resumo das Etapas
+## ETAPA 6 — Banco de Dados: RLS do CRM Corrigida
 
-| Etapa | O que entrega | Dependências |
-|-------|--------------|-------------|
-| 1 | Banco de dados + Sidebar + Rota | Nenhuma |
-| 2 | CRUD de Quadros + Editor de Colunas/Campos + Duplicar | Etapa 1 |
-| 3 | Interface Kanban Operacional + Drag & Drop + Filtro de Privacidade | Etapa 2 |
-| 4 | Automações de Mensagem por Coluna | Etapas 2 e 3 |
+### Migração SQL
+
+```sql
+-- 1. Revogar criação de boards para não-super-admins
+DROP POLICY IF EXISTS "Usuários podem criar boards" ON kanban_boards;
+CREATE POLICY "Apenas super admins criam boards"
+  ON kanban_boards FOR INSERT
+  WITH CHECK (is_super_admin(auth.uid()));
+
+-- 2. Revogar edição de boards para criadores não-admin
+DROP POLICY IF EXISTS "Criadores podem atualizar seus boards" ON kanban_boards;
+CREATE POLICY "Apenas super admins atualizam boards"
+  ON kanban_boards FOR UPDATE
+  USING (is_super_admin(auth.uid()));
+
+-- 3. Revogar exclusão de boards para criadores não-admin
+DROP POLICY IF EXISTS "Criadores podem excluir seus boards" ON kanban_boards;
+CREATE POLICY "Apenas super admins excluem boards"
+  ON kanban_boards FOR DELETE
+  USING (is_super_admin(auth.uid()));
+
+-- 4. Colunas e Campos — unificar em super admin
+DROP POLICY IF EXISTS "Criadores do board gerenciam colunas" ON kanban_columns;
+DROP POLICY IF EXISTS "Criadores do board atualizam colunas" ON kanban_columns;
+DROP POLICY IF EXISTS "Criadores do board excluem colunas" ON kanban_columns;
+
+DROP POLICY IF EXISTS "Criadores do board gerenciam campos" ON kanban_fields;
+DROP POLICY IF EXISTS "Criadores do board atualizam campos" ON kanban_fields;
+DROP POLICY IF EXISTS "Criadores do board excluem campos" ON kanban_fields;
+
+-- As políticas "Super admins gerenciam todos os cards/colunas/campos" já existem
+-- e cobrem o super_admin. Não precisam ser recriadas.
+
+-- 5. Cards — ajustar UPDATE para gerentes poderem editar
+-- A política "Criadores e responsáveis atualizam cards" já contempla isso
+-- via created_by = auth.uid() OR assigned_to = auth.uid()
+```
 
 ---
 
-## Detalhes Técnicos
+## Resumo dos Arquivos a Modificar
 
-### Nova dependência
-- `@dnd-kit/core` e `@dnd-kit/sortable` — biblioteca de drag & drop acessível e compatível com React 18
+| Arquivo | Ação |
+|---|---|
+| Nova migração SQL (1) | `ALTER TYPE app_role ADD VALUE 'gerente'` |
+| Nova migração SQL (2) | RLS do CRM: revogar INSERT/UPDATE/DELETE de boards para não-super-admins |
+| `src/contexts/AuthContext.tsx` | Adicionar `isGerente`, `userRole` |
+| `src/App.tsx` | Adicionar `CrmRoute` wrapper, atualizar redirect pós-login |
+| `src/pages/Login.tsx` | Atualizar redirect pós-login para gerentes |
+| `src/components/dashboard/Sidebar.tsx` | Visibilidade por papel (CRM só para admin+gerente) |
+| `src/pages/dashboard/KanbanCRM.tsx` | Esconder botão criar / empty state diferenciado |
+| `src/components/kanban/BoardCard.tsx` | Ocultar menu de ações para não-super-admins |
+| `src/pages/dashboard/KanbanBoard.tsx` | Botão novo card restrito |
+| `src/pages/dashboard/AdminPanel.tsx` | Redesign da aba Usuários com 3 papéis |
+| `supabase/functions/admin-create-user/index.ts` | Receber `role` em vez de `is_super_admin` |
 
-### Segurança
-- Privacidade dos cards reforçada no RLS do banco (não apenas no frontend)
-- Função `SECURITY DEFINER` para verificar visibilidade do board sem recursão
-- Super Admin acessa tudo; agentes regulares ficam restritos pelas políticas
-
-### Compatibilidade
-- O módulo é independente dos módulos existentes (HelpDesk, Broadcast)
-- A vinculação com Inbox é opcional — o CRM funciona standalone
-- Reutiliza componentes existentes: `Avatar`, `Badge`, `Sheet`, `Dialog`, `Select`, `DatePicker`
+**Total: 2 migrações + 9 arquivos de código**
 
 ---
 
-Posso iniciar pela **Etapa 1** agora. Assim que aprovada e testada, seguimos para a Etapa 2, e assim por diante. Deseja começar?
+## Sequência de Implementação
+
+1. **Migração 1**: Adicionar `gerente` ao enum
+2. **Migração 2**: Corrigir RLS do CRM
+3. **AuthContext**: Expor `isGerente` e `userRole`
+4. **App.tsx + Login**: Atualizar rotas e redirects
+5. **Sidebar**: Visibilidade por papel
+6. **CRM (3 arquivos)**: Controle de acesso granular
+7. **AdminPanel + Edge Function**: Gestão de 3 papéis com novo UX
+
+Tudo isso será implementado por etapas sequenciais, com cada conjunto de mudanças testável de forma independente.
