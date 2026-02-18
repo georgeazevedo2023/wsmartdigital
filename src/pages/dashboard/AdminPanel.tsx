@@ -8,7 +8,6 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Switch } from '@/components/ui/switch';
 import {
   Tabs,
   TabsList,
@@ -98,6 +97,8 @@ interface InboxWithDetails {
   webhook_outgoing_url: string | null;
 }
 
+type AppRole = 'super_admin' | 'gerente' | 'user';
+
 interface UserWithRole {
   id: string;
   email: string;
@@ -105,6 +106,7 @@ interface UserWithRole {
   avatar_url: string | null;
   created_at: string;
   is_super_admin: boolean;
+  app_role: AppRole;
   instance_count: number;
   instances: { id: string; name: string; phone: string | null }[];
 }
@@ -196,7 +198,7 @@ const AdminPanel = () => {
   const [newUserEmail, setNewUserEmail] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [newUserName, setNewUserName] = useState('');
-  const [newUserIsAdmin, setNewUserIsAdmin] = useState(false);
+  const [newUserRole, setNewUserRole] = useState<AppRole>('user');
 
   // Delete user
   const [userToDelete, setUserToDelete] = useState<UserWithRole | null>(null);
@@ -281,14 +283,23 @@ const AdminPanel = () => {
       const access = accessRes.data || [];
       const instMap = new Map((instRes.data || []).map(i => [i.id, i]));
 
+      const resolveRole = (userId: string): AppRole => {
+        const userRoles = roles.filter(r => r.user_id === userId).map(r => r.role);
+        if (userRoles.includes('super_admin')) return 'super_admin';
+        if (userRoles.includes('gerente')) return 'gerente';
+        return 'user';
+      };
+
       setUsers(profiles.map(p => {
         const userAccess = access.filter(a => a.user_id === p.id);
         const instances = userAccess
           .map(a => { const i = instMap.get(a.instance_id); return i ? { id: i.id, name: i.name, phone: i.owner_jid } : null; })
           .filter(Boolean) as UserWithRole['instances'];
+        const role = resolveRole(p.id);
         return {
           ...p,
-          is_super_admin: roles.some(r => r.user_id === p.id && r.role === 'super_admin'),
+          is_super_admin: role === 'super_admin',
+          app_role: role,
           instance_count: instances.length,
           instances,
         };
@@ -444,13 +455,13 @@ const AdminPanel = () => {
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/admin-create-user`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ email: newUserEmail, password: newUserPassword, full_name: newUserName, is_super_admin: newUserIsAdmin }),
+        body: JSON.stringify({ email: newUserEmail, password: newUserPassword, full_name: newUserName, role: newUserRole }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Erro ao criar usuário');
       toast.success('Usuário criado!');
       setIsCreateUserOpen(false);
-      setNewUserEmail(''); setNewUserPassword(''); setNewUserName(''); setNewUserIsAdmin(false);
+      setNewUserEmail(''); setNewUserPassword(''); setNewUserName(''); setNewUserRole('user');
       fetchUsers();
     } catch (e: any) {
       toast.error(e.message || 'Erro ao criar usuário');
@@ -459,17 +470,14 @@ const AdminPanel = () => {
     }
   };
 
-  const handleToggleAdmin = async (userId: string, currentlyAdmin: boolean) => {
+  const handleChangeRole = async (userId: string, newRole: AppRole) => {
     try {
-      if (currentlyAdmin) {
-        await supabase.from('user_roles').delete().eq('user_id', userId).eq('role', 'super_admin');
-      } else {
-        await supabase.from('user_roles').insert({ user_id: userId, role: 'super_admin' });
-      }
-      toast.success(currentlyAdmin ? 'Admin removido' : 'Admin concedido');
+      await supabase.from('user_roles').delete().eq('user_id', userId);
+      await supabase.from('user_roles').insert({ user_id: userId, role: newRole });
+      toast.success('Papel atualizado!');
       fetchUsers();
     } catch {
-      toast.error('Erro ao alterar permissões');
+      toast.error('Erro ao alterar papel');
     }
   };
 
@@ -781,15 +789,23 @@ const AdminPanel = () => {
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          {u.is_super_admin ? (
-                            <Badge className="bg-primary/10 text-primary border-primary/20 gap-1">
-                              <Shield className="w-3 h-3" /> Super Admin
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="gap-1 text-muted-foreground">
-                              <User className="w-3 h-3" /> Usuário
-                            </Badge>
-                          )}
+                          {/* Role badge com select inline */}
+                          <Select value={u.app_role} onValueChange={(v) => handleChangeRole(u.id, v as AppRole)}>
+                            <SelectTrigger className="h-8 w-36 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="super_admin">
+                                <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-primary" /> Super Admin</span>
+                              </SelectItem>
+                              <SelectItem value="gerente">
+                                <span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5 text-blue-400" /> Gerente</span>
+                              </SelectItem>
+                              <SelectItem value="user">
+                                <span className="flex items-center gap-1.5"><Headphones className="w-3.5 h-3.5 text-muted-foreground" /> Atendente</span>
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
                         </td>
                         <td className="px-4 py-3">
                           <span className="text-muted-foreground">
@@ -813,14 +829,6 @@ const AdminPanel = () => {
                             >
                               <Settings className="w-3.5 h-3.5 mr-1" />
                               Instâncias
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-xs"
-                              onClick={() => handleToggleAdmin(u.id, u.is_super_admin)}
-                            >
-                              {u.is_super_admin ? 'Remover Admin' : 'Tornar Admin'}
                             </Button>
                             <Button
                               variant="ghost"
@@ -855,22 +863,26 @@ const AdminPanel = () => {
                           <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                         </div>
                       </div>
-                      {u.is_super_admin ? (
-                        <Badge className="bg-primary/10 text-primary border-primary/20 gap-1 shrink-0">
-                          <Shield className="w-3 h-3" /> Admin
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="gap-1 shrink-0 text-muted-foreground">
-                          <User className="w-3 h-3" /> Usuário
-                        </Badge>
-                      )}
+                      <Badge
+                        variant="outline"
+                        className={u.app_role === 'super_admin' ? 'gap-1 shrink-0 bg-primary/10 text-primary border-primary/20' : u.app_role === 'gerente' ? 'gap-1 shrink-0 bg-blue-500/10 text-blue-400 border-blue-500/20' : 'gap-1 shrink-0 text-muted-foreground'}
+                      >
+                        {u.app_role === 'super_admin' ? <><Shield className="w-3 h-3" /> Admin</> : u.app_role === 'gerente' ? <><User className="w-3 h-3" /> Gerente</> : <><Headphones className="w-3 h-3" /> Atendente</>}
+                      </Badge>
                     </div>
                     <div className="flex flex-wrap gap-2">
+                      <Select value={u.app_role} onValueChange={(v) => handleChangeRole(u.id, v as AppRole)}>
+                        <SelectTrigger className="flex-1 h-9 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="super_admin">Super Admin</SelectItem>
+                          <SelectItem value="gerente">Gerente</SelectItem>
+                          <SelectItem value="user">Atendente</SelectItem>
+                        </SelectContent>
+                      </Select>
                       <Button variant="outline" size="sm" className="flex-1 h-9 text-xs" onClick={() => { setManageInstancesUser(u); setIsManageInstancesOpen(true); }}>
                         <Settings className="w-3.5 h-3.5 mr-1" /> Instâncias
-                      </Button>
-                      <Button variant="ghost" size="sm" className="flex-1 h-9 text-xs" onClick={() => handleToggleAdmin(u.id, u.is_super_admin)}>
-                        {u.is_super_admin ? 'Remover Admin' : 'Tornar Admin'}
                       </Button>
                       <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10" onClick={() => setUserToDelete(u)}>
                         <Trash2 className="w-4 h-4" />
@@ -1021,12 +1033,29 @@ const AdminPanel = () => {
               <Label>Senha *</Label>
               <Input type="password" placeholder="Mínimo 6 caracteres" value={newUserPassword} onChange={e => setNewUserPassword(e.target.value)} />
             </div>
-            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/30">
-              <div>
-                <p className="font-medium text-sm">Super Admin</p>
-                <p className="text-xs text-muted-foreground">Acesso total ao sistema</p>
+            <div className="space-y-2">
+              <Label>Perfil de Acesso *</Label>
+              <div className="grid grid-cols-3 gap-2">
+                {([
+                  { value: 'super_admin', label: 'Super Admin', desc: 'Acesso total' },
+                  { value: 'gerente', label: 'Gerente', desc: 'Atendimento e CRM' },
+                  { value: 'user', label: 'Atendente', desc: 'Apenas caixas' },
+                ] as { value: AppRole; label: string; desc: string }[]).map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setNewUserRole(opt.value)}
+                    className={`flex flex-col items-center gap-1 p-3 rounded-lg border text-center transition-all ${
+                      newUserRole === opt.value
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-muted/20 text-muted-foreground hover:border-primary/40'
+                    }`}
+                  >
+                    <span className="text-xs font-semibold">{opt.label}</span>
+                    <span className="text-[10px] opacity-70">{opt.desc}</span>
+                  </button>
+                ))}
               </div>
-              <Switch checked={newUserIsAdmin} onCheckedChange={setNewUserIsAdmin} />
             </div>
           </div>
           <DialogFooter>

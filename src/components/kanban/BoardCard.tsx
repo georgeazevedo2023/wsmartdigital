@@ -48,9 +48,10 @@ interface BoardCardProps {
   board: KanbanBoard;
   inboxes: Inbox[];
   onRefresh: () => void;
+  canManage?: boolean;
 }
 
-export function BoardCard({ board, inboxes, onRefresh }: BoardCardProps) {
+export function BoardCard({ board, inboxes, onRefresh, canManage = false }: BoardCardProps) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
@@ -60,7 +61,6 @@ export function BoardCard({ board, inboxes, onRefresh }: BoardCardProps) {
     if (!user) return;
     setDuplicating(true);
 
-    // 1. Create new board
     const { data: newBoard, error: boardErr } = await supabase
       .from('kanban_boards')
       .insert({
@@ -80,7 +80,6 @@ export function BoardCard({ board, inboxes, onRefresh }: BoardCardProps) {
       return;
     }
 
-    // 2. Copy columns
     const { data: srcCols } = await supabase
       .from('kanban_columns')
       .select('*')
@@ -100,7 +99,6 @@ export function BoardCard({ board, inboxes, onRefresh }: BoardCardProps) {
       );
     }
 
-    // 3. Copy fields
     const { data: srcFields } = await supabase
       .from('kanban_fields')
       .select('*')
@@ -147,49 +145,53 @@ export function BoardCard({ board, inboxes, onRefresh }: BoardCardProps) {
               <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{board.description}</p>
             )}
           </div>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={() => setEditOpen(true)}>
-                <Edit className="w-4 h-4 mr-2" /> Editar
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleDuplicate} disabled={duplicating}>
-                <Copy className="w-4 h-4 mr-2" /> {duplicating ? 'Duplicando...' : 'Duplicar'}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onSelect={e => e.preventDefault()}
-                  >
-                    <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                  </DropdownMenuItem>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Excluir Quadro?</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Todos os cards e dados deste quadro serão perdidos. Esta ação não pode ser desfeita.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                    <AlertDialogAction
-                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      onClick={handleDelete}
+
+          {/* Menu de ações — apenas para quem pode gerenciar (super_admin) */}
+          {canManage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <MoreVertical className="w-4 h-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => setEditOpen(true)}>
+                  <Edit className="w-4 h-4 mr-2" /> Editar
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleDuplicate} disabled={duplicating}>
+                  <Copy className="w-4 h-4 mr-2" /> {duplicating ? 'Duplicando...' : 'Duplicar'}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <DropdownMenuItem
+                      className="text-destructive focus:text-destructive"
+                      onSelect={e => e.preventDefault()}
                     >
-                      Excluir
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                      <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                    </DropdownMenuItem>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Excluir Quadro?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Todos os cards e dados deste quadro serão perdidos. Esta ação não pode ser desfeita.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                      <AlertDialogAction
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        onClick={handleDelete}
+                      >
+                        Excluir
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
 
         {/* Stats */}
@@ -235,13 +237,15 @@ export function BoardCard({ board, inboxes, onRefresh }: BoardCardProps) {
         </Button>
       </div>
 
-      <EditBoardDialog
-        open={editOpen}
-        onOpenChange={setEditOpen}
-        board={board}
-        inboxes={inboxes}
-        onSaved={onRefresh}
-      />
+      {canManage && (
+        <EditBoardDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          board={board}
+          inboxes={inboxes}
+          onSaved={onRefresh}
+        />
+      )}
     </>
   );
 }
