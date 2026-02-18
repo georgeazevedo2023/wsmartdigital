@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.auto-summarize]
 verify_jwt = false
+
+[functions.analyze-summaries]
+verify_jwt = false
