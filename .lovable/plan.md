@@ -1,66 +1,80 @@
 
-# Fix: Notas privadas não são excluídas do banco
+# Filtros de Atribuição e Prioridade na Lista de Conversas
 
-## Causa raiz identificada
+## O que será feito
 
-A tabela `conversation_messages` possui as seguintes políticas RLS:
+1. **Remover** do cabeçalho os ícones de etiquetas (Tags), reload (RefreshCw) e o badge de não-lidas (195)
+2. **Adicionar** na `ConversationList` dois novos filtros:
+   - **Atribuição**: "Minhas" (atribuídas ao agente logado), "Não atribuídas" e "Todas"
+   - **Prioridade**: "Alta", "Média", "Baixa" e "Todas"
+3. **Manter** o filtro de etiquetas (Select por label) que já existe dentro da lista
+4. **Filtrar** a lista de conversas via estado local, sem precisar de novas queries ao banco (os dados já estão carregados)
 
-| Política | Operação |
-|---|---|
-| `Inbox users can insert messages` | INSERT |
-| `Inbox users can view messages` | SELECT |
-| `Super admins can manage all messages` | ALL (inclui DELETE) |
+---
 
-**Não existe nenhuma política de DELETE para agentes comuns.** Quando Milena clica em "excluir nota", o Supabase recebe o comando DELETE, mas como não há política RLS permitindo a operação para ela, a linha é simplesmente ignorada — sem retornar erro. O código interpreta isso como sucesso, remove do estado local, e exibe o toast "Nota excluída". Mas a nota continua no banco. Ao recarregar, ela volta.
-
-## O que precisa ser feito
-
-### 1. Nova política RLS de DELETE em `conversation_messages` (migração)
-
-Permitir que membros de uma inbox deletem apenas mensagens do tipo `private_note` nas conversas dessa inbox:
-
-```sql
-CREATE POLICY "Inbox users can delete private notes"
-ON public.conversation_messages
-FOR DELETE
-USING (
-  direction = 'private_note'
-  AND EXISTS (
-    SELECT 1 FROM conversations c
-    WHERE c.id = conversation_messages.conversation_id
-      AND has_inbox_access(auth.uid(), c.inbox_id)
-  )
-);
-```
-
-Esta política garante:
-- Apenas notas privadas podem ser deletadas (mensagens normais permanecem protegidas)
-- O agente precisa ser membro da inbox da conversa (`has_inbox_access`)
-- Usa a função existente `has_inbox_access` (já usada nas outras políticas)
-
-### 2. Nenhuma mudança de código necessária
-
-O código em `NotesPanel.tsx` já está correto:
-- Faz DELETE no banco
-- Chama `onNoteDeleted(noteId)` apenas se não houver erro
-- Em `ChatPanel.tsx`, `onNoteDeleted` filtra o estado local: `setMessages(prev => prev.filter(m => m.id !== noteId))`
-
-Uma vez que a política RLS permita o DELETE, o fluxo funcionará completamente.
-
-## Fluxo após o fix
+## Layout proposto na barra de filtros (dentro de `ConversationList`)
 
 ```text
-Milena clica em "excluir nota"
-  → DELETE conversation_messages WHERE id = noteId
-    → RLS verifica: direction = 'private_note'? SIM
-    → RLS verifica: has_inbox_access(milena_id, inbox_id)? SIM
-    → DELETE executado com sucesso no banco
-  → onNoteDeleted(noteId) é chamado
-  → Estado local atualizado: nota desaparece da UI
-  → Ao recarregar: nota não está mais no banco → não volta
+[ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]   ← linha 1: status (já existe)
+
+[ Todas | Minhas | Não atribuídas ]   Prioridade: [ Todas ▼ ]   ← linha 2: NOVOS
+
+[ 🔍 Buscar conversa... ]   ← linha 3: busca (já existe)
 ```
 
-## Arquivo a criar
+---
 
-- **Nova migração SQL**: Adiciona a política `"Inbox users can delete private notes"` na tabela `conversation_messages`
-- **Sem mudanças de código**
+## Arquivos a modificar
+
+### 1. `src/pages/dashboard/HelpDesk.tsx`
+
+- Remover importação e uso dos ícones `Tags` e `RefreshCw` do header unificado (`unifiedHeader`)
+- Remover o badge `unreadCount` do header
+- Adicionar estados `assignmentFilter` (`'todas' | 'minhas' | 'nao-atribuidas'`) e `priorityFilter` (`'todas' | 'alta' | 'media' | 'baixa'`)
+- Atualizar `filteredConversations` para aplicar os dois novos filtros:
+  ```typescript
+  // Filtro de atribuição
+  if (assignmentFilter === 'minhas' && c.assigned_to !== user?.id) return false;
+  if (assignmentFilter === 'nao-atribuidas' && c.assigned_to !== null) return false;
+  // Filtro de prioridade
+  if (priorityFilter !== 'todas' && c.priority !== priorityFilter) return false;
+  ```
+- Passar `assignmentFilter`, `onAssignmentFilterChange`, `priorityFilter` e `onPriorityFilterChange` para `ConversationList` via `listProps`
+
+### 2. `src/components/helpdesk/ConversationList.tsx`
+
+- Adicionar 4 novas props na interface:
+  ```typescript
+  assignmentFilter?: 'todas' | 'minhas' | 'nao-atribuidas';
+  onAssignmentFilterChange?: (v: 'todas' | 'minhas' | 'nao-atribuidas') => void;
+  priorityFilter?: 'todas' | 'alta' | 'media' | 'baixa';
+  onPriorityFilterChange?: (v: 'todas' | 'alta' | 'media' | 'baixa') => void;
+  ```
+- Adicionar linha de filtros de atribuição (3 botões tipo tab, igual ao filtro de status):
+  - **Todas** | **Minhas** | **Não atribuídas**
+- Adicionar Select de prioridade ao lado:
+  - Todas / Alta / Média / Baixa
+- Remover nenhuma funcionalidade existente — os filtros de etiqueta e busca permanecem
+
+---
+
+## Sem mudanças de banco de dados
+
+Todos os dados necessários já estão em memória (`conversations` com campo `assigned_to` e `priority`). Os novos filtros são puramente client-side no `filteredConversations`.
+
+## Resultado esperado
+
+```text
+Antes do header:
+  [🏷 ícone tags] [🔄 reload] [195 badge]
+
+Depois do header:
+  (limpo — apenas "Atendimento" + seletor de caixa)
+
+Na lista de conversas:
+  [ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]
+  [ Todas ] [ Minhas ] [ Não atribuídas ]    Prioridade: [ Todas ▼ ]
+  [ 🔍 Buscar conversa... ]
+  ──────────────────────────
+  (lista filtrada)
+```
