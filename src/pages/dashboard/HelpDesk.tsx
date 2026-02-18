@@ -9,7 +9,6 @@ import { ContactInfoPanel } from '@/components/helpdesk/ContactInfoPanel';
 import { ManageLabelsDialog } from '@/components/helpdesk/ManageLabelsDialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { RefreshCw, Tags } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import type { Label } from '@/components/helpdesk/ConversationLabels';
@@ -378,6 +377,9 @@ const HelpDesk = () => {
     );
   };
 
+  const [assignmentFilter, setAssignmentFilter] = useState<'todas' | 'minhas' | 'nao-atribuidas'>('todas');
+  const [priorityFilter, setPriorityFilter] = useState<'todas' | 'alta' | 'media' | 'baixa'>('todas');
+
   const filteredConversations = conversations.filter(c => {
     // Search filter
     if (searchQuery) {
@@ -390,42 +392,20 @@ const HelpDesk = () => {
       const convLabels = conversationLabelsMap[c.id] || [];
       if (!convLabels.includes(labelFilter)) return false;
     }
+    // Assignment filter
+    if (assignmentFilter === 'minhas' && c.assigned_to !== user?.id) return false;
+    if (assignmentFilter === 'nao-atribuidas' && c.assigned_to !== null) return false;
+    // Priority filter
+    if (priorityFilter !== 'todas' && c.priority !== priorityFilter) return false;
     return true;
   });
 
-  const unreadCount = conversations.filter(c => !c.is_read).length;
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
 
   const unifiedHeader = (
     <div className="flex items-center justify-between px-4 py-2 border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
       <div className="flex items-center gap-2">
         <h2 className="font-display font-bold text-base">Atendimento</h2>
-        {selectedInboxId && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setManageLabelsOpen(true)}
-            className="h-7 w-7"
-            title="Gerenciar etiquetas"
-          >
-            <Tags className="w-4 h-4" />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleSync}
-          disabled={syncing}
-          className="h-7 w-7 hidden md:flex"
-          title="Sincronizar conversas"
-        >
-          <RefreshCw className={cn('w-4 h-4', syncing && 'animate-spin')} />
-        </Button>
-        {unreadCount > 0 && (
-          <span className="bg-primary text-primary-foreground text-xs font-bold px-2 py-0.5 rounded-full">
-            {unreadCount}
-          </span>
-        )}
       </div>
       {inboxes.length > 0 && (
         <div className="flex items-center gap-2">
@@ -466,6 +446,10 @@ const HelpDesk = () => {
     onLabelsChanged: handleLabelsChanged,
     agentNamesMap,
     conversationNotesSet,
+    assignmentFilter,
+    onAssignmentFilterChange: setAssignmentFilter,
+    priorityFilter,
+    onPriorityFilterChange: setPriorityFilter,
   };
 
   if (isMobile) {
