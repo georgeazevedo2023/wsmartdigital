@@ -53,29 +53,47 @@ export const ContactInfoPanel = ({
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
   const [agents, setAgents] = useState<InboxAgent[]>([]);
 
-  // Fetch inbox members with their names directly (join inbox_users + user_profiles)
+  // Fetch inbox members using two separate queries (no FK between inbox_users and user_profiles)
   useEffect(() => {
     const fetchAgents = async () => {
       if (!conversation.inbox_id) return;
-      const { data, error } = await supabase
+
+      // Step 1: get user_ids from inbox_users
+      const { data: members, error: membersError } = await supabase
         .from('inbox_users')
-        .select('user_id, user_profiles(id, full_name)')
+        .select('user_id')
         .eq('inbox_id', conversation.inbox_id);
 
-      if (error) {
-        console.error('[ContactInfoPanel] fetchAgents error:', error);
+      if (membersError) {
+        console.error('[ContactInfoPanel] fetchAgents members error:', membersError);
         return;
       }
 
-      if (data) {
-        const agentList: InboxAgent[] = data
-          .map((d: any) => ({
-            user_id: d.user_id,
-            full_name: d.user_profiles?.full_name || d.user_id.slice(0, 8),
-          }))
-          .sort((a: InboxAgent, b: InboxAgent) => a.full_name.localeCompare(b.full_name));
-        setAgents(agentList);
+      const userIds = members?.map(m => m.user_id) ?? [];
+      if (userIds.length === 0) {
+        setAgents([]);
+        return;
       }
+
+      // Step 2: get full names from user_profiles
+      const { data: profiles, error: profilesError } = await supabase
+        .from('user_profiles')
+        .select('id, full_name')
+        .in('id', userIds);
+
+      if (profilesError) {
+        console.error('[ContactInfoPanel] fetchAgents profiles error:', profilesError);
+        return;
+      }
+
+      const agentList: InboxAgent[] = (profiles ?? [])
+        .map(p => ({
+          user_id: p.id,
+          full_name: p.full_name || 'Sem nome',
+        }))
+        .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+      setAgents(agentList);
     };
     fetchAgents();
   }, [conversation.inbox_id]);
