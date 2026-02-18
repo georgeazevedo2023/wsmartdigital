@@ -53,6 +53,8 @@ const KanbanBoard = () => {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  // Role from kanban_board_members: null = not a direct member (inbox or admin)
+  const [directMemberRole, setDirectMemberRole] = useState<'editor' | 'viewer' | null>(null);
 
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -68,6 +70,9 @@ const KanbanBoard = () => {
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
   );
 
+  // Compute effective can-add-card: super_admin or gerente always can; direct viewer cannot
+  const canAddCard = isSuperAdmin || isGerente || directMemberRole === 'editor';
+
   useEffect(() => {
     if (boardId) loadAll();
   }, [boardId, user]);
@@ -76,10 +81,11 @@ const KanbanBoard = () => {
     if (!boardId || !user) return;
     setLoading(true);
 
-    const [boardRes, colRes, fieldRes] = await Promise.all([
+    const [boardRes, colRes, fieldRes, memberRes] = await Promise.all([
       supabase.from('kanban_boards').select('*').eq('id', boardId).single(),
       supabase.from('kanban_columns').select('*').eq('board_id', boardId).order('position'),
       supabase.from('kanban_fields').select('*').eq('board_id', boardId).order('position'),
+      supabase.from('kanban_board_members').select('role').eq('board_id', boardId).eq('user_id', user.id).maybeSingle(),
     ]);
 
     if (boardRes.error || !boardRes.data) {
@@ -95,6 +101,13 @@ const KanbanBoard = () => {
       ...f,
       options: f.options ? (f.options as string[]) : null,
     })) as KanbanField[]);
+
+    // Set direct member role if user is a direct board member
+    if (memberRes.data) {
+      setDirectMemberRole(memberRes.data.role as 'editor' | 'viewer');
+    } else {
+      setDirectMemberRole(null);
+    }
 
     await loadCards(boardData);
     await loadTeamMembers(boardData);
@@ -362,6 +375,11 @@ const KanbanBoard = () => {
         <span className="text-xs text-muted-foreground shrink-0">
           {filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}
         </span>
+        {directMemberRole === 'viewer' && (
+          <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
+            👁️ Visualizador
+          </span>
+        )}
       </div>
 
       {/* Kanban board */}
@@ -381,7 +399,7 @@ const KanbanBoard = () => {
                 cards={getColumnCards(col.id)}
                 onCardClick={handleCardClick}
                 onAddCard={openAddCard}
-                canAddCard={isSuperAdmin || isGerente}
+                canAddCard={canAddCard}
               />
             ))}
 
