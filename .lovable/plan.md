@@ -1,179 +1,260 @@
 
-# Redesign dos Filtros do Helpdesk — Mobile First, UX Moderno
+# Redesign Admin: Área Unificada de Administração
 
-## Problema atual
+## Diagnóstico atual
 
-A screenshot mostra 3 fileiras separadas de filtros:
-1. `[ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]`
-2. `[ Todas ] [ Minhas ] [ Não atribuídas ]   Prioridade: [ Todas ▼ ]`
-3. `[ 🔍 Buscar conversa... ]`
+O painel admin está fragmentado em **3 páginas separadas** acessadas por menus diferentes na sidebar:
 
-Isso ocupa muito espaço vertical, especialmente no mobile, e a hierarquia visual não é clara. Além disso, o header tem "Atendimento" à esquerda e o seletor de caixa à direita com espaço desperdiçado.
+| Rota | Página | Função |
+|---|---|---|
+| `/dashboard/users` | Usuários | Super Admins — cria/exclui usuários do sistema |
+| `/dashboard/inbox-users` | Equipe de Atendimento | Membros de caixas — cria agentes/gestores |
+| `/dashboard/inboxes` | Caixas de Entrada | CRUD de caixas + webhooks + gerencia membros |
 
----
-
-## Solução: Redesign em 3 frentes
-
-### 1. Header mais rico — aproveitar o espaço ao lado de "Atendimento"
-
-Mover os filtros de **status** (Abertas / Pendentes / Resolvidas / Todas) para o próprio header, ao lado do título "Atendimento". Isso libera espaço na lista e dá contexto imediato.
-
-```
-[ Atendimento ]  [ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]        Caixa: [Neo Blindados - Geral ▼]
-```
-
-No mobile, os tabs de status ficam abaixo do título/seletor em uma linha horizontal com scroll.
-
-### 2. Dentro da lista — filtros compactos em 1 única linha
-
-Substituir as 2 fileiras de filtros (atribuição + prioridade) por uma única linha com visual de pill/badge, usando ícones para economizar espaço:
-
-```
-[ 🔍 Buscar conversa... ]
-[ Todas ▾ ] [ Prioridade ▾ ] [ Etiqueta ▾ ]  ← dropdowns compactos
-```
-
-Os filtros de atribuição e prioridade viram dois selects compactos lado a lado com ícones, usando `w-full` no mobile para responsividade.
-
-### 3. ConversationItem — melhorias visuais
-
-- Adicionar badge colorido de prioridade como texto (não só o dot) quando prioridade ≠ normal
-- Melhorar espaçamento e tipografia para maior clareza
+**Problemas identificados:**
+- Criar um agente exige ir a 3 lugares diferentes: criar usuário → atribuir instância → atribuir caixa
+- A distinção entre "Usuários" e "Equipe de Atendimento" é confusa para o admin
+- Layout de cards em grade 2 colunas ocupa muito espaço com informações repetitivas
+- Webhooks inline nas caixas (edição dentro do card) é frágil e pouco legível
+- Nenhuma indicação de hierarquia de permissões visível para o admin
+- Mobile: botões de ação pequenos e difíceis de tocar
 
 ---
 
-## Layout final proposto
+## Solução: Página Admin Unificada com Tabs
 
-**Desktop:**
+Consolidar tudo em **uma única página** `/dashboard/admin` com **3 tabs**:
+
 ```
-┌──────────────────────────────────────────────────────────────────────────┐
-│ Atendimento    [Abertas][Pendentes][Resolvidas][Todas]    Caixa: [Neo ▼] │
-├──────────────────────────────────────────────────────────────────────────┤
-│ Lista (w-80)              │  Chat Panel                 │  Info Panel    │
-│                           │                             │                │
-│ [🔍 Buscar...]            │                             │                │
-│ [Atribuição ▼][Prior. ▼] │                             │                │
-│ ─────────────────         │                             │                │
-│ items...                  │                             │                │
-└──────────────────────────────────────────────────────────────────────────┘
+[ Caixas de Entrada ] [ Usuários & Acesso ] [ Equipe de Atendimento ]
 ```
 
-**Mobile:**
-```
-┌────────────────────────────────┐
-│ Atendimento    Caixa: [Neo ▼]  │
-│ [Abertas][Pend.][Resol.][Tod.] │ ← scroll horizontal
-├────────────────────────────────┤
-│ [🔍 Buscar...]                 │
-│ [Atribuição ▼] [Prioridade ▼] │
-│ ────────────────────────────── │
-│ items...                       │
-└────────────────────────────────┘
-```
+### Mudanças de rota
+
+- Nova rota: `/dashboard/admin` (substitui as 3 separadas)
+- Rotas antigas redirecionam para `/dashboard/admin` com tab correspondente
+- Sidebar: item único "Administração" com ícone `ShieldCheck` (apenas super_admin)
 
 ---
 
-## Arquivos a modificar
+## Tab 1 — Caixas de Entrada (atual `/dashboard/inboxes`)
 
-### `src/pages/dashboard/HelpDesk.tsx`
+**Layout: Lista vertical com accordion por caixa**
 
-- Reestruturar `unifiedHeader`:
-  - Linha 1 (desktop): `Atendimento` + tabs de status centralizados + seletor de caixa
-  - Linha 1-2 (mobile): `Atendimento` + seletor / tabs de status em scroll horizontal
-- Remover `statusFilter` e `onStatusFilterChange` do `listProps` (os tabs saem da lista)
-- Manter `assignmentFilter`, `priorityFilter` e busca dentro da lista
+Cada caixa expande para revelar:
+- Instância vinculada + status de conexão
+- Membros com avatar + role badge
+- Webhooks em campos de edição inline com botão salvar
+- Botão "Gerenciar Membros" abrindo o dialog existente
 
-### `src/components/helpdesk/ConversationList.tsx`
+**Melhorias visuais:**
+- Ícone de status colorido (verde = online, cinza = offline)
+- Contador de membros como badge
+- Header da caixa mais limpo: nome + instância + badges
 
-- **Remover** os tabs de status (vão para o header)
-- **Substituir** as 2 linhas de filtros de atribuição + prioridade por **2 selects compactos em 1 linha**:
-  - Select "Atribuição": ícone `UserCheck` + "Todas / Minhas / Não atribuídas"
-  - Select "Prioridade": ícone `AlertCircle` + "Todas / Alta / Média / Baixa"
-- Busca fica no topo da lista (antes dos filtros), para acesso imediato
-- Filtro de etiqueta se mantém como terceiro select, visível apenas se houver etiquetas
+---
 
-### Interface de props — `ConversationList`
+## Tab 2 — Usuários & Acesso (atual `/dashboard/users`)
 
-Remover props que saem para o header:
-- `statusFilter` e `onStatusFilterChange` → saem da lista
+**Layout: Tabela responsiva em vez de grid de cards**
 
-Manter e melhorar:
-- `assignmentFilter` + `onAssignmentFilterChange`
-- `priorityFilter` + `onPriorityFilterChange`
-- busca, etiquetas
+Colunas: Avatar + Nome | Email | Tipo | Instâncias | Ações
+
+**Melhoria chave:** O botão "Gerenciar Instâncias" abre diretamente o dialog existente. O toggle de admin vira um switch inline na tabela.
+
+**Melhorias visuais:**
+- Badge colorido: `Super Admin` (verde com escudo) vs `Usuário` (cinza)
+- Linha selecionada com highlight
+- Ações em dropdown menu (3 pontos) em vez de botões expostos, liberando espaço na linha
+
+---
+
+## Tab 3 — Equipe de Atendimento (atual `/dashboard/inbox-users`)
+
+**Layout: Lista com agrupamento por caixa de entrada**
+
+Em vez de agrupar por usuário (atual), agrupa por **caixa de entrada**, tornando mais claro "quem está em qual caixa":
+
+```
+┌─ Caixa: Neo Blindados - Suporte ──────────────────┐
+│ [👤 Ana] Agente   [👤 Carlos] Gestor              │
+│ [+ Adicionar membro]                               │
+└────────────────────────────────────────────────────┘
+```
+
+Botão "Novo Membro" abre o `CreateInboxUserDialog` existente.
+
+---
+
+## Melhorias de UX transversais
+
+### Header da página
+```
+[ 🛡 Administração ]                      [ + Criar Novo ▼ ]
+                                              ├ Nova Caixa
+                                              ├ Novo Usuário Admin
+                                              └ Novo Membro de Atendimento
+```
+
+O dropdown "Criar Novo" permite criar qualquer entidade sem mudar de tab.
+
+### Hierarquia de permissões visível
+Adicionar um pequeno painel de legenda fixo no topo:
+```
+Admin de Caixa = gerencia membros e etiquetas da caixa
+Gestor = atribui conversas, vê relatórios
+Agente = atende conversas
+Super Admin = acesso total ao sistema
+```
+
+### Mobile-first
+- Tabs com scroll horizontal e ícones
+- Tabela de usuários colapsa para lista de cards no mobile (< md)
+- Botões de ação com tamanho mínimo 44px de toque
+
+---
+
+## Arquivos a criar/modificar
+
+### Criar: `src/pages/dashboard/AdminPanel.tsx`
+Página principal unificada com os 3 tabs. Importa os dialogs existentes sem reescrevê-los.
+
+### Modificar: `src/App.tsx`
+- Adicionar rota `/dashboard/admin` → `AdminPanel`
+- Manter rotas antigas como redirect para não quebrar bookmarks
+
+### Modificar: `src/components/dashboard/Sidebar.tsx`
+- Substituir os 3 itens admin (Usuários, Equipe de Atendimento, Caixas de Entrada) por **1 item único**: `Administração` apontando para `/dashboard/admin`
+- Manter item "Configurações" separado
+
+### Manter sem alteração (reutilizados como dialogs):
+- `ManageInboxUsersDialog.tsx` — gerenciar membros de uma caixa
+- `ManageUserInstancesDialog.tsx` — gerenciar instâncias de um usuário
+- `CreateInboxUserDialog.tsx` — criar novo agente/gestor
+- `ManageInstanceAccessDialog.tsx` (se existir)
+
+---
+
+## Estrutura da página AdminPanel
+
+```text
+AdminPanel
+├── Header (título + badge de contagem + botão "Criar Novo" dropdown)
+├── Tabs
+│   ├── Tab "Caixas de Entrada"
+│   │   ├── SearchBar
+│   │   └── InboxList (accordion)
+│   │       └── InboxItem (expande com membros + webhooks + ações)
+│   │
+│   ├── Tab "Usuários"
+│   │   ├── SearchBar
+│   │   └── UsersTable (responsiva)
+│   │       └── UserRow (avatar, nome, email, tipo, instâncias, ações dropdown)
+│   │
+│   └── Tab "Equipe"
+│       ├── SearchBar
+│       └── InboxTeamList (agrupado por caixa)
+│           └── InboxTeamCard (avatares de membros + botão gerenciar)
+│
+├── Dialogs (todos os existentes reutilizados)
+│   ├── CreateInboxDialog
+│   ├── CreateUserDialog (admin)
+│   ├── CreateInboxUserDialog
+│   ├── ManageInboxUsersDialog
+│   └── ManageUserInstancesDialog
+```
 
 ---
 
 ## Detalhes técnicos de implementação
 
-### Header unificado (novo)
+### AdminPanel.tsx — estrutura principal
 
 ```tsx
-// Desktop
-<div className="flex items-center gap-3 px-4 py-2 border-b ...">
-  <h2>Atendimento</h2>
-  {/* Tabs de status — ficam no header */}
-  <div className="hidden md:flex items-center gap-1 flex-1">
-    {statusTabs.map(tab => (
-      <button key={tab.value} onClick={() => setStatusFilter(tab.value)}
-        className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
-          statusFilter === tab.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
-        )}>{tab.label}</button>
-    ))}
-  </div>
-  {/* Seletor de caixa */}
-  <Select ...>
-</div>
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 
-// Mobile: segunda linha com tabs em scroll
-<div className="md:hidden flex gap-1 px-3 py-1.5 border-b overflow-x-auto no-scrollbar">
-  {statusTabs.map(tab => (...))}
-</div>
+const AdminPanel = () => {
+  const [activeTab, setActiveTab] = useState('inboxes');
+  
+  // Shared state for dialogs
+  const [createType, setCreateType] = useState<'inbox' | 'admin-user' | 'inbox-user' | null>(null);
+  
+  return (
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <AdminHeader onCreateNew={setCreateType} />
+      
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="w-full sm:w-auto">
+          <TabsTrigger value="inboxes">
+            <Inbox className="w-4 h-4 mr-2" /> Caixas <Badge>{inboxes.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="users">
+            <Shield className="w-4 h-4 mr-2" /> Usuários <Badge>{users.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="team">
+            <Users className="w-4 h-4 mr-2" /> Equipe <Badge>{teamCount}</Badge>
+          </TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="inboxes"><InboxesTab /></TabsContent>
+        <TabsContent value="users"><UsersTab /></TabsContent>
+        <TabsContent value="team"><TeamTab /></TabsContent>
+      </Tabs>
+      
+      {/* Shared dialogs */}
+    </div>
+  );
+};
 ```
 
-### Filtros dentro da lista (novo — 1 linha)
+### Tabela de Usuários (mobile-responsive)
+
+Desktop: `<table>` com colunas Avatar/Nome | Email | Tipo | Instâncias | Ações  
+Mobile (< md): lista de cards verticais com as mesmas informações
+
+### Agrupamento da Equipe por Caixa
 
 ```tsx
-<div className="p-3 space-y-2 border-b border-border/50">
-  {/* Busca */}
-  <div className="relative">
-    <Search ... />
-    <Input placeholder="Buscar conversa..." ... />
-  </div>
-  
-  {/* Filtros compactos */}
-  <div className="flex gap-2">
-    <Select value={assignmentFilter} onValueChange={...}>
-      <SelectTrigger className="flex-1 h-8 text-xs">
-        <UserCheck className="w-3.5 h-3.5 mr-1" />
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        <SelectItem value="todas">Todas</SelectItem>
-        <SelectItem value="minhas">Minhas</SelectItem>
-        <SelectItem value="nao-atribuidas">Não atribuídas</SelectItem>
-      </SelectContent>
-    </Select>
-    
-    <Select value={priorityFilter} onValueChange={...}>
-      <SelectTrigger className="flex-1 h-8 text-xs">
-        <SelectValue />
-      </SelectTrigger>
-      ...
-    </Select>
-  </div>
-  
-  {/* Etiqueta — só se houver */}
-  {inboxLabels.length > 0 && <Select .../>}
-</div>
+// Transforma: users com memberships[] → inboxes com members[]
+const inboxTeam = inboxes.map(inbox => ({
+  ...inbox,
+  members: teamUsers.flatMap(u =>
+    u.memberships
+      .filter(m => m.inbox_id === inbox.id)
+      .map(m => ({ ...u, role: m.role }))
+  )
+}));
 ```
 
 ---
 
-## Resultado visual esperado
+## Resultado esperado
 
-- Header mais denso e informativo: título + status tabs + seletor de caixa em uma linha
-- Lista com apenas 2 linhas de controle: busca + 2 dropdowns compactos
-- Mobile: tabs de status com scroll horizontal, ocupando menos altura vertical
-- Hierarquia clara: status (contexto global) no header, filtros finos (atribuição, prioridade) na lista
-- Sem mudanças de banco de dados ou lógica de negócio
+**Sidebar antes (4 itens admin):**
+```
+Usuários
+Equipe de Atendimento
+Caixas de Entrada
+Configurações
+```
+
+**Sidebar depois (2 itens admin):**
+```
+🛡 Administração
+⚙ Configurações
+```
+
+**Página unificada:**
+```
+┌─────────────────────────────────────────────────────┐
+│ 🛡 Administração                    [ + Criar Novo ▼]│
+│                                                      │
+│ [ Caixas (3) ]  [ Usuários (5) ]  [ Equipe (8) ]    │
+│ ──────────────────────────────────────────────────── │
+│                                                      │
+│ [content of active tab]                              │
+│                                                      │
+└─────────────────────────────────────────────────────┘
+```
+
+Sem nenhuma mudança de banco de dados necessária — toda a lógica e queries existem, apenas o layout e a navegação mudam.
