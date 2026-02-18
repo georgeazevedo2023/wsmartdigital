@@ -195,6 +195,7 @@ export type Database = {
       }
       conversations: {
         Row: {
+          ai_summary: Json | null
           assigned_to: string | null
           contact_id: string
           created_at: string
@@ -209,6 +210,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          ai_summary?: Json | null
           assigned_to?: string | null
           contact_id: string
           created_at?: string
@@ -223,6 +225,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          ai_summary?: Json | null
           assigned_to?: string | null
           contact_id?: string
           created_at?: string

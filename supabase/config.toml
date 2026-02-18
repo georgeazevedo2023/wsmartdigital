@@ -23,3 +23,6 @@ verify_jwt = false
 
 [functions.fire-outgoing-webhook]
 verify_jwt = false
+
+[functions.summarize-conversation]
+verify_jwt = false
