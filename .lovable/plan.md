@@ -1,80 +1,179 @@
 
-# Filtros de Atribuição e Prioridade na Lista de Conversas
+# Redesign dos Filtros do Helpdesk — Mobile First, UX Moderno
 
-## O que será feito
+## Problema atual
 
-1. **Remover** do cabeçalho os ícones de etiquetas (Tags), reload (RefreshCw) e o badge de não-lidas (195)
-2. **Adicionar** na `ConversationList` dois novos filtros:
-   - **Atribuição**: "Minhas" (atribuídas ao agente logado), "Não atribuídas" e "Todas"
-   - **Prioridade**: "Alta", "Média", "Baixa" e "Todas"
-3. **Manter** o filtro de etiquetas (Select por label) que já existe dentro da lista
-4. **Filtrar** a lista de conversas via estado local, sem precisar de novas queries ao banco (os dados já estão carregados)
+A screenshot mostra 3 fileiras separadas de filtros:
+1. `[ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]`
+2. `[ Todas ] [ Minhas ] [ Não atribuídas ]   Prioridade: [ Todas ▼ ]`
+3. `[ 🔍 Buscar conversa... ]`
+
+Isso ocupa muito espaço vertical, especialmente no mobile, e a hierarquia visual não é clara. Além disso, o header tem "Atendimento" à esquerda e o seletor de caixa à direita com espaço desperdiçado.
 
 ---
 
-## Layout proposto na barra de filtros (dentro de `ConversationList`)
+## Solução: Redesign em 3 frentes
 
-```text
-[ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]   ← linha 1: status (já existe)
+### 1. Header mais rico — aproveitar o espaço ao lado de "Atendimento"
 
-[ Todas | Minhas | Não atribuídas ]   Prioridade: [ Todas ▼ ]   ← linha 2: NOVOS
+Mover os filtros de **status** (Abertas / Pendentes / Resolvidas / Todas) para o próprio header, ao lado do título "Atendimento". Isso libera espaço na lista e dá contexto imediato.
 
-[ 🔍 Buscar conversa... ]   ← linha 3: busca (já existe)
+```
+[ Atendimento ]  [ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]        Caixa: [Neo Blindados - Geral ▼]
+```
+
+No mobile, os tabs de status ficam abaixo do título/seletor em uma linha horizontal com scroll.
+
+### 2. Dentro da lista — filtros compactos em 1 única linha
+
+Substituir as 2 fileiras de filtros (atribuição + prioridade) por uma única linha com visual de pill/badge, usando ícones para economizar espaço:
+
+```
+[ 🔍 Buscar conversa... ]
+[ Todas ▾ ] [ Prioridade ▾ ] [ Etiqueta ▾ ]  ← dropdowns compactos
+```
+
+Os filtros de atribuição e prioridade viram dois selects compactos lado a lado com ícones, usando `w-full` no mobile para responsividade.
+
+### 3. ConversationItem — melhorias visuais
+
+- Adicionar badge colorido de prioridade como texto (não só o dot) quando prioridade ≠ normal
+- Melhorar espaçamento e tipografia para maior clareza
+
+---
+
+## Layout final proposto
+
+**Desktop:**
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│ Atendimento    [Abertas][Pendentes][Resolvidas][Todas]    Caixa: [Neo ▼] │
+├──────────────────────────────────────────────────────────────────────────┤
+│ Lista (w-80)              │  Chat Panel                 │  Info Panel    │
+│                           │                             │                │
+│ [🔍 Buscar...]            │                             │                │
+│ [Atribuição ▼][Prior. ▼] │                             │                │
+│ ─────────────────         │                             │                │
+│ items...                  │                             │                │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+**Mobile:**
+```
+┌────────────────────────────────┐
+│ Atendimento    Caixa: [Neo ▼]  │
+│ [Abertas][Pend.][Resol.][Tod.] │ ← scroll horizontal
+├────────────────────────────────┤
+│ [🔍 Buscar...]                 │
+│ [Atribuição ▼] [Prioridade ▼] │
+│ ────────────────────────────── │
+│ items...                       │
+└────────────────────────────────┘
 ```
 
 ---
 
 ## Arquivos a modificar
 
-### 1. `src/pages/dashboard/HelpDesk.tsx`
+### `src/pages/dashboard/HelpDesk.tsx`
 
-- Remover importação e uso dos ícones `Tags` e `RefreshCw` do header unificado (`unifiedHeader`)
-- Remover o badge `unreadCount` do header
-- Adicionar estados `assignmentFilter` (`'todas' | 'minhas' | 'nao-atribuidas'`) e `priorityFilter` (`'todas' | 'alta' | 'media' | 'baixa'`)
-- Atualizar `filteredConversations` para aplicar os dois novos filtros:
-  ```typescript
-  // Filtro de atribuição
-  if (assignmentFilter === 'minhas' && c.assigned_to !== user?.id) return false;
-  if (assignmentFilter === 'nao-atribuidas' && c.assigned_to !== null) return false;
-  // Filtro de prioridade
-  if (priorityFilter !== 'todas' && c.priority !== priorityFilter) return false;
-  ```
-- Passar `assignmentFilter`, `onAssignmentFilterChange`, `priorityFilter` e `onPriorityFilterChange` para `ConversationList` via `listProps`
+- Reestruturar `unifiedHeader`:
+  - Linha 1 (desktop): `Atendimento` + tabs de status centralizados + seletor de caixa
+  - Linha 1-2 (mobile): `Atendimento` + seletor / tabs de status em scroll horizontal
+- Remover `statusFilter` e `onStatusFilterChange` do `listProps` (os tabs saem da lista)
+- Manter `assignmentFilter`, `priorityFilter` e busca dentro da lista
 
-### 2. `src/components/helpdesk/ConversationList.tsx`
+### `src/components/helpdesk/ConversationList.tsx`
 
-- Adicionar 4 novas props na interface:
-  ```typescript
-  assignmentFilter?: 'todas' | 'minhas' | 'nao-atribuidas';
-  onAssignmentFilterChange?: (v: 'todas' | 'minhas' | 'nao-atribuidas') => void;
-  priorityFilter?: 'todas' | 'alta' | 'media' | 'baixa';
-  onPriorityFilterChange?: (v: 'todas' | 'alta' | 'media' | 'baixa') => void;
-  ```
-- Adicionar linha de filtros de atribuição (3 botões tipo tab, igual ao filtro de status):
-  - **Todas** | **Minhas** | **Não atribuídas**
-- Adicionar Select de prioridade ao lado:
-  - Todas / Alta / Média / Baixa
-- Remover nenhuma funcionalidade existente — os filtros de etiqueta e busca permanecem
+- **Remover** os tabs de status (vão para o header)
+- **Substituir** as 2 linhas de filtros de atribuição + prioridade por **2 selects compactos em 1 linha**:
+  - Select "Atribuição": ícone `UserCheck` + "Todas / Minhas / Não atribuídas"
+  - Select "Prioridade": ícone `AlertCircle` + "Todas / Alta / Média / Baixa"
+- Busca fica no topo da lista (antes dos filtros), para acesso imediato
+- Filtro de etiqueta se mantém como terceiro select, visível apenas se houver etiquetas
+
+### Interface de props — `ConversationList`
+
+Remover props que saem para o header:
+- `statusFilter` e `onStatusFilterChange` → saem da lista
+
+Manter e melhorar:
+- `assignmentFilter` + `onAssignmentFilterChange`
+- `priorityFilter` + `onPriorityFilterChange`
+- busca, etiquetas
 
 ---
 
-## Sem mudanças de banco de dados
+## Detalhes técnicos de implementação
 
-Todos os dados necessários já estão em memória (`conversations` com campo `assigned_to` e `priority`). Os novos filtros são puramente client-side no `filteredConversations`.
+### Header unificado (novo)
 
-## Resultado esperado
+```tsx
+// Desktop
+<div className="flex items-center gap-3 px-4 py-2 border-b ...">
+  <h2>Atendimento</h2>
+  {/* Tabs de status — ficam no header */}
+  <div className="hidden md:flex items-center gap-1 flex-1">
+    {statusTabs.map(tab => (
+      <button key={tab.value} onClick={() => setStatusFilter(tab.value)}
+        className={cn('px-3 py-1 rounded-full text-xs font-medium transition-colors',
+          statusFilter === tab.value ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
+        )}>{tab.label}</button>
+    ))}
+  </div>
+  {/* Seletor de caixa */}
+  <Select ...>
+</div>
 
-```text
-Antes do header:
-  [🏷 ícone tags] [🔄 reload] [195 badge]
-
-Depois do header:
-  (limpo — apenas "Atendimento" + seletor de caixa)
-
-Na lista de conversas:
-  [ Abertas ] [ Pendentes ] [ Resolvidas ] [ Todas ]
-  [ Todas ] [ Minhas ] [ Não atribuídas ]    Prioridade: [ Todas ▼ ]
-  [ 🔍 Buscar conversa... ]
-  ──────────────────────────
-  (lista filtrada)
+// Mobile: segunda linha com tabs em scroll
+<div className="md:hidden flex gap-1 px-3 py-1.5 border-b overflow-x-auto no-scrollbar">
+  {statusTabs.map(tab => (...))}
+</div>
 ```
+
+### Filtros dentro da lista (novo — 1 linha)
+
+```tsx
+<div className="p-3 space-y-2 border-b border-border/50">
+  {/* Busca */}
+  <div className="relative">
+    <Search ... />
+    <Input placeholder="Buscar conversa..." ... />
+  </div>
+  
+  {/* Filtros compactos */}
+  <div className="flex gap-2">
+    <Select value={assignmentFilter} onValueChange={...}>
+      <SelectTrigger className="flex-1 h-8 text-xs">
+        <UserCheck className="w-3.5 h-3.5 mr-1" />
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="todas">Todas</SelectItem>
+        <SelectItem value="minhas">Minhas</SelectItem>
+        <SelectItem value="nao-atribuidas">Não atribuídas</SelectItem>
+      </SelectContent>
+    </Select>
+    
+    <Select value={priorityFilter} onValueChange={...}>
+      <SelectTrigger className="flex-1 h-8 text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      ...
+    </Select>
+  </div>
+  
+  {/* Etiqueta — só se houver */}
+  {inboxLabels.length > 0 && <Select .../>}
+</div>
+```
+
+---
+
+## Resultado visual esperado
+
+- Header mais denso e informativo: título + status tabs + seletor de caixa em uma linha
+- Lista com apenas 2 linhas de controle: busca + 2 dropdowns compactos
+- Mobile: tabs de status com scroll horizontal, ocupando menos altura vertical
+- Hierarquia clara: status (contexto global) no header, filtros finos (atribuição, prioridade) na lista
+- Sem mudanças de banco de dados ou lógica de negócio
