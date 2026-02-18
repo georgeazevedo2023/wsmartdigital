@@ -16,6 +16,7 @@ import {
   Headphones,
   Inbox,
   BrainCircuit,
+  Kanban,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -300,6 +301,26 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
             <TooltipContent side="right">Atendimento</TooltipContent>
           </Tooltip>
         )}
+
+        {/* CRM Kanban - visível para todos os usuários autenticados */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Link
+              to="/dashboard/crm"
+              onClick={handleLinkClick}
+              className={cn(
+                isCollapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+                location.pathname.startsWith('/dashboard/crm')
+                  ? 'bg-primary/10 text-primary border border-primary/20'
+                  : 'text-sidebar-foreground hover:bg-sidebar-accent'
+              )}
+            >
+              <Kanban className="w-5 h-5 shrink-0" />
+              {!isCollapsed && <span className="font-medium">CRM</span>}
+            </Link>
+          </TooltipTrigger>
+          {isCollapsed && <TooltipContent side="right">CRM Kanban</TooltipContent>}
+        </Tooltip>
 
         {/* Disparador - Collapsible apenas quando NÃO colapsado (apenas super admin) */}
         {isSuperAdmin && (!isCollapsed ? (
