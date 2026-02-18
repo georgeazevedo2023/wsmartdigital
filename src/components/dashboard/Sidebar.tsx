@@ -53,7 +53,7 @@ interface SidebarProps {
 const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
   const location = useLocation();
   const { id: instanceId } = useParams<{ id: string }>();
-  const { profile, isSuperAdmin, signOut, user } = useAuth();
+  const { profile, isSuperAdmin, isGerente, signOut, user } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [instancesOpen, setInstancesOpen] = useState(false);
   const [broadcastOpen, setBroadcastOpen] = useState(false);
@@ -302,25 +302,27 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
           </Tooltip>
         )}
 
-        {/* CRM Kanban - visível para todos os usuários autenticados */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Link
-              to="/dashboard/crm"
-              onClick={handleLinkClick}
-              className={cn(
-                isCollapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
-                location.pathname.startsWith('/dashboard/crm')
-                  ? 'bg-primary/10 text-primary border border-primary/20'
-                  : 'text-sidebar-foreground hover:bg-sidebar-accent'
-              )}
-            >
-              <Kanban className="w-5 h-5 shrink-0" />
-              {!isCollapsed && <span className="font-medium">CRM</span>}
-            </Link>
-          </TooltipTrigger>
-          {isCollapsed && <TooltipContent side="right">CRM Kanban</TooltipContent>}
-        </Tooltip>
+        {/* CRM Kanban - visível apenas para super_admin e gerente */}
+        {(isSuperAdmin || isGerente) && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link
+                to="/dashboard/crm"
+                onClick={handleLinkClick}
+                className={cn(
+                  isCollapsed ? collapsedLinkClass : 'flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all',
+                  location.pathname.startsWith('/dashboard/crm')
+                    ? 'bg-primary/10 text-primary border border-primary/20'
+                    : 'text-sidebar-foreground hover:bg-sidebar-accent'
+                )}
+              >
+                <Kanban className="w-5 h-5 shrink-0" />
+                {!isCollapsed && <span className="font-medium">CRM</span>}
+              </Link>
+            </TooltipTrigger>
+            {isCollapsed && <TooltipContent side="right">CRM Kanban</TooltipContent>}
+          </Tooltip>
+        )}
 
         {/* Disparador - Collapsible apenas quando NÃO colapsado (apenas super admin) */}
         {isSuperAdmin && (!isCollapsed ? (
@@ -542,6 +544,17 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm truncate">{profile?.full_name || 'Usuário'}</p>
               <p className="text-xs text-muted-foreground truncate">{profile?.email}</p>
+              {/* Badge de papel */}
+              <span className={cn(
+                'inline-flex items-center text-[10px] font-medium rounded-full px-1.5 py-0.5 mt-0.5',
+                isSuperAdmin
+                  ? 'bg-primary/15 text-primary'
+                  : isGerente
+                    ? 'bg-blue-500/15 text-blue-400'
+                    : 'bg-muted text-muted-foreground'
+              )}>
+                {isSuperAdmin ? 'Super Admin' : isGerente ? 'Gerente' : 'Atendente'}
+              </span>
             </div>
           )}
         </div>

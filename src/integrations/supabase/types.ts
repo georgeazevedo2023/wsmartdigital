@@ -1108,6 +1108,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_gerente: { Args: { _user_id: string }; Returns: boolean }
       is_inbox_member: {
         Args: { _inbox_id: string; _user_id: string }
         Returns: boolean
@@ -1116,7 +1117,7 @@ export type Database = {
       normalize_external_id: { Args: { ext_id: string }; Returns: string }
     }
     Enums: {
-      app_role: "super_admin" | "user"
+      app_role: "super_admin" | "user" | "gerente"
       inbox_role: "admin" | "gestor" | "agente"
       kanban_field_type: "text" | "currency" | "date" | "select"
       kanban_visibility: "shared" | "private"
@@ -1247,7 +1248,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["super_admin", "user"],
+      app_role: ["super_admin", "user", "gerente"],
       inbox_role: ["admin", "gestor", "agente"],
       kanban_field_type: ["text", "currency", "date", "select"],
       kanban_visibility: ["shared", "private"],

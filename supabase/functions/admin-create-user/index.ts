@@ -55,7 +55,9 @@ Deno.serve(async (req) => {
 
     // Parse request body
     const body = await req.json()
-    const { email, password, full_name, is_super_admin } = body
+    const { email, password, full_name, role } = body
+    const validRoles = ['super_admin', 'gerente', 'user']
+    const userRole = validRoles.includes(role) ? role : 'user'
 
     if (!email || !password) {
       return new Response(
@@ -64,20 +66,16 @@ Deno.serve(async (req) => {
       )
     }
 
-    // Create admin client with service role
     const adminClient = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     )
 
-    // Create user
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
-      user_metadata: {
-        full_name,
-      },
+      user_metadata: { full_name },
     })
 
     if (createError) {
@@ -87,11 +85,12 @@ Deno.serve(async (req) => {
       )
     }
 
-    // If should be super admin, add the role
-    if (is_super_admin && newUser.user) {
-      await adminClient
-        .from('user_roles')
-        .insert({ user_id: newUser.user.id, role: 'super_admin' })
+    // Insert the assigned role (replaces the default 'user' inserted by the trigger)
+    if (newUser.user) {
+      // Remove default role inserted by handle_new_user trigger
+      await adminClient.from('user_roles').delete().eq('user_id', newUser.user.id)
+      // Insert the correct role
+      await adminClient.from('user_roles').insert({ user_id: newUser.user.id, role: userRole })
     }
 
     return new Response(

@@ -96,6 +96,25 @@ const AdminRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+// CRM route wrapper — apenas super_admin e gerente
+const CrmRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isSuperAdmin, isGerente, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin && !isGerente) {
+    return <Navigate to="/dashboard/helpdesk" replace />;
+  }
+
+  return <>{children}</>;
+};
+
 const AppRoutes = () => {
   return (
     <Routes>
@@ -132,8 +151,8 @@ const AppRoutes = () => {
         <Route path="inbox-users" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></AdminRoute>} />
         <Route path="admin" element={<AdminRoute><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></AdminRoute>} />
         <Route path="intelligence" element={<AdminRoute><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></AdminRoute>} />
-        <Route path="crm" element={<Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense>} />
-        <Route path="crm/:boardId" element={<Suspense fallback={<PageLoader />}><KanbanBoard /></Suspense>} />
+        <Route path="crm" element={<CrmRoute><Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense></CrmRoute>} />
+        <Route path="crm/:boardId" element={<CrmRoute><Suspense fallback={<PageLoader />}><KanbanBoard /></Suspense></CrmRoute>} />
         {/* Redirect legacy/bookmarked URLs */}
         <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
         <Route path="users" element={<Navigate to="/dashboard/admin" replace />} />
