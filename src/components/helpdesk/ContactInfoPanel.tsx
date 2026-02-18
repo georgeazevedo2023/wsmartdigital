@@ -4,8 +4,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Phone, ArrowLeft, Tags, Settings2, UserCheck } from 'lucide-react';
-import type { Conversation } from '@/pages/dashboard/HelpDesk';
+import { Phone, ArrowLeft, Tags, Settings2, UserCheck, Sparkles, RefreshCw, Clock, Target, CheckCircle2, AlertCircle } from 'lucide-react';
+import type { Conversation, AiSummary } from '@/pages/dashboard/HelpDesk';
 import { ConversationLabels, type Label } from './ConversationLabels';
 import { LabelPicker } from './LabelPicker';
 import { ManageLabelsDialog } from './ManageLabelsDialog';
@@ -52,6 +52,47 @@ export const ContactInfoPanel = ({
   const name = contact?.name || contact?.phone || 'Desconhecido';
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
   const [agents, setAgents] = useState<InboxAgent[]>([]);
+  const [aiSummary, setAiSummary] = useState<AiSummary | null>(conversation.ai_summary || null);
+  const [summarizing, setSummarizing] = useState(false);
+
+  // Sync aiSummary when conversation changes
+  useEffect(() => {
+    setAiSummary(conversation.ai_summary || null);
+  }, [conversation.id, conversation.ai_summary]);
+
+  const handleSummarize = async (forceRefresh = false) => {
+    setSummarizing(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Não autenticado');
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/summarize-conversation`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ conversation_id: conversation.id, force_refresh: forceRefresh }),
+        }
+      );
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 429) throw new Error('Limite de IA atingido. Tente mais tarde.');
+        if (res.status === 402) throw new Error('Créditos de IA insuficientes.');
+        throw new Error(result.error || 'Erro ao gerar resumo');
+      }
+
+      setAiSummary(result.summary);
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar resumo');
+    } finally {
+      setSummarizing(false);
+    }
+  };
 
   // Fetch inbox members using two separate queries (no FK between inbox_users and user_profiles)
   useEffect(() => {
@@ -276,6 +317,89 @@ export const ContactInfoPanel = ({
             </Button>
           )}
         </div>
+      </div>
+
+      {/* AI Summary */}
+      <div className="space-y-2 border border-border/50 rounded-lg p-3 bg-muted/30">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-medium flex items-center gap-1.5 text-foreground">
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            Resumo da Conversa
+          </label>
+          {aiSummary && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 text-muted-foreground hover:text-foreground"
+              onClick={() => handleSummarize(true)}
+              disabled={summarizing}
+              title="Atualizar resumo"
+            >
+              <RefreshCw className={cn('w-3 h-3', summarizing && 'animate-spin')} />
+            </Button>
+          )}
+        </div>
+
+        {summarizing && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+            <Sparkles className="w-3.5 h-3.5 animate-pulse text-primary" />
+            <span>Analisando conversa com IA...</span>
+          </div>
+        )}
+
+        {!summarizing && !aiSummary && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full h-8 text-xs gap-1.5 border-dashed"
+            onClick={() => handleSummarize(false)}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-primary" />
+            Resumir conversa
+          </Button>
+        )}
+
+        {!summarizing && aiSummary && (
+          <div className="space-y-2.5 text-xs">
+            {/* Reason */}
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1 text-muted-foreground font-medium">
+                <Target className="w-3 h-3" />
+                Motivo do contato
+              </div>
+              <p className="text-foreground leading-relaxed">{aiSummary.reason}</p>
+            </div>
+
+            {/* Summary */}
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1 text-muted-foreground font-medium">
+                <AlertCircle className="w-3 h-3" />
+                Resumo
+              </div>
+              <p className="text-foreground leading-relaxed">{aiSummary.summary}</p>
+            </div>
+
+            {/* Resolution */}
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-1 text-muted-foreground font-medium">
+                <CheckCircle2 className="w-3 h-3" />
+                Resolução
+              </div>
+              <p className="text-foreground leading-relaxed">{aiSummary.resolution}</p>
+            </div>
+
+            {/* Metadata */}
+            <div className="flex items-center justify-between pt-1 border-t border-border/40">
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <Clock className="w-2.5 h-2.5" />
+                <span>
+                  Gerado {new Date(aiSummary.generated_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+              <span className="text-muted-foreground">{aiSummary.message_count} msgs</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Inbox */}

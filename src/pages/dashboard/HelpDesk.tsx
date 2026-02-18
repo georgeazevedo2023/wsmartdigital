@@ -13,6 +13,14 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import type { Label } from '@/components/helpdesk/ConversationLabels';
 
+export interface AiSummary {
+  reason: string;
+  summary: string;
+  resolution: string;
+  generated_at: string;
+  message_count: number;
+}
+
 export interface Conversation {
   id: string;
   inbox_id: string;
@@ -24,6 +32,7 @@ export interface Conversation {
   last_message_at: string | null;
   created_at: string;
   updated_at: string;
+  ai_summary?: AiSummary | null;
   contact?: {
     id: string;
     name: string | null;
@@ -231,6 +240,7 @@ const HelpDesk = () => {
         contact: c.contacts,
         inbox: c.inboxes,
         last_message: c.last_message || null,
+        ai_summary: c.ai_summary || null,
       }));
 
       setConversations(mapped);
@@ -362,7 +372,7 @@ const HelpDesk = () => {
     }
   };
 
-  const handleUpdateConversation = async (id: string, updates: Partial<Conversation>) => {
+  const handleUpdateConversation = async (id: string, updates: Partial<Omit<Conversation, 'ai_summary'>>) => {
     await supabase.from('conversations').update(updates).eq('id', id);
     fetchConversations();
     if (selectedConversation?.id === id) {
