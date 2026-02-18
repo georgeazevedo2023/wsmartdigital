@@ -36,6 +36,7 @@ interface KanbanBoard {
   columnCount?: number;
   cardCount?: number;
   inboxName?: string;
+  directMemberCount?: number;
 }
 
 interface Inbox {
@@ -223,6 +224,12 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
             <Badge variant="outline" className="text-[10px] gap-1 border-border">
               <MessageSquare className="w-3 h-3" />
               {board.inboxName}
+            </Badge>
+          )}
+          {(board.directMemberCount ?? 0) > 0 && (
+            <Badge variant="outline" className="text-[10px] gap-1 border-info/40 text-info bg-info/5">
+              <Users className="w-3 h-3" />
+              {board.directMemberCount} membro{board.directMemberCount !== 1 ? 's' : ''}
             </Badge>
           )}
         </div>

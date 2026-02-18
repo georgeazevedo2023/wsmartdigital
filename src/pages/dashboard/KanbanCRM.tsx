@@ -17,6 +17,7 @@ interface KanbanBoard {
   columnCount?: number;
   cardCount?: number;
   inboxName?: string;
+  directMemberCount?: number;
 }
 
 interface Inbox {
@@ -46,12 +47,13 @@ const KanbanCRM = () => {
     const inboxList: Inbox[] = inboxesRes.data || [];
     setInboxes(inboxList);
 
-    // Enrich boards with column/card counts and inbox name
+    // Enrich boards with column/card counts, inbox name, and direct member count
     const enriched = await Promise.all(
       boardList.map(async (board) => {
-        const [colRes, cardRes] = await Promise.all([
+        const [colRes, cardRes, membersRes] = await Promise.all([
           supabase.from('kanban_columns').select('id', { count: 'exact', head: true }).eq('board_id', board.id),
           supabase.from('kanban_cards').select('id', { count: 'exact', head: true }).eq('board_id', board.id),
+          supabase.from('kanban_board_members').select('id', { count: 'exact', head: true }).eq('board_id', board.id),
         ]);
         const inbox = inboxList.find(i => i.id === board.inbox_id);
         return {
@@ -59,6 +61,7 @@ const KanbanCRM = () => {
           columnCount: colRes.count ?? 0,
           cardCount: cardRes.count ?? 0,
           inboxName: inbox?.name,
+          directMemberCount: membersRes.count ?? 0,
         };
       })
     );

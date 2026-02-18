@@ -9,8 +9,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Users, Lock } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Users, Lock, UserPlus, Pencil, Eye, MessageSquare, Search, X } from 'lucide-react';
 
 interface KanbanBoard {
   id: string;
@@ -46,6 +48,20 @@ interface Inbox {
   instance_id: string;
 }
 
+interface BoardMember {
+  id: string;
+  user_id: string;
+  role: 'editor' | 'viewer';
+  full_name: string | null;
+  email: string;
+}
+
+interface UserProfile {
+  id: string;
+  full_name: string | null;
+  email: string;
+}
+
 interface EditBoardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -78,6 +94,16 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Access tab state
+  const [members, setMembers] = useState<BoardMember[]>([]);
+  const [allUsers, setAllUsers] = useState<UserProfile[]>([]);
+  const [userSearch, setUserSearch] = useState('');
+  const [newMemberRole, setNewMemberRole] = useState<'editor' | 'viewer'>('editor');
+  const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [addingMember, setAddingMember] = useState(false);
+  const [inboxMemberCount, setInboxMemberCount] = useState<number>(0);
+  const [inboxName, setInboxName] = useState<string>('');
+
   useEffect(() => {
     if (open && board.id) {
       loadBoardData();
@@ -97,7 +123,54 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
         options: f.options ? (f.options as string[]) : null,
       })) as KanbanField[]);
     }
+
+    // Load access data
+    await Promise.all([loadMembers(), loadAllUsers(), loadInboxInfo()]);
     setLoading(false);
+  };
+
+  const loadMembers = async () => {
+    const { data } = await supabase
+      .from('kanban_board_members')
+      .select('id, user_id, role')
+      .eq('board_id', board.id);
+
+    if (!data || data.length === 0) { setMembers([]); return; }
+
+    const userIds = data.map(m => m.user_id);
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('id, full_name, email')
+      .in('id', userIds);
+
+    const profileMap: Record<string, UserProfile> = {};
+    (profiles || []).forEach(p => { profileMap[p.id] = p; });
+
+    setMembers(data.map(m => ({
+      id: m.id,
+      user_id: m.user_id,
+      role: m.role as 'editor' | 'viewer',
+      full_name: profileMap[m.user_id]?.full_name || null,
+      email: profileMap[m.user_id]?.email || '',
+    })));
+  };
+
+  const loadAllUsers = async () => {
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('id, full_name, email')
+      .order('full_name');
+    setAllUsers((data || []) as UserProfile[]);
+  };
+
+  const loadInboxInfo = async () => {
+    if (!board.inbox_id) return;
+    const [inboxRes, membersRes] = await Promise.all([
+      supabase.from('inboxes').select('name').eq('id', board.inbox_id).single(),
+      supabase.from('inbox_users').select('id', { count: 'exact', head: true }).eq('inbox_id', board.inbox_id),
+    ]);
+    if (inboxRes.data) setInboxName(inboxRes.data.name);
+    setInboxMemberCount(membersRes.count ?? 0);
   };
 
   // ── Columns ──────────────────────────────────────────────
@@ -150,7 +223,6 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
   const updateField = (id: string, patch: Partial<KanbanField>) => {
     setFields(prev => prev.map(f => {
       if (f.id === id) return { ...f, ...patch };
-      // Only one primary
       if (patch.is_primary && f.id !== id) return { ...f, is_primary: false };
       return f;
     }));
@@ -172,6 +244,49 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
     });
   };
 
+  // ── Members ──────────────────────────────────────────────
+  const filteredUsers = allUsers.filter(u => {
+    const alreadyMember = members.some(m => m.user_id === u.id);
+    if (alreadyMember) return false;
+    const q = userSearch.toLowerCase();
+    return (u.full_name || '').toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
+  });
+
+  const handleAddMember = async () => {
+    if (!selectedUser) return;
+    setAddingMember(true);
+
+    const { error } = await supabase.from('kanban_board_members').insert({
+      board_id: board.id,
+      user_id: selectedUser.id,
+      role: newMemberRole,
+    });
+
+    setAddingMember(false);
+    if (error) {
+      toast.error('Erro ao adicionar membro');
+      return;
+    }
+
+    toast.success(`${selectedUser.full_name || selectedUser.email} adicionado(a)!`);
+    setSelectedUser(null);
+    setUserSearch('');
+    loadMembers();
+  };
+
+  const handleRemoveMember = async (memberId: string, memberName: string) => {
+    const { error } = await supabase.from('kanban_board_members').delete().eq('id', memberId);
+    if (error) { toast.error('Erro ao remover membro'); return; }
+    toast.success(`${memberName} removido(a)`);
+    loadMembers();
+  };
+
+  const handleUpdateMemberRole = async (memberId: string, role: 'editor' | 'viewer') => {
+    const { error } = await supabase.from('kanban_board_members').update({ role }).eq('id', memberId);
+    if (error) { toast.error('Erro ao atualizar papel'); return; }
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, role } : m));
+  };
+
   // ── Save ─────────────────────────────────────────────────
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -179,7 +294,6 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
 
     const selectedInbox = inboxId !== 'none' ? inboxes.find(i => i.id === inboxId) : null;
 
-    // 1. Update board
     const { error: boardErr } = await supabase
       .from('kanban_boards')
       .update({
@@ -197,69 +311,34 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       return;
     }
 
-    // 2. Sync columns: delete removed, upsert existing/new
+    // Sync columns
     const existingColIds = columns.filter(c => !c.id.startsWith('new_')).map(c => c.id);
-    // Delete removed columns
-    const { data: dbCols } = await supabase
-      .from('kanban_columns')
-      .select('id')
-      .eq('board_id', board.id);
-
+    const { data: dbCols } = await supabase.from('kanban_columns').select('id').eq('board_id', board.id);
     const dbColIds = (dbCols || []).map((c: any) => c.id);
     const toDelete = dbColIds.filter((id: string) => !existingColIds.includes(id));
-    if (toDelete.length > 0) {
-      await supabase.from('kanban_columns').delete().in('id', toDelete);
-    }
+    if (toDelete.length > 0) await supabase.from('kanban_columns').delete().in('id', toDelete);
 
-    // Upsert columns
     for (let i = 0; i < columns.length; i++) {
       const col = columns[i];
       const isNew = col.id.startsWith('new_');
       if (isNew) {
-        await supabase.from('kanban_columns').insert({
-          board_id: board.id,
-          name: col.name,
-          color: col.color,
-          position: i,
-          automation_enabled: col.automation_enabled,
-          automation_message: col.automation_message,
-        });
+        await supabase.from('kanban_columns').insert({ board_id: board.id, name: col.name, color: col.color, position: i, automation_enabled: col.automation_enabled, automation_message: col.automation_message });
       } else {
-        await supabase.from('kanban_columns').update({
-          name: col.name,
-          color: col.color,
-          position: i,
-          automation_enabled: col.automation_enabled,
-          automation_message: col.automation_message,
-        }).eq('id', col.id);
+        await supabase.from('kanban_columns').update({ name: col.name, color: col.color, position: i, automation_enabled: col.automation_enabled, automation_message: col.automation_message }).eq('id', col.id);
       }
     }
 
-    // 3. Sync fields
+    // Sync fields
     const existingFieldIds = fields.filter(f => !f.id.startsWith('new_')).map(f => f.id);
-    const { data: dbFields } = await supabase
-      .from('kanban_fields')
-      .select('id')
-      .eq('board_id', board.id);
-
+    const { data: dbFields } = await supabase.from('kanban_fields').select('id').eq('board_id', board.id);
     const dbFieldIds = (dbFields || []).map((f: any) => f.id);
     const fieldsToDelete = dbFieldIds.filter((id: string) => !existingFieldIds.includes(id));
-    if (fieldsToDelete.length > 0) {
-      await supabase.from('kanban_fields').delete().in('id', fieldsToDelete);
-    }
+    if (fieldsToDelete.length > 0) await supabase.from('kanban_fields').delete().in('id', fieldsToDelete);
 
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       const isNew = field.id.startsWith('new_');
-      const payload = {
-        board_id: board.id,
-        name: field.name,
-        field_type: field.field_type,
-        options: field.options as any,
-        position: i,
-        is_primary: field.is_primary,
-        required: field.required,
-      };
+      const payload = { board_id: board.id, name: field.name, field_type: field.field_type, options: field.options as any, position: i, is_primary: field.is_primary, required: field.required };
       if (isNew) {
         await supabase.from('kanban_fields').insert(payload);
       } else {
@@ -273,6 +352,11 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
     onOpenChange(false);
   };
 
+  const getInitials = (name: string | null, email: string) => {
+    if (name) return name.split(' ').slice(0, 2).map(n => n[0]).join('').toUpperCase();
+    return email[0].toUpperCase();
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl max-h-[90vh] flex flex-col">
@@ -281,10 +365,11 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
         </DialogHeader>
 
         <Tabs defaultValue="geral" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="w-full grid grid-cols-3">
+          <TabsList className="w-full grid grid-cols-4">
             <TabsTrigger value="geral">Geral</TabsTrigger>
             <TabsTrigger value="colunas">Colunas</TabsTrigger>
-            <TabsTrigger value="campos">Campos do Formulário</TabsTrigger>
+            <TabsTrigger value="campos">Campos</TabsTrigger>
+            <TabsTrigger value="acesso">Acesso</TabsTrigger>
           </TabsList>
 
           {/* ── Aba Geral ── */}
@@ -303,7 +388,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                 <button
                   type="button"
                   onClick={() => setVisibility('shared')}
-                  className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all ${
+                  className={`flex flex-col items-start gap-1 p-3 rounded-lg border-2 transition-all ${
                     visibility === 'shared'
                       ? 'border-primary bg-primary/10 text-primary'
                       : 'border-border bg-card text-muted-foreground hover:border-border/80'
@@ -311,12 +396,12 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                 >
                   <Users className="w-5 h-5" />
                   <span className="text-xs font-medium">Compartilhado</span>
-                  <span className="text-[10px] opacity-70">Todo mundo vê tudo</span>
+                  <span className="text-[10px] opacity-70 leading-tight">Todos os membros veem todos os leads. Ideal para equipes colaborativas.</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setVisibility('private')}
-                  className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border-2 transition-all ${
+                  className={`flex flex-col items-start gap-1 p-3 rounded-lg border-2 transition-all ${
                     visibility === 'private'
                       ? 'border-primary bg-primary/10 text-primary'
                       : 'border-border bg-card text-muted-foreground hover:border-border/80'
@@ -324,12 +409,12 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                 >
                   <Lock className="w-5 h-5" />
                   <span className="text-xs font-medium">Individual</span>
-                  <span className="text-[10px] opacity-70">Só vê seus leads</span>
+                  <span className="text-[10px] opacity-70 leading-tight">Cada atendente vê só seus leads. Ideal para corretores, vendedores autônomos.</span>
                 </button>
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Caixa de Entrada WhatsApp (opcional)</Label>
+              <Label>Caixa de Entrada WhatsApp <span className="text-muted-foreground font-normal">(opcional)</span></Label>
               <Select value={inboxId} onValueChange={setInboxId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Sem conexão WhatsApp" />
@@ -341,6 +426,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground">Vincula uma caixa de atendimento para habilitar automações de mensagem por etapa.</p>
             </div>
           </TabsContent>
 
@@ -360,7 +446,6 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
               {columns.map((col, idx) => (
                 <div key={col.id} className="flex items-start gap-2 p-3 rounded-lg border border-border bg-card">
                   <GripVertical className="w-4 h-4 text-muted-foreground mt-2.5 shrink-0" />
-                  {/* Color picker */}
                   <div className="shrink-0 mt-1">
                     <div className="flex flex-wrap gap-1 w-24">
                       {COLUMN_COLORS.map(color => (
@@ -491,6 +576,216 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                   </div>
                 </div>
               ))}
+            </div>
+          </TabsContent>
+
+          {/* ── Aba Acesso ── */}
+          <TabsContent value="acesso" className="flex flex-col flex-1 min-h-0 mt-4 space-y-4 overflow-y-auto">
+
+            {/* Visibilidade contextual */}
+            <div className={`flex items-start gap-3 p-3 rounded-lg border ${
+              visibility === 'private'
+                ? 'border-warning/40 bg-warning/5'
+                : 'border-primary/30 bg-primary/5'
+            }`}>
+              {visibility === 'private' ? (
+                <Lock className="w-4 h-4 text-warning mt-0.5 shrink-0" />
+              ) : (
+                <Users className="w-4 h-4 text-primary mt-0.5 shrink-0" />
+              )}
+              <div>
+                <p className="text-xs font-medium text-foreground">
+                  Modo: {visibility === 'shared' ? 'Compartilhado' : 'Individual'}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                  {visibility === 'shared'
+                    ? 'Todos os membros com acesso a este quadro veem todos os cards uns dos outros.'
+                    : 'Cada atendente vê apenas os cards onde é criador ou responsável. Ideal para corretores, representantes comerciais e vendedores autônomos.'
+                  }
+                </p>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Para alterar, vá na aba <strong>Geral</strong>.
+                </p>
+              </div>
+            </div>
+
+            {/* Acesso via inbox */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Acesso via WhatsApp / Caixa de Entrada
+              </p>
+              {board.inbox_id ? (
+                <div className="flex items-center gap-3 p-3 rounded-lg border border-border bg-card">
+                  <MessageSquare className="w-4 h-4 text-primary shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-foreground">{inboxName || 'Caixa vinculada'}</p>
+                    <p className="text-xs text-muted-foreground">{inboxMemberCount} membro{inboxMemberCount !== 1 ? 's' : ''} com acesso automático</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 p-3 rounded-lg border border-dashed border-border text-muted-foreground">
+                  <MessageSquare className="w-4 h-4 shrink-0" />
+                  <p className="text-xs">Sem caixa de entrada vinculada — acesso independente de WhatsApp</p>
+                </div>
+              )}
+            </div>
+
+            {/* Membros diretos */}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                Membros com Acesso Direto
+              </p>
+
+              {members.length === 0 ? (
+                <div className="text-center py-6 rounded-lg border border-dashed border-border text-muted-foreground">
+                  <Users className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                  <p className="text-xs">Nenhum membro adicionado diretamente</p>
+                  <p className="text-[11px] mt-0.5 opacity-70">Use o campo abaixo para conceder acesso a usuários específicos</p>
+                </div>
+              ) : (
+                <div className="space-y-1.5">
+                  {members.map(member => (
+                    <div key={member.id} className="flex items-center gap-2.5 p-2.5 rounded-lg border border-border bg-card">
+                      <Avatar className="h-7 w-7 shrink-0">
+                        <AvatarFallback className="text-[10px] bg-primary/10 text-primary">
+                          {getInitials(member.full_name, member.email)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-foreground truncate">{member.full_name || member.email}</p>
+                        {member.full_name && <p className="text-[10px] text-muted-foreground truncate">{member.email}</p>}
+                      </div>
+                      <Select
+                        value={member.role}
+                        onValueChange={(v) => handleUpdateMemberRole(member.id, v as 'editor' | 'viewer')}
+                      >
+                        <SelectTrigger className="h-7 w-32 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="editor" className="text-xs">
+                            <span className="flex items-center gap-1.5">
+                              <Pencil className="w-3 h-3" /> Editor
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="viewer" className="text-xs">
+                            <span className="flex items-center gap-1.5">
+                              <Eye className="w-3 h-3" /> Visualizador
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
+                        onClick={() => handleRemoveMember(member.id, member.full_name || member.email)}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Adicionar membro */}
+            <div className="space-y-2 border-t border-border pt-4">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Adicionar Membro</p>
+
+              {/* User search */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome ou email..."
+                  value={userSearch}
+                  onChange={e => { setUserSearch(e.target.value); setSelectedUser(null); }}
+                  className="pl-8 h-9 text-sm"
+                />
+              </div>
+
+              {/* Selected user chip */}
+              {selectedUser && (
+                <div className="flex items-center gap-2 p-2 rounded-md bg-primary/10 border border-primary/30">
+                  <Avatar className="h-6 w-6 shrink-0">
+                    <AvatarFallback className="text-[9px] bg-primary text-primary-foreground">
+                      {getInitials(selectedUser.full_name, selectedUser.email)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-xs font-medium text-primary flex-1 truncate">{selectedUser.full_name || selectedUser.email}</span>
+                  <button onClick={() => { setSelectedUser(null); setUserSearch(''); }}>
+                    <X className="w-3 h-3 text-primary" />
+                  </button>
+                </div>
+              )}
+
+              {/* Search results dropdown */}
+              {userSearch.length > 0 && !selectedUser && filteredUsers.length > 0 && (
+                <div className="border border-border rounded-md bg-popover shadow-md max-h-40 overflow-y-auto">
+                  {filteredUsers.slice(0, 8).map(u => (
+                    <button
+                      key={u.id}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-accent transition-colors"
+                      onClick={() => { setSelectedUser(u); setUserSearch(''); }}
+                    >
+                      <Avatar className="h-6 w-6 shrink-0">
+                        <AvatarFallback className="text-[9px] bg-muted text-muted-foreground">
+                          {getInitials(u.full_name, u.email)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium truncate">{u.full_name || u.email}</p>
+                        {u.full_name && <p className="text-[10px] text-muted-foreground truncate">{u.email}</p>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {userSearch.length > 0 && !selectedUser && filteredUsers.length === 0 && (
+                <p className="text-xs text-muted-foreground text-center py-2">Nenhum usuário encontrado</p>
+              )}
+
+              <div className="flex gap-2">
+                <Select value={newMemberRole} onValueChange={v => setNewMemberRole(v as 'editor' | 'viewer')}>
+                  <SelectTrigger className="w-36 h-9 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="editor">
+                      <span className="flex items-center gap-1.5">
+                        <Pencil className="w-3 h-3" /> Editor
+                      </span>
+                    </SelectItem>
+                    <SelectItem value="viewer">
+                      <span className="flex items-center gap-1.5">
+                        <Eye className="w-3 h-3" /> Visualizador
+                      </span>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button
+                  onClick={handleAddMember}
+                  disabled={!selectedUser || addingMember}
+                  className="gap-1.5 flex-1"
+                  size="sm"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  {addingMember ? 'Adicionando...' : 'Adicionar'}
+                </Button>
+              </div>
+
+              <div className="rounded-md bg-muted/50 p-2.5 space-y-1">
+                <p className="text-[10px] text-muted-foreground font-medium">Sobre os papéis:</p>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Pencil className="w-2.5 h-2.5 shrink-0" />
+                  <strong>Editor</strong> — pode criar, mover e editar cards
+                </p>
+                <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                  <Eye className="w-2.5 h-2.5 shrink-0" />
+                  <strong>Visualizador</strong> — apenas visualiza os cards, sem editar
+                </p>
+              </div>
             </div>
           </TabsContent>
         </Tabs>
