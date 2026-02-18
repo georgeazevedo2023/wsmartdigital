@@ -28,6 +28,7 @@ const InboxUsersManagement = lazy(() => import("./pages/dashboard/InboxUsersMana
 const AdminPanel = lazy(() => import("./pages/dashboard/AdminPanel"));
 const Intelligence = lazy(() => import("./pages/dashboard/Intelligence"));
 const KanbanCRM = lazy(() => import("./pages/dashboard/KanbanCRM"));
+const KanbanBoard = lazy(() => import("./pages/dashboard/KanbanBoard"));
 
 const queryClient = new QueryClient();
 
@@ -132,7 +133,7 @@ const AppRoutes = () => {
         <Route path="admin" element={<AdminRoute><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></AdminRoute>} />
         <Route path="intelligence" element={<AdminRoute><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></AdminRoute>} />
         <Route path="crm" element={<Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense>} />
-        <Route path="crm/:boardId" element={<Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense>} />
+        <Route path="crm/:boardId" element={<Suspense fallback={<PageLoader />}><KanbanBoard /></Suspense>} />
         {/* Redirect legacy/bookmarked URLs */}
         <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
         <Route path="users" element={<Navigate to="/dashboard/admin" replace />} />
