@@ -201,7 +201,7 @@ const HelpDesk = () => {
     setConversationNotesSet(noteSet);
   }, []);
 
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     if (!user || !selectedInboxId) return;
     setLoading(true);
     try {
@@ -239,13 +239,21 @@ const HelpDesk = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, selectedInboxId, statusFilter, fetchConversationLabels, fetchConversationNotes]);
+
+  // Defensive reset: garante que selectedConversation pertence à caixa atual
+  useEffect(() => {
+    setSelectedConversation(prev => {
+      if (prev && prev.inbox_id !== selectedInboxId) return null;
+      return prev;
+    });
+  }, [selectedInboxId]);
 
   useEffect(() => {
     if (selectedInboxId) {
       fetchConversations();
     }
-  }, [user, statusFilter, selectedInboxId]);
+  }, [fetchConversations]);
 
   // Realtime via broadcast
   useEffect(() => {
@@ -293,7 +301,7 @@ const HelpDesk = () => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [selectedInboxId]);
+  }, [selectedInboxId, fetchConversations]);
 
   const handleSync = async () => {
     if (!selectedInboxId || syncing) return;
