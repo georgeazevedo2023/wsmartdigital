@@ -694,6 +694,94 @@ export type Database = {
           },
         ]
       }
+      shift_report_configs: {
+        Row: {
+          created_at: string
+          created_by: string
+          enabled: boolean
+          id: string
+          inbox_id: string
+          instance_id: string
+          last_sent_at: string | null
+          recipient_number: string
+          send_hour: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          enabled?: boolean
+          id?: string
+          inbox_id: string
+          instance_id: string
+          last_sent_at?: string | null
+          recipient_number: string
+          send_hour?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          enabled?: boolean
+          id?: string
+          inbox_id?: string
+          instance_id?: string
+          last_sent_at?: string | null
+          recipient_number?: string
+          send_hour?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_report_configs_inbox_id_fkey"
+            columns: ["inbox_id"]
+            isOneToOne: false
+            referencedRelation: "inboxes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shift_report_logs: {
+        Row: {
+          config_id: string
+          conversations_resolved: number | null
+          conversations_total: number | null
+          error_message: string | null
+          id: string
+          report_content: string | null
+          sent_at: string
+          status: string
+        }
+        Insert: {
+          config_id: string
+          conversations_resolved?: number | null
+          conversations_total?: number | null
+          error_message?: string | null
+          id?: string
+          report_content?: string | null
+          sent_at?: string
+          status?: string
+        }
+        Update: {
+          config_id?: string
+          conversations_resolved?: number | null
+          conversations_total?: number | null
+          error_message?: string | null
+          id?: string
+          report_content?: string | null
+          sent_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shift_report_logs_config_id_fkey"
+            columns: ["config_id"]
+            isOneToOne: false
+            referencedRelation: "shift_report_configs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_instance_access: {
         Row: {
           created_at: string
