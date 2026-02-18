@@ -1,290 +1,208 @@
 
-# Redesign de Permissões e UX — Plano por Etapas
+# Gerenciamento de Acesso ao Quadro Kanban — Solução Completa
 
-## Diagnóstico Atual
+## Diagnóstico do Problema
 
-O sistema possui dois contextos de papéis que vivem em paralelo e precisam ser unificados:
+O usuário aponta dois problemas interligados:
 
-- **`app_role`** (tabela `user_roles`): `super_admin` | `user` — define quem é Super Admin vs. todo o resto. Apenas `super_admin` existe de forma significativa; `user` não confere nenhum privilégio especial.
-- **`inbox_role`** (tabela `inbox_users`): `admin` | `gestor` | `agente` — define o papel dentro de uma caixa de atendimento específica.
+**Problema 1 — Não existe onde configurar quem acessa um quadro sem WhatsApp/Inbox**
+Hoje, o único mecanismo de acesso ao CRM é via `inbox_id`: o Super Admin vincula o quadro a uma Caixa de Entrada, e todos os membros dessa caixa passam a ver o quadro. Mas:
+- Nem todo cliente tem integração com WhatsApp
+- Quadros sem `inbox_id` ficam inacessíveis para todos (exceto o Super Admin)
+- Não existe forma de o Super Admin dizer "esse usuário pode acessar esse quadro"
 
-**Problemas identificados:**
+**Problema 2 — Privacidade de cards entre atendentes (ex: imobiliária)**
+A visibilidade `shared` / `private` já existe no banco, mas precisa ser bem comunicada e fácil de configurar. O requisito é: em modo "Individual", um corretor não vê os clientes de outro — esse controle precisa ser explícito e opcional.
 
-1. O papel `app_role.user` é inútil — não confere acesso a módulos nem diferencia um gerente de um atendente.
-2. Não há um papel "Gerente" global — apenas papéis por caixa de inbox.
-3. O CRM não tem controle de acesso: qualquer usuário logado vê o botão "Novo Quadro", pode criar boards e duplicá-los.
-4. O `AuthContext` só expõe `isSuperAdmin` (booleano) — sem suporte a `gerente` no nível de aplicação.
-5. A tela AdminPanel usa a nomenclatura "Usuário" genérica, sem distinguir visualmente Gerentes de Atendentes.
-6. O `admin-create-user` Edge Function cria apenas `super_admin` ou `user` — sem opção `gerente`.
+## Solução: Membros Diretos no Quadro
 
-## Modelo Unificado de 3 Papéis
+Criar um sistema de **membros diretos** por quadro, independente de inbox. O Super Admin pode adicionar qualquer usuário (gerente ou atendente) a qualquer quadro, definindo um papel: **Editor** ou **Visualizador**.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│              PAPÉIS GLOBAIS (app_role enum)                 │
-├──────────────┬──────────────┬──────────────────────────────┤
-│  super_admin │   gerente    │          user                │
-├──────────────┼──────────────┼──────────────────────────────┤
-│ Dashboard    │ ✗            │ ✗                            │
-│ Instâncias   │ ✗            │ ✗                            │
-│ Disparador   │ ✗            │ ✗                            │
-│ Agendamentos │ ✗            │ ✗                            │
-│ Administração│ ✗            │ ✗                            │
-│ Inteligência │ ✗            │ ✗                            │
-│ Configurações│ ✗            │ ✗                            │
-│ Atendimento  │ ✓ (todos)    │ ✓ (suas caixas)              │
-│ CRM - Criar  │ ✗            │ ✗                            │
-│ CRM - Editar │ ✗            │ ✗                            │
-│ CRM - Ver    │ ✓ (boards da │ ✓ (boards da sua inbox)      │
-│              │  sua inbox)  │                              │
-└──────────────┴──────────────┴──────────────────────────────┘
+```text
+COMO UM QUADRO CONCEDE ACESSO:
+
+    Quadro Kanban
+         │
+         ├── Via Inbox (existente) ────────► todos os membros da inbox
+         │
+         └── Via Membros Diretos (NOVO) ───► usuários individuais
+              com papel: Editor | Visualizador
+
+Qualquer das duas rotas concede acesso. Sem nenhuma das duas,
+apenas o Super Admin vê o quadro.
 ```
 
-**Clarificação:**
-- `super_admin`: acesso total a todo o sistema — é o dono/admin da plataforma
-- `gerente`: acessa Atendimento (todas as caixas nas quais está vinculado) e CRM (somente visualizar/operar boards vinculados à sua inbox). Sem acesso a configurações globais.
-- `user` (Atendente): acessa apenas Atendimento nas caixas que lhe foram atribuídas e boards CRM Privados onde for responsável.
+## O que Será Implementado
 
-Os papéis por inbox (`admin`, `gestor`, `agente`) continuam funcionando para controle de permissões **dentro** de uma caixa de atendimento (quem pode gerenciar etiquetas, atribuir conversas etc.).
+### ETAPA 1 — Banco de Dados: Tabela `kanban_board_members`
 
----
-
-## ETAPA 1 — Banco de Dados: Adicionar papel `gerente` ao enum
-
-### Migração SQL
+Nova tabela para associar usuários a quadros diretamente:
 
 ```sql
--- Adicionar 'gerente' ao enum app_role
-ALTER TYPE public.app_role ADD VALUE IF NOT EXISTS 'gerente';
+CREATE TABLE public.kanban_board_members (
+  id        uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  board_id  uuid NOT NULL REFERENCES public.kanban_boards(id) ON DELETE CASCADE,
+  user_id   uuid NOT NULL,
+  role      text NOT NULL DEFAULT 'editor' CHECK (role IN ('viewer', 'editor')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (board_id, user_id)
+);
+ALTER TABLE public.kanban_board_members ENABLE ROW LEVEL SECURITY;
+
+-- Super admin gerencia todos os membros
+CREATE POLICY "Super admins gerenciam membros do board"
+  ON public.kanban_board_members FOR ALL
+  USING (is_super_admin(auth.uid()));
+
+-- Usuários veem seus próprios acessos
+CREATE POLICY "Usuários veem seus acessos"
+  ON public.kanban_board_members FOR SELECT
+  USING (auth.uid() = user_id);
 ```
 
-Isso é não-destrutivo. Os usuários existentes não são afetados.
+Atualizar `can_access_kanban_board` para incluir membros diretos:
 
----
-
-## ETAPA 2 — AuthContext: Expor papel completo
-
-### Mudança em `src/contexts/AuthContext.tsx`
-
-Adicionar `userRole: 'super_admin' | 'gerente' | 'user' | null` e `isGerente: boolean` ao contexto, buscando o papel real do banco:
-
-```typescript
-// Busca o papel mais elevado do usuário
-const { data: roles } = await supabase
-  .from('user_roles')
-  .select('role')
-  .eq('user_id', userId);
-
-const roleList = roles?.map(r => r.role) || [];
-const isSuperAdmin = roleList.includes('super_admin');
-const isGerente = roleList.includes('gerente');
+```sql
+CREATE OR REPLACE FUNCTION public.can_access_kanban_board(_user_id uuid, _board_id uuid)
+RETURNS boolean LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.kanban_boards b
+    WHERE b.id = _board_id AND (
+      is_super_admin(_user_id)
+      OR b.created_by = _user_id
+      OR (b.inbox_id IS NOT NULL AND has_inbox_access(_user_id, b.inbox_id))
+      OR EXISTS (
+        SELECT 1 FROM public.kanban_board_members m
+        WHERE m.board_id = _board_id AND m.user_id = _user_id
+      )
+    )
+  )
+$$;
 ```
 
-O contexto passa a exportar: `isSuperAdmin`, `isGerente`, `userRole` (papel efetivo de mais alto nível).
+### ETAPA 2 — Nova aba "Acesso" no `EditBoardDialog`
 
----
+O Super Admin, ao editar um quadro, verá uma 4ª aba chamada **"Acesso"** com:
 
-## ETAPA 3 — Sidebar: Visibilidade por papel
+**Seção 1 — Acesso via WhatsApp (se inbox vinculada)**
+Exibe a inbox conectada e a quantidade de membros. Botão para desvincular.
 
-### Mapa de Acesso por Item de Menu
+**Seção 2 — Membros Diretos**
+Lista os usuários com acesso individual. Para cada membro mostra:
+- Avatar + nome + email
+- Badge do papel (Editor ou Visualizador)
+- Botão de remover
 
-| Item | super_admin | gerente | user (atendente) |
-|---|---|---|---|
-| Dashboard | ✓ | ✗ | ✗ |
-| Agendamentos | ✓ | ✗ | ✗ |
-| Atendimento | ✓ | ✓ | ✓ |
-| CRM | ✓ | ✓ | ✗* |
-| Disparador | ✓ | ✗ | ✗ |
-| Instâncias | ✓ | ✗ | ✗ |
-| Administração | ✓ | ✗ | ✗ |
-| Inteligência | ✓ | ✗ | ✗ |
-| Configurações | ✓ | ✗ | ✗ |
+**Seção 3 — Adicionar Membro**
+Um campo de busca que filtra os usuários do sistema (via `user_profiles` + `user_roles`) e permite adicionar com papel selecionado.
 
-\* Atendentes (role `user`) NÃO veem CRM no menu — eles acessam apenas os boards onde têm cards atribuídos, mas não navegam ativamente pelo módulo.
-
-### Mudança de Redirecionamento Pós-Login
-
-| Papel | Redireciona para |
-|---|---|
-| `super_admin` | `/dashboard` |
-| `gerente` | `/dashboard/helpdesk` |
-| `user` | `/dashboard/helpdesk` |
-
----
-
-## ETAPA 4 — CRM: Controle de Acesso Granular
-
-### Regras de Acesso ao CRM por Papel
-
-| Ação | super_admin | gerente | user |
-|---|---|---|---|
-| Ver lista de boards | ✓ todos | ✓ apenas linked à sua inbox | ✗ |
-| Criar board | ✓ | ✗ | ✗ |
-| Editar board | ✓ | ✗ | ✗ |
-| Duplicar board | ✓ | ✗ | ✗ |
-| Excluir board | ✓ | ✗ | ✗ |
-| Abrir board e ver cards | ✓ | ✓ (shared) / parcial (private) | ✗ |
-| Criar card | ✓ | ✓ | ✗ |
-| Editar card | ✓ | ✓ (próprio/atribuído) | ✗ |
-| Mover card | ✓ | ✓ (próprio/atribuído) | ✗ |
-
-### Mudanças no Frontend do CRM
-
-**`KanbanCRM.tsx`:**
-- Esconder botão "Novo Quadro" para não-super-admins
-- Empty state diferenciado: gerente vê "Você não tem quadros vinculados à sua inbox" (sem botão de criar)
-- Super Admin continua com empty state + botão de criar
-
-**`BoardCard.tsx`:**
-- O `DropdownMenu` com Editar/Duplicar/Excluir só aparece para `isSuperAdmin`
-- Gerentes veem apenas o botão "Abrir Quadro"
-
-**`KanbanBoard.tsx`:**
-- Botão "+ Novo Card" só aparece para `isSuperAdmin` ou `isGerente`
-- Atendentes (`user`) não acessam a rota `/dashboard/crm` — rota protegida
-
-### Mudança na Rota CRM (App.tsx)
-
-A rota CRM passa de aberta (`<Suspense>`) para restrita:
-
-```typescript
-// Rota CRM — apenas super_admin e gerente
-<Route path="crm" element={
-  <CrmRoute>
-    <Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense>
-  </CrmRoute>
-} />
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  Geral  │  Colunas  │  Campos  │  [Acesso]                  │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  Visibilidade dos Leads                                     │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  [🔒 Individual] Cada atendente vê só seus leads   │    │
+│  └────────────────────────────────────────────────────┘    │
+│                                                             │
+│  Acesso via WhatsApp / Caixa de Entrada                    │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  Sem caixa vinculada — Sem integração WhatsApp     │    │
+│  └────────────────────────────────────────────────────┘    │
+│  (ou, se tiver inbox:)                                      │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  📨  Suporte - Time A     5 membros      [Desvincular]  │
+│  └────────────────────────────────────────────────────┘    │
+│                                                             │
+│  Membros com Acesso Direto              [+ Adicionar]      │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  [AV] Ana Vendas    ✏️ Editor      [Remover]        │    │
+│  │  [JC] João Corretor 👁️ Visualizador [Remover]       │    │
+│  └────────────────────────────────────────────────────┘    │
+│                                                             │
+│  [Buscar por nome ou email...]  [Editor ▼]  [Adicionar]   │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
 ```
 
----
+### ETAPA 3 — Indicador de Membros no `BoardCard`
 
-## ETAPA 5 — AdminPanel: Gestão Unificada de Usuários com 3 Papéis
+O card do quadro na lista (`KanbanCRM.tsx`) ganhará um badge mostrando quantos membros têm acesso:
 
-### Redesign da Aba "Usuários"
-
-Atualmente: toggle "Super Admin / Usuário"
-Novo: seletor de papel com 3 opções visuais
-
-**Card de usuário novo design:**
-```
+```text
 ┌─────────────────────────────────────────────────┐
-│  [Avatar] Nome do Usuário         [Badge: Papel] │
-│           email@exemplo.com                      │
-│                                                  │
-│  [🔧 Instâncias] [📋 Papel: ▼ Gerente] [🗑️]      │
+│  Pipeline Corretores                    [...]   │
+│  Quadro para gestão de leads imobiliários        │
+│                                                 │
+│  📋 4 colunas   🃏 12 cards                      │
+│  [🔒 Individual]  [👥 3 membros]                │
+│                                                 │
+│  [          Abrir Quadro →          ]           │
 └─────────────────────────────────────────────────┘
 ```
 
-**Badges visuais por papel:**
-- `super_admin`: Badge violeta com ícone de escudo — "Super Admin"
-- `gerente`: Badge azul com ícone de briefcase — "Gerente"
-- `user`: Badge cinza com ícone de headphones — "Atendente"
+### ETAPA 4 — Controle de papel no `KanbanBoard`
 
-### Mudança no Dialog "Criar Usuário"
+Ao abrir um quadro, o sistema verifica se o usuário é:
+- `super_admin`: acesso total (já funciona)
+- Membro direto com papel `editor`: pode criar/mover cards
+- Membro direto com papel `viewer`: só lê, não pode criar ou mover cards
+- Membro via inbox: acesso de editor (comportamento atual)
 
-Remove o toggle `Super Admin on/off`. Adiciona um seletor de papel:
-```
-○ Super Admin  — Acesso total ao sistema
-● Gerente      — Acesso a atendimento e CRM
-○ Atendente    — Acesso apenas às caixas atribuídas
-```
+Implementação: uma query ao abrir o board verifica `kanban_board_members` e retorna o `role` do usuário atual, ajustando `canAddCard` e `isDraggable` nas colunas.
 
-### Mudança na Edge Function `admin-create-user`
+### ETAPA 5 — Lógica de Privacidade mais Clara
 
-Recebe `role: 'super_admin' | 'gerente' | 'user'` e insere o papel correto na `user_roles`:
+O campo `visibility` (`shared` / `private`) já existe e já funciona no RLS. O que falta é comunicar isso melhor.
 
-```typescript
-const { role } = body; // 'super_admin' | 'gerente' | 'user'
-if (newUser.user) {
-  await adminClient.from('user_roles').insert({ 
-    user_id: newUser.user.id, 
-    role: role || 'user' 
-  });
-}
-```
+**Shared (Compartilhado)**: todos os membros do quadro veem todos os cards
+**Private (Individual)**: cada membro só vê os cards onde é `created_by` ou `assigned_to`
 
-### Ação "Alterar Papel" no AdminPanel
+Isso será reforçado visualmente:
+- No `BoardCard`: badge colorido indicando o modo
+- Na aba "Acesso": explicação contextual clara do que cada modo significa
+- No `CreateBoardDialog`: descrições melhoradas com exemplos (ex: "Ideal para times de vendas onde cada corretor vê apenas seus clientes")
 
-Remove o botão "Tornar Admin / Remover Admin" atual. Adiciona um `Select` inline para mudar o papel:
+## Fluxo Completo do Super Admin
 
-```typescript
-// Remove papel antigo, insere novo
-await supabase.from('user_roles').delete().eq('user_id', userId).neq('role', null);
-await supabase.from('user_roles').insert({ user_id: userId, role: newRole });
+```text
+1. /dashboard/crm → clicar "Novo Quadro"
+2. Dialog Criar: nome, descrição, visibilidade (Compartilhado/Individual)
+   → Inbox WhatsApp: OPCIONAL (se não tiver integração, deixar em "Sem conexão")
+3. Quadro criado → aparece na grade
+4. Clicar "..." → "Editar" → aba "Acesso"
+5. Seção "Membros com Acesso Direto" → clicar "+ Adicionar"
+6. Buscar por "Ana" → selecionar "Ana Vendas" → papel: Editor → "Adicionar"
+7. Ana faz login → vê o quadro no CRM → pode criar e mover cards
+8. Se visibilidade = Individual: Ana não vê cards de João e vice-versa
 ```
 
----
+## Arquivos a Criar/Modificar
 
-## ETAPA 6 — Banco de Dados: RLS do CRM Corrigida
-
-### Migração SQL
-
-```sql
--- 1. Revogar criação de boards para não-super-admins
-DROP POLICY IF EXISTS "Usuários podem criar boards" ON kanban_boards;
-CREATE POLICY "Apenas super admins criam boards"
-  ON kanban_boards FOR INSERT
-  WITH CHECK (is_super_admin(auth.uid()));
-
--- 2. Revogar edição de boards para criadores não-admin
-DROP POLICY IF EXISTS "Criadores podem atualizar seus boards" ON kanban_boards;
-CREATE POLICY "Apenas super admins atualizam boards"
-  ON kanban_boards FOR UPDATE
-  USING (is_super_admin(auth.uid()));
-
--- 3. Revogar exclusão de boards para criadores não-admin
-DROP POLICY IF EXISTS "Criadores podem excluir seus boards" ON kanban_boards;
-CREATE POLICY "Apenas super admins excluem boards"
-  ON kanban_boards FOR DELETE
-  USING (is_super_admin(auth.uid()));
-
--- 4. Colunas e Campos — unificar em super admin
-DROP POLICY IF EXISTS "Criadores do board gerenciam colunas" ON kanban_columns;
-DROP POLICY IF EXISTS "Criadores do board atualizam colunas" ON kanban_columns;
-DROP POLICY IF EXISTS "Criadores do board excluem colunas" ON kanban_columns;
-
-DROP POLICY IF EXISTS "Criadores do board gerenciam campos" ON kanban_fields;
-DROP POLICY IF EXISTS "Criadores do board atualizam campos" ON kanban_fields;
-DROP POLICY IF EXISTS "Criadores do board excluem campos" ON kanban_fields;
-
--- As políticas "Super admins gerenciam todos os cards/colunas/campos" já existem
--- e cobrem o super_admin. Não precisam ser recriadas.
-
--- 5. Cards — ajustar UPDATE para gerentes poderem editar
--- A política "Criadores e responsáveis atualizam cards" já contempla isso
--- via created_by = auth.uid() OR assigned_to = auth.uid()
-```
-
----
-
-## Resumo dos Arquivos a Modificar
-
-| Arquivo | Ação |
+| Arquivo | Mudança |
 |---|---|
-| Nova migração SQL (1) | `ALTER TYPE app_role ADD VALUE 'gerente'` |
-| Nova migração SQL (2) | RLS do CRM: revogar INSERT/UPDATE/DELETE de boards para não-super-admins |
-| `src/contexts/AuthContext.tsx` | Adicionar `isGerente`, `userRole` |
-| `src/App.tsx` | Adicionar `CrmRoute` wrapper, atualizar redirect pós-login |
-| `src/pages/Login.tsx` | Atualizar redirect pós-login para gerentes |
-| `src/components/dashboard/Sidebar.tsx` | Visibilidade por papel (CRM só para admin+gerente) |
-| `src/pages/dashboard/KanbanCRM.tsx` | Esconder botão criar / empty state diferenciado |
-| `src/components/kanban/BoardCard.tsx` | Ocultar menu de ações para não-super-admins |
-| `src/pages/dashboard/KanbanBoard.tsx` | Botão novo card restrito |
-| `src/pages/dashboard/AdminPanel.tsx` | Redesign da aba Usuários com 3 papéis |
-| `supabase/functions/admin-create-user/index.ts` | Receber `role` em vez de `is_super_admin` |
+| Nova migração SQL | Criar `kanban_board_members`, atualizar `can_access_kanban_board`, RLS |
+| `src/components/kanban/EditBoardDialog.tsx` | Adicionar 4ª aba "Acesso" com gerenciamento de membros |
+| `src/components/kanban/CreateBoardDialog.tsx` | Melhorar descrições de visibilidade com contexto real |
+| `src/components/kanban/BoardCard.tsx` | Adicionar badge de membros diretos, buscar contagem |
+| `src/pages/dashboard/KanbanCRM.tsx` | Enriquecer dados com contagem de membros diretos |
+| `src/pages/dashboard/KanbanBoard.tsx` | Verificar papel do usuário (`viewer`/`editor`) ao carregar board |
 
-**Total: 2 migrações + 9 arquivos de código**
+**Total: 1 migração + 5 arquivos modificados**
 
----
+## Considerações de Segurança
 
-## Sequência de Implementação
+- O RLS via `can_access_kanban_board` é a barreira principal — não importa o que o frontend mostre, o banco só retorna dados para quem tem acesso
+- A tabela `kanban_board_members` tem RLS própria: somente Super Admin gerencia, usuário vê apenas seus próprios acessos
+- A função `can_access_kanban_board` é `SECURITY DEFINER` — roda com privilégios elevados para evitar recursão no RLS
+- O papel `viewer` é verificado **no frontend** (UX) mas também deve ser aplicado via política de INSERT nos cards: membros com papel `viewer` não podem inserir em `kanban_cards`
 
-1. **Migração 1**: Adicionar `gerente` ao enum
-2. **Migração 2**: Corrigir RLS do CRM
-3. **AuthContext**: Expor `isGerente` e `userRole`
-4. **App.tsx + Login**: Atualizar rotas e redirects
-5. **Sidebar**: Visibilidade por papel
-6. **CRM (3 arquivos)**: Controle de acesso granular
-7. **AdminPanel + Edge Function**: Gestão de 3 papéis com novo UX
+## Resultado Esperado
 
-Tudo isso será implementado por etapas sequenciais, com cada conjunto de mudanças testável de forma independente.
+- Super Admin cria quadros sem precisar de WhatsApp — pode adicionar usuários diretamente pela aba "Acesso"
+- Gerentes e Atendentes adicionados individualmente veem o quadro no menu CRM automaticamente
+- Quadros com visibilidade "Individual" garantem que cada atendente veja apenas seus próprios leads (ex: corretores de imóveis)
+- A regra de privacidade é claramente comunicada na criação e edição do quadro
+- Boards sem acesso configurado continuam invisíveis para usuários não autorizados
+- A integração WhatsApp continua sendo opcional e independente do controle de acesso
