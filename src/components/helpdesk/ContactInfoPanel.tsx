@@ -15,7 +15,6 @@ import { toast } from 'sonner';
 interface InboxAgent {
   user_id: string;
   full_name: string;
-  role: string;
 }
 
 interface ContactInfoPanelProps {
@@ -25,6 +24,7 @@ interface ContactInfoPanelProps {
   inboxLabels?: Label[];
   assignedLabelIds?: string[];
   onLabelsChanged?: () => void;
+  agentNamesMap?: Record<string, string>;
 }
 
 const statusOptions = [
@@ -46,33 +46,34 @@ export const ContactInfoPanel = ({
   inboxLabels = [],
   assignedLabelIds = [],
   onLabelsChanged,
+  agentNamesMap = {},
 }: ContactInfoPanelProps) => {
   const contact = conversation.contact;
   const name = contact?.name || contact?.phone || 'Desconhecido';
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
-  const [agents, setAgents] = useState<InboxAgent[]>([]);
+  const [inboxUserIds, setInboxUserIds] = useState<string[]>([]);
 
-  // Fetch agents for this inbox
+  // Fetch only user_ids from inbox_users (no join with user_profiles, avoids RLS issue)
   useEffect(() => {
-    const fetchAgents = async () => {
+    const fetchAgentIds = async () => {
       if (!conversation.inbox_id) return;
       const { data } = await supabase
         .from('inbox_users')
-        .select('user_id, role, user_profiles(full_name)')
+        .select('user_id')
         .eq('inbox_id', conversation.inbox_id);
 
       if (data) {
-        const mapped = data.map((d: any) => ({
-          user_id: d.user_id,
-          full_name: d.user_profiles?.full_name || d.user_id.slice(0, 8),
-          role: d.role,
-        }));
-        mapped.sort((a: InboxAgent, b: InboxAgent) => a.full_name.localeCompare(b.full_name));
-        setAgents(mapped);
+        setInboxUserIds(data.map((d: any) => d.user_id));
       }
     };
-    fetchAgents();
+    fetchAgentIds();
   }, [conversation.inbox_id]);
+
+  // Build agents list from inboxUserIds + agentNamesMap
+  const agents: InboxAgent[] = inboxUserIds.map(uid => ({
+    user_id: uid,
+    full_name: agentNamesMap[uid] || uid.slice(0, 8),
+  })).sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const assignedLabels = inboxLabels.filter(l => assignedLabelIds.includes(l.id));
 
@@ -87,6 +88,31 @@ export const ContactInfoPanel = ({
     } catch (err: any) {
       toast.error(err.message || 'Erro ao remover etiqueta');
     }
+  };
+
+  const handleAssignAgent = async (value: string) => {
+    const agentId = value === '__none__' ? null : value;
+    const agentName = agentId ? (agentNamesMap[agentId] || agentId.slice(0, 8)) : null;
+
+    // Update DB
+    await supabase
+      .from('conversations')
+      .update({ assigned_to: agentId })
+      .eq('id', conversation.id);
+
+    // Broadcast para sync em tempo real
+    await supabase.channel('helpdesk-conversations').send({
+      type: 'broadcast',
+      event: 'assigned-agent',
+      payload: {
+        conversation_id: conversation.id,
+        assigned_to: agentId,
+      },
+    });
+
+    // Update local via callback
+    onUpdateConversation(conversation.id, { assigned_to: agentId } as any);
+    toast.success(agentId ? `Atribuído a ${agentName}` : 'Agente removido');
   };
 
   return (
@@ -189,12 +215,7 @@ export const ContactInfoPanel = ({
         </label>
         <Select
           value={conversation.assigned_to || '__none__'}
-          onValueChange={(v) => {
-            const agentId = v === '__none__' ? null : v;
-            onUpdateConversation(conversation.id, { assigned_to: agentId } as any);
-            const agentName = agents.find(a => a.user_id === agentId)?.full_name;
-            toast.success(agentId ? `Atribuído a ${agentName}` : 'Agente removido');
-          }}
+          onValueChange={handleAssignAgent}
         >
           <SelectTrigger className="h-8 text-sm">
             <SelectValue placeholder="Nenhum" />
@@ -203,10 +224,7 @@ export const ContactInfoPanel = ({
             <SelectItem value="__none__">Nenhum</SelectItem>
             {agents.map(agent => (
               <SelectItem key={agent.user_id} value={agent.user_id}>
-                <div className="flex items-center gap-2">
-                  <span>{agent.full_name}</span>
-                  <span className="text-muted-foreground text-[10px]">({agent.role})</span>
-                </div>
+                {agent.full_name}
               </SelectItem>
             ))}
           </SelectContent>

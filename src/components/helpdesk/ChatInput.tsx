@@ -30,6 +30,16 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         .from('conversations')
         .update({ assigned_to: user.id })
         .eq('id', conversation.id);
+
+      // Broadcast para sincronizar UI em tempo real
+      await supabase.channel('helpdesk-conversations').send({
+        type: 'broadcast',
+        event: 'assigned-agent',
+        payload: {
+          conversation_id: conversation.id,
+          assigned_to: user.id,
+        },
+      });
     } catch (err) {
       console.error('Auto-assign error:', err);
     }

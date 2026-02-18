@@ -32,7 +32,6 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [agentName, setAgentName] = useState<string | null>(null);
   const [iaAtivada, setIaAtivada] = useState(false);
   const [ativandoIa, setAtivandoIa] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
@@ -40,6 +39,11 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   // Separate notes from chat messages
   const notes = messages.filter(m => m.direction === 'private_note');
   const chatMessages = messages.filter(m => m.direction !== 'private_note');
+
+  // Resolve agent name from map (no extra query needed)
+  const agentName = conversation?.assigned_to
+    ? (agentNamesMap?.[conversation.assigned_to] || conversation.assigned_to.slice(0, 8))
+    : null;
 
   // Load IA state from database when conversation changes
   useEffect(() => {
@@ -58,20 +62,6 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
     };
     loadStatusIa();
   }, [conversation?.id]);
-
-  // Fetch assigned agent name
-  useEffect(() => {
-    const fetchAgent = async () => {
-      if (!conversation?.assigned_to) { setAgentName(null); return; }
-      const { data } = await supabase
-        .from('user_profiles')
-        .select('full_name')
-        .eq('id', conversation.assigned_to)
-        .maybeSingle();
-      setAgentName(data?.full_name || null);
-    };
-    fetchAgent();
-  }, [conversation?.assigned_to]);
 
   const fetchMessages = async () => {
     if (!conversation) return;
@@ -263,7 +253,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
           )}
         </div>
 
-        {/* Contact name + phone stacked */}
+        {/* Contact name + phone + agent stacked */}
         <div className="flex-1 min-w-0 flex flex-col justify-center">
           <h3 className="font-semibold text-sm truncate leading-tight">
             {contact?.name || contact?.phone || 'Desconhecido'}
@@ -271,6 +261,11 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
           {contact?.phone && (
             <span className="text-[11px] text-muted-foreground truncate leading-tight">
               {contact.phone}
+            </span>
+          )}
+          {agentName && (
+            <span className="text-[10px] text-primary/80 truncate leading-tight font-medium">
+              👤 {agentName}
             </span>
           )}
         </div>
