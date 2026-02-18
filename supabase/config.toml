@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.analyze-summaries]
 verify_jwt = false
+
+[functions.send-shift-report]
+verify_jwt = false
