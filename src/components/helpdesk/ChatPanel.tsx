@@ -4,10 +4,11 @@ import { MessageBubble } from './MessageBubble';
 import { ChatInput } from './ChatInput';
 import { Badge } from '@/components/ui/badge';
 import { nowBRISO } from '@/lib/dateUtils';
+import { NotesPanel } from './NotesPanel';
 
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose, Bot } from 'lucide-react';
+import { MessageSquare, ArrowLeft, User, PanelRightOpen, PanelRightClose, PanelLeftOpen, PanelLeftClose, Bot, StickyNote } from 'lucide-react';
 import { toast } from 'sonner';
 import type { Conversation, Message } from '@/pages/dashboard/HelpDesk';
 import type { Label } from './ConversationLabels';
@@ -34,6 +35,11 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
   const [agentName, setAgentName] = useState<string | null>(null);
   const [iaAtivada, setIaAtivada] = useState(false);
   const [ativandoIa, setAtivandoIa] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
+
+  // Separate notes from chat messages
+  const notes = messages.filter(m => m.direction === 'private_note');
+  const chatMessages = messages.filter(m => m.direction !== 'private_note');
 
   // Load IA state from database when conversation changes
   useEffect(() => {
@@ -309,6 +315,22 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
             </Button>
           )}
 
+          {/* Notes button */}
+          {notes.length > 0 && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="shrink-0 h-8 w-8 relative"
+              onClick={() => setNotesOpen(true)}
+              title="Ver notas privadas"
+            >
+              <StickyNote className="w-4 h-4 text-warning" />
+              <span className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] bg-primary text-primary-foreground text-[9px] font-bold rounded-full flex items-center justify-center px-0.5">
+                {notes.length}
+              </span>
+            </Button>
+          )}
+
           {onShowInfo && (
             <Button variant="ghost" size="icon" className="shrink-0 h-8 w-8" onClick={onShowInfo}>
               <User className="w-4 h-4" />
@@ -328,13 +350,13 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
           <div className="flex items-center justify-center py-12">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : messages.length === 0 ? (
+        ) : chatMessages.length === 0 ? (
           <div className="text-center text-muted-foreground py-12 text-sm">
             Nenhuma mensagem ainda
           </div>
         ) : (
           <div className="space-y-2">
-            {messages.map(msg => (
+            {chatMessages.map(msg => (
               <MessageBubble key={msg.id} message={msg} instanceId={conversation.inbox?.instance_id} agentNamesMap={agentNamesMap} />
             ))}
           </div>
@@ -344,6 +366,15 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
 
       {/* Input */}
       <ChatInput conversation={conversation} onMessageSent={() => { fetchMessages(); setIaAtivada(false); }} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />
+
+      {/* Notes Panel */}
+      <NotesPanel
+        open={notesOpen}
+        onOpenChange={setNotesOpen}
+        notes={notes}
+        onNoteDeleted={(noteId) => setMessages(prev => prev.filter(m => m.id !== noteId))}
+        agentNamesMap={agentNamesMap}
+      />
     </>
   );
 };
