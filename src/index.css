@@ -244,3 +244,42 @@
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ===== SCROLLBAR GLOBAL — Discreta e Moderna ===== */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(220 16% 28% / 0.4) transparent;
+}
+
+/* Chrome, Safari, Edge */
+*::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: hsl(220 16% 28% / 0.45);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: hsl(220 16% 42% / 0.7);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Override: elementos com .no-scrollbar não mostram nada */
+.no-scrollbar {
+  scrollbar-width: none !important;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
