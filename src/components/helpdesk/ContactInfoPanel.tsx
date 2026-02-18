@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Phone, ArrowLeft, Tags, Settings2, UserCheck, Sparkles, RefreshCw, Clock, Target, CheckCircle2, AlertCircle, History, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
+import { Phone, ArrowLeft, Tags, Settings2, UserCheck, Sparkles, RefreshCw, Clock, Target, CheckCircle2, AlertCircle, History, ChevronDown, ChevronUp, MessageSquare, Wand2 } from 'lucide-react';
 import type { Conversation, AiSummary } from '@/pages/dashboard/HelpDesk';
 import { ConversationLabels, type Label } from './ConversationLabels';
 import { LabelPicker } from './LabelPicker';
@@ -82,6 +82,7 @@ export const ContactInfoPanel = ({
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyExpanded, setHistoryExpanded] = useState(true);
   const [expandedSummaries, setExpandedSummaries] = useState<Set<string>>(new Set());
+  const [generatingSummaryFor, setGeneratingSummaryFor] = useState<string | null>(null);
 
   // Sync aiSummary when conversation changes
   useEffect(() => {
@@ -253,6 +254,46 @@ export const ContactInfoPanel = ({
       }
       return next;
     });
+  };
+
+  const handleGenerateHistorySummary = async (convId: string) => {
+    setGeneratingSummaryFor(convId);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Não autenticado');
+
+      const res = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/summarize-conversation`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ conversation_id: convId, force_refresh: false }),
+        }
+      );
+
+      const result = await res.json();
+
+      if (!res.ok) {
+        if (res.status === 429) throw new Error('Limite de IA atingido. Tente mais tarde.');
+        if (res.status === 402) throw new Error('Créditos de IA insuficientes.');
+        throw new Error(result.error || 'Erro ao gerar resumo');
+      }
+
+      // Update local state with the new summary
+      setPastConversations(prev =>
+        prev.map(c =>
+          c.id === convId ? { ...c, ai_summary: result.summary } : c
+        )
+      );
+      toast.success('Resumo gerado com sucesso!');
+    } catch (err: any) {
+      toast.error(err.message || 'Erro ao gerar resumo');
+    } finally {
+      setGeneratingSummaryFor(null);
+    }
   };
 
   return (
@@ -550,15 +591,34 @@ export const ContactInfoPanel = ({
                             </span>
                           </div>
 
-                          {/* Last message preview (if no summary) */}
-                          {!hasSummary && past.last_message && (
-                            <div className="px-2.5 pb-2">
-                              <div className="flex items-start gap-1">
-                                <MessageSquare className="w-2.5 h-2.5 text-muted-foreground mt-0.5 shrink-0" />
-                                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
-                                  {past.last_message}
-                                </p>
-                              </div>
+                          {/* Last message preview + generate summary button (if no summary) */}
+                          {!hasSummary && (
+                            <div className="px-2.5 pb-2 space-y-1.5">
+                              {past.last_message && (
+                                <div className="flex items-start gap-1">
+                                  <MessageSquare className="w-2.5 h-2.5 text-muted-foreground mt-0.5 shrink-0" />
+                                  <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                                    {past.last_message}
+                                  </p>
+                                </div>
+                              )}
+                              <button
+                                onClick={() => handleGenerateHistorySummary(past.id)}
+                                disabled={generatingSummaryFor === past.id}
+                                className="flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                              >
+                                {generatingSummaryFor === past.id ? (
+                                  <>
+                                    <Sparkles className="w-3 h-3 animate-pulse" />
+                                    Gerando resumo...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Wand2 className="w-3 h-3" />
+                                    Gerar resumo com IA
+                                  </>
+                                )}
+                              </button>
                             </div>
                           )}
 
