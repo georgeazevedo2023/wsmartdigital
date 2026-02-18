@@ -15,12 +15,13 @@ import type { Label } from './ConversationLabels';
 interface ChatInputProps {
   conversation: Conversation;
   onMessageSent: () => void;
+  onAgentAssigned?: (conversationId: string, agentId: string) => void;
   inboxLabels?: Label[];
   assignedLabelIds?: string[];
   onLabelsChanged?: () => void;
 }
 
-export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assignedLabelIds = [], onLabelsChanged }: ChatInputProps) => {
+export const ChatInput = ({ conversation, onMessageSent, onAgentAssigned, inboxLabels = [], assignedLabelIds = [], onLabelsChanged }: ChatInputProps) => {
   const { user } = useAuth();
 
   const autoAssignAgent = async () => {
@@ -31,7 +32,10 @@ export const ChatInput = ({ conversation, onMessageSent, inboxLabels = [], assig
         .update({ assigned_to: user.id })
         .eq('id', conversation.id);
 
-      // Broadcast para sincronizar UI em tempo real
+      // Callback imediato para UI local (sem depender do broadcast)
+      onAgentAssigned?.(conversation.id, user.id);
+
+      // Broadcast para sincronizar outros agentes em tempo real
       await supabase.channel('helpdesk-conversations').send({
         type: 'broadcast',
         event: 'assigned-agent',

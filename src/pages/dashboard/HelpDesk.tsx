@@ -369,6 +369,15 @@ const HelpDesk = () => {
     fetchConversationLabels(convIds);
   };
 
+  const handleAgentAssigned = (conversationId: string, agentId: string) => {
+    setConversations(prev =>
+      prev.map(c => c.id === conversationId ? { ...c, assigned_to: agentId } : c)
+    );
+    setSelectedConversation(prev =>
+      prev?.id === conversationId ? { ...prev, assigned_to: agentId } : prev
+    );
+  };
+
   const filteredConversations = conversations.filter(c => {
     // Search filter
     if (searchQuery) {
@@ -481,6 +490,7 @@ const HelpDesk = () => {
               assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}
               onLabelsChanged={handleLabelsChanged}
               agentNamesMap={agentNamesMap}
+              onAgentAssigned={handleAgentAssigned}
             />
           </div>
         )}
@@ -541,6 +551,7 @@ const HelpDesk = () => {
             assignedLabelIds={selectedConversation ? conversationLabelsMap[selectedConversation.id] || [] : []}
             onLabelsChanged={handleLabelsChanged}
             agentNamesMap={agentNamesMap}
+            onAgentAssigned={handleAgentAssigned}
           />
         </div>
 

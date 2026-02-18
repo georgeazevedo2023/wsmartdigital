@@ -26,9 +26,10 @@ interface ChatPanelProps {
   assignedLabelIds?: string[];
   onLabelsChanged?: () => void;
   agentNamesMap?: Record<string, string>;
+  onAgentAssigned?: (conversationId: string, agentId: string) => void;
 }
 
-export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo, onToggleList, showingList, inboxLabels, assignedLabelIds, onLabelsChanged, agentNamesMap }: ChatPanelProps) => {
+export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowInfo, onToggleInfo, showingInfo, onToggleList, showingList, inboxLabels, assignedLabelIds, onLabelsChanged, agentNamesMap, onAgentAssigned }: ChatPanelProps) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -360,7 +361,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
       </div>
 
       {/* Input */}
-      <ChatInput conversation={conversation} onMessageSent={() => { fetchMessages(); setIaAtivada(false); }} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />
+      <ChatInput conversation={conversation} onMessageSent={() => { fetchMessages(); setIaAtivada(false); }} onAgentAssigned={onAgentAssigned} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />
 
       {/* Notes Panel */}
       <NotesPanel
