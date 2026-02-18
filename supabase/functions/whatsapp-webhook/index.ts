@@ -274,7 +274,7 @@ Deno.serve(async (req) => {
     const owner = payload.owner || chatId.split('@')[0] || ''
 
     // Extract content and media
-    const mediaType = normalizeMediaType(message.mediaType || message.type || '')
+    const mediaType = normalizeMediaType(message.mediaType || message.messageType || message.type || '')
     let mediaUrl = message.fileURL || message.mediaUrl || ''
     if (!mediaUrl && message.content && typeof message.content === 'object') {
       mediaUrl = message.content.URL || message.content.url || ''
