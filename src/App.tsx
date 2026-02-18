@@ -25,6 +25,7 @@ const LeadsBroadcaster = lazy(() => import("./pages/dashboard/LeadsBroadcaster")
 const HelpDesk = lazy(() => import("./pages/dashboard/HelpDesk"));
 const InboxManagement = lazy(() => import("./pages/dashboard/InboxManagement"));
 const InboxUsersManagement = lazy(() => import("./pages/dashboard/InboxUsersManagement"));
+const AdminPanel = lazy(() => import("./pages/dashboard/AdminPanel"));
 
 const queryClient = new QueryClient();
 
@@ -126,8 +127,12 @@ const AppRoutes = () => {
         <Route path="helpdesk" element={<Suspense fallback={<PageLoader />}><HelpDesk /></Suspense>} />
         <Route path="inboxes" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxManagement /></Suspense></AdminRoute>} />
         <Route path="inbox-users" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></AdminRoute>} />
-        {/* Redirect alias for legacy/bookmarked URLs */}
+        <Route path="admin" element={<AdminRoute><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></AdminRoute>} />
+        {/* Redirect legacy/bookmarked URLs */}
         <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
+        <Route path="users" element={<Navigate to="/dashboard/admin" replace />} />
+        <Route path="inboxes" element={<Navigate to="/dashboard/admin" replace />} />
+        <Route path="inbox-users" element={<Navigate to="/dashboard/admin" replace />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
