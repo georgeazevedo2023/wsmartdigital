@@ -196,6 +196,7 @@ export type Database = {
       conversations: {
         Row: {
           ai_summary: Json | null
+          ai_summary_expires_at: string | null
           assigned_to: string | null
           contact_id: string
           created_at: string
@@ -211,6 +212,7 @@ export type Database = {
         }
         Insert: {
           ai_summary?: Json | null
+          ai_summary_expires_at?: string | null
           assigned_to?: string | null
           contact_id: string
           created_at?: string
@@ -226,6 +228,7 @@ export type Database = {
         }
         Update: {
           ai_summary?: Json | null
+          ai_summary_expires_at?: string | null
           assigned_to?: string | null
           contact_id?: string
           created_at?: string

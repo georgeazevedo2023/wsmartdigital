@@ -347,16 +347,10 @@ export const ContactInfoPanel = ({
           </div>
         )}
 
-        {!summarizing && !aiSummary && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full h-8 text-xs gap-1.5 border-dashed"
-            onClick={() => handleSummarize(false)}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-primary" />
-            Resumir conversa
-          </Button>
+      {!summarizing && !aiSummary && (
+          <p className="text-xs text-muted-foreground italic py-1">
+            Resumo gerado automaticamente ao resolver a conversa ou após 1h de inatividade.
+          </p>
         )}
 
         {!summarizing && aiSummary && (
