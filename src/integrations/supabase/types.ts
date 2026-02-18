@@ -398,6 +398,235 @@ export type Database = {
         }
         Relationships: []
       }
+      kanban_boards: {
+        Row: {
+          created_at: string
+          created_by: string
+          description: string | null
+          id: string
+          inbox_id: string | null
+          instance_id: string | null
+          name: string
+          updated_at: string
+          visibility: Database["public"]["Enums"]["kanban_visibility"]
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          description?: string | null
+          id?: string
+          inbox_id?: string | null
+          instance_id?: string | null
+          name: string
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["kanban_visibility"]
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          id?: string
+          inbox_id?: string | null
+          instance_id?: string | null
+          name?: string
+          updated_at?: string
+          visibility?: Database["public"]["Enums"]["kanban_visibility"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_boards_inbox_id_fkey"
+            columns: ["inbox_id"]
+            isOneToOne: false
+            referencedRelation: "inboxes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kanban_boards_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_card_data: {
+        Row: {
+          card_id: string
+          created_at: string
+          field_id: string
+          id: string
+          value: string | null
+        }
+        Insert: {
+          card_id: string
+          created_at?: string
+          field_id: string
+          id?: string
+          value?: string | null
+        }
+        Update: {
+          card_id?: string
+          created_at?: string
+          field_id?: string
+          id?: string
+          value?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_card_data_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_cards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kanban_card_data_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_fields"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_cards: {
+        Row: {
+          assigned_to: string | null
+          board_id: string
+          column_id: string
+          created_at: string
+          created_by: string
+          id: string
+          position: number
+          tags: string[]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          board_id: string
+          column_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          position?: number
+          tags?: string[]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          board_id?: string
+          column_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          position?: number
+          tags?: string[]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_cards_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kanban_cards_column_id_fkey"
+            columns: ["column_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_columns"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_columns: {
+        Row: {
+          automation_enabled: boolean
+          automation_message: string | null
+          board_id: string
+          color: string
+          created_at: string
+          id: string
+          name: string
+          position: number
+        }
+        Insert: {
+          automation_enabled?: boolean
+          automation_message?: string | null
+          board_id: string
+          color?: string
+          created_at?: string
+          id?: string
+          name: string
+          position?: number
+        }
+        Update: {
+          automation_enabled?: boolean
+          automation_message?: string | null
+          board_id?: string
+          color?: string
+          created_at?: string
+          id?: string
+          name?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_columns_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_fields: {
+        Row: {
+          board_id: string
+          created_at: string
+          field_type: Database["public"]["Enums"]["kanban_field_type"]
+          id: string
+          is_primary: boolean
+          name: string
+          options: Json | null
+          position: number
+          required: boolean
+        }
+        Insert: {
+          board_id: string
+          created_at?: string
+          field_type?: Database["public"]["Enums"]["kanban_field_type"]
+          id?: string
+          is_primary?: boolean
+          name: string
+          options?: Json | null
+          position?: number
+          required?: boolean
+        }
+        Update: {
+          board_id?: string
+          created_at?: string
+          field_type?: Database["public"]["Enums"]["kanban_field_type"]
+          id?: string
+          is_primary?: boolean
+          name?: string
+          options?: Json | null
+          position?: number
+          required?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_fields_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       labels: {
         Row: {
           color: string
@@ -856,6 +1085,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_access_kanban_board: {
+        Args: { _board_id: string; _user_id: string }
+        Returns: boolean
+      }
+      can_access_kanban_card: {
+        Args: { _card_id: string; _user_id: string }
+        Returns: boolean
+      }
       get_inbox_role: {
         Args: { _inbox_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["inbox_role"]
@@ -881,6 +1118,8 @@ export type Database = {
     Enums: {
       app_role: "super_admin" | "user"
       inbox_role: "admin" | "gestor" | "agente"
+      kanban_field_type: "text" | "currency" | "date" | "select"
+      kanban_visibility: "shared" | "private"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1010,6 +1249,8 @@ export const Constants = {
     Enums: {
       app_role: ["super_admin", "user"],
       inbox_role: ["admin", "gestor", "agente"],
+      kanban_field_type: ["text", "currency", "date", "select"],
+      kanban_visibility: ["shared", "private"],
     },
   },
 } as const
