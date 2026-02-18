@@ -1,63 +1,52 @@
 
-# Agente Responsável: Auto-atribuição, Transferência e Remoção
+# Fix: Outros agentes não aparecem no seletor de Agente Responsável
 
-## Diagnóstico do Problema Atual
+## Causa Raiz
 
-Existem três pontos de falha:
+A função `fetchAgentNames` no `HelpDesk.tsx` faz a seguinte query:
+```typescript
+supabase.from('user_profiles').select('id, full_name')
+```
 
-1. **Auto-atribuição não reflete na UI**: A função `autoAssignAgent()` no `ChatInput` atualiza o banco, mas o `selectedConversation` no `HelpDesk.tsx` não é sincronizado — a tela continua mostrando "Nenhum" como agente.
+Porém a política RLS atual da tabela `user_profiles` tem apenas:
+- `Users can view own profile` — `USING (auth.uid() = id)` 
+- `Super admin can view all profiles` — só para super admins
 
-2. **Lista de agentes vazia no ContactInfoPanel**: A query de `inbox_users` faz join com `user_profiles`, mas a política RLS de `user_profiles` só permite que cada usuário veja o próprio perfil. Agentes não conseguem listar outros agentes.
+Isso significa que **Milena consegue ler apenas o próprio perfil**. Bruno não aparece no `agentNamesMap`. O `ContactInfoPanel` encontra o `user_id` do Bruno via `inbox_users` (essa query funciona), mas ao tentar resolver o nome via `agentNamesMap[brunoid]` retorna `undefined` — exibindo um UUID truncado ou não exibindo corretamente.
 
-3. **Badge de agente na lista não exibe nome**: O `agentNamesMap` é preenchido corretamente, mas como o `assigned_to` da conversa não é atualizado no estado local após a auto-atribuição, o badge nunca aparece.
+A opção "Nenhum" já existe no código (`__none__`), então o botão de remover atribuição já funciona quando a lista está correta.
 
 ## Solução
 
-### 1. `src/components/helpdesk/ChatInput.tsx`
-- Após `autoAssignAgent()`, emitir um broadcast `assigned-agent` com o `conversation_id` e `assigned_to: user.id`
-- Isso notifica o `HelpDesk.tsx` para atualizar o estado local da conversa em tempo real
+### 1. Migração de banco de dados (única mudança necessária)
 
-### 2. `src/pages/dashboard/HelpDesk.tsx`
-- Subscrever ao evento broadcast `assigned-agent` no canal `helpdesk-conversations`
-- Ao receber, atualizar `conversations` e `selectedConversation` com o novo `assigned_to`
+Adicionar uma nova política RLS em `user_profiles` que permite que membros de uma mesma inbox vejam os perfis uns dos outros:
 
-### 3. `src/components/helpdesk/ContactInfoPanel.tsx`
-- Substituir a query de `inbox_users` (que falha por RLS) por uma alternativa que usa o `agentNamesMap` já disponível no `HelpDesk.tsx`
-- Receber `agentNamesMap` como prop e combinar com os membros da inbox via uma query que funciona para todos os papéis
-- Adicionar opção "Sem agente" para **remover** atribuição (já existe como `__none__` mas precisa disparar corretamente)
-- Ao atribuir/transferir, atualizar localmente via broadcast `assigned-agent`
-
-### 4. `src/components/helpdesk/ChatPanel.tsx`
-- Exibir o nome do agente responsável na área abaixo do nome do contato no header, usando `agentNamesMap`
-
-## Fluxo Completo
-
-```text
-Agente envia mensagem
-  → autoAssignAgent() → DB: conversations.assigned_to = user.id
-  → broadcast 'assigned-agent' { conversation_id, assigned_to: user.id }
-
-HelpDesk ouve broadcast 'assigned-agent'
-  → atualiza conversations[id].assigned_to
-  → atualiza selectedConversation.assigned_to
-  → ConversationItem mostra badge com nome do agente
-
-ContactInfoPanel (seletor manual)
-  → lista agentes via agentNamesMap (prop recebida)
-  → ao selecionar → onUpdateConversation → DB + broadcast 'assigned-agent'
-  → ao selecionar "Nenhum" → assigned_to = null + broadcast
+```sql
+CREATE POLICY "Inbox members can view co-member profiles"
+ON public.user_profiles
+FOR SELECT
+USING (
+  EXISTS (
+    SELECT 1 FROM inbox_users iu1
+    JOIN inbox_users iu2 ON iu1.inbox_id = iu2.inbox_id
+    WHERE iu1.user_id = auth.uid()
+    AND iu2.user_id = user_profiles.id
+  )
+);
 ```
 
-## Arquivos Afetados
+**Como funciona:** Milena (autenticada) pode ver o perfil de Bruno se ambos compartilham pelo menos uma inbox na tabela `inbox_users`. Nenhuma alteração de código é necessária.
 
-- **`src/components/helpdesk/ChatInput.tsx`**: broadcast após auto-atribuição
-- **`src/pages/dashboard/HelpDesk.tsx`**: escutar broadcast e atualizar estado; passar `agentNamesMap` ao `ContactInfoPanel`
-- **`src/components/helpdesk/ContactInfoPanel.tsx`**: receber `agentNamesMap` como prop para preencher lista de agentes sem depender de RLS; broadcast ao fazer atribuição manual
-- **`src/components/helpdesk/ChatPanel.tsx`**: mostrar nome do agente responsável no header
+## Impacto nos Arquivos
 
-## Detalhes Técnicos
+- **`supabase/migrations/`**: Nova migração com a política RLS
+- **Nenhum arquivo de código precisa ser modificado** — o `fetchAgentNames`, `agentNamesMap` e `ContactInfoPanel` já estão implementados corretamente. Só faltava o banco liberar a leitura dos co-membros.
 
-- O broadcast `assigned-agent` usa o canal `helpdesk-conversations` já existente, sem criar canais novos
-- O `ContactInfoPanel` receberá a prop `agentNamesMap: Record<string, string>` — o `HelpDesk.tsx` já a possui e precisa apenas passá-la adiante
-- A remoção de atribuição (`__none__`) define `assigned_to: null` tanto no DB quanto no broadcast, e o badge some automaticamente
-- Para a lista de agentes no `ContactInfoPanel`, será feita uma query em `inbox_users` filtrando pelo `inbox_id` e cruzando os `user_id` com o `agentNamesMap` já carregado — evitando a necessidade de ler `user_profiles` diretamente
+## Resultado Esperado
+
+Após a migração:
+- `agentNamesMap` terá os nomes de **todos os agentes** da inbox (Milena, Bruno, etc.)
+- O dropdown "Agente Responsável" exibirá todos os agentes por nome
+- A opção "Nenhum" (que já existe) permitirá remover a atribuição
+- A auto-atribuição ao responder continuará funcionando normalmente via broadcast
