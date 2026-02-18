@@ -26,7 +26,7 @@ interface Inbox {
 }
 
 const KanbanCRM = () => {
-  const { user } = useAuth();
+  const { user, isSuperAdmin, isGerente } = useAuth();
   const [boards, setBoards] = useState<KanbanBoard[]>([]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +76,9 @@ const KanbanCRM = () => {
     (b.description || '').toLowerCase().includes(search.toLowerCase())
   );
 
+  // Apenas super_admin pode criar/gerenciar quadros
+  const canManage = isSuperAdmin;
+
   return (
     <div className="flex flex-col h-full p-6 gap-6">
       {/* Header */}
@@ -86,13 +89,15 @@ const KanbanCRM = () => {
           </div>
           <div>
             <h1 className="text-xl font-display font-bold text-foreground">Kanban CRM</h1>
-            <p className="text-xs text-muted-foreground">{boards.length} quadro{boards.length !== 1 ? 's' : ''} configurado{boards.length !== 1 ? 's' : ''}</p>
+            <p className="text-xs text-muted-foreground">{boards.length} quadro{boards.length !== 1 ? 's' : ''} {boards.length !== 1 ? 'disponíveis' : 'disponível'}</p>
           </div>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2">
-          <Plus className="w-4 h-4" />
-          Novo Quadro
-        </Button>
+        {canManage && (
+          <Button onClick={() => setCreateOpen(true)} className="gap-2">
+            <Plus className="w-4 h-4" />
+            Novo Quadro
+          </Button>
+        )}
       </div>
 
       {/* Search */}
@@ -114,33 +119,46 @@ const KanbanCRM = () => {
           <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
         </div>
       ) : boards.length === 0 ? (
-        /* Empty state */
+        /* Empty state — diferenciado por papel */
         <div className="flex-1 flex flex-col items-center justify-center gap-6 text-center">
           <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
             <Kanban className="w-10 h-10 text-primary" />
           </div>
-          <div>
-            <h2 className="text-xl font-display font-bold text-foreground">Nenhum quadro criado</h2>
-            <p className="text-muted-foreground mt-2 max-w-sm">
-              Crie seu primeiro pipeline para gerenciar leads, vendas ou processos de atendimento.
-            </p>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md w-full">
-            <div className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card text-center">
-              <LayoutGrid className="w-6 h-6 text-primary" />
-              <span className="text-sm font-medium">Quadros Personalizados</span>
-              <span className="text-xs text-muted-foreground">Colunas, campos e regras de visibilidade</span>
-            </div>
-            <div className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card text-center">
-              <Kanban className="w-6 h-6 text-primary" />
-              <span className="text-sm font-medium">Integração WhatsApp</span>
-              <span className="text-xs text-muted-foreground">Automações por etapa do funil</span>
-            </div>
-          </div>
-          <Button size="lg" onClick={() => setCreateOpen(true)} className="gap-2">
-            <Plus className="w-4 h-4" />
-            Criar Primeiro Quadro
-          </Button>
+          {canManage ? (
+            <>
+              <div>
+                <h2 className="text-xl font-display font-bold text-foreground">Nenhum quadro criado</h2>
+                <p className="text-muted-foreground mt-2 max-w-sm">
+                  Crie seu primeiro pipeline para gerenciar leads, vendas ou processos de atendimento.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-md w-full">
+                <div className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card text-center">
+                  <LayoutGrid className="w-6 h-6 text-primary" />
+                  <span className="text-sm font-medium">Quadros Personalizados</span>
+                  <span className="text-xs text-muted-foreground">Colunas, campos e regras de visibilidade</span>
+                </div>
+                <div className="flex flex-col items-center gap-2 p-4 rounded-xl border border-border bg-card text-center">
+                  <Kanban className="w-6 h-6 text-primary" />
+                  <span className="text-sm font-medium">Integração WhatsApp</span>
+                  <span className="text-xs text-muted-foreground">Automações por etapa do funil</span>
+                </div>
+              </div>
+              <Button size="lg" onClick={() => setCreateOpen(true)} className="gap-2">
+                <Plus className="w-4 h-4" />
+                Criar Primeiro Quadro
+              </Button>
+            </>
+          ) : (
+            <>
+              <div>
+                <h2 className="text-xl font-display font-bold text-foreground">Nenhum quadro disponível</h2>
+                <p className="text-muted-foreground mt-2 max-w-sm">
+                  Você ainda não tem acesso a nenhum quadro. Aguarde o administrador configurar e vincular um quadro à sua caixa de atendimento.
+                </p>
+              </div>
+            </>
+          )}
         </div>
       ) : filtered.length === 0 ? (
         <div className="flex-1 flex items-center justify-center text-muted-foreground">
@@ -154,17 +172,20 @@ const KanbanCRM = () => {
               board={board}
               inboxes={inboxes}
               onRefresh={loadData}
+              canManage={canManage}
             />
           ))}
         </div>
       )}
 
-      <CreateBoardDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        inboxes={inboxes}
-        onCreated={loadData}
-      />
+      {canManage && (
+        <CreateBoardDialog
+          open={createOpen}
+          onOpenChange={setCreateOpen}
+          inboxes={inboxes}
+          onCreated={loadData}
+        />
+      )}
     </div>
   );
 };

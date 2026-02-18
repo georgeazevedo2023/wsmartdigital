@@ -44,7 +44,7 @@ interface TeamMember {
 const KanbanBoard = () => {
   const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
-  const { user, isSuperAdmin } = useAuth();
+  const { user, isSuperAdmin, isGerente } = useAuth();
 
   const [board, setBoard] = useState<BoardData | null>(null);
   const [columns, setColumns] = useState<ColumnData[]>([]);
@@ -381,6 +381,7 @@ const KanbanBoard = () => {
                 cards={getColumnCards(col.id)}
                 onCardClick={handleCardClick}
                 onAddCard={openAddCard}
+                canAddCard={isSuperAdmin || isGerente}
               />
             ))}
 

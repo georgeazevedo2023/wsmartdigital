@@ -19,9 +19,10 @@ interface KanbanColumnProps {
   cards: CardData[];
   onCardClick: (card: CardData) => void;
   onAddCard: (columnId: string) => void;
+  canAddCard?: boolean;
 }
 
-export function KanbanColumn({ column, cards, onCardClick, onAddCard }: KanbanColumnProps) {
+export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard = false }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
   return (
@@ -73,18 +74,20 @@ export function KanbanColumn({ column, cards, onCardClick, onAddCard }: KanbanCo
         </div>
       </SortableContext>
 
-      {/* Add card button */}
-      <div className="p-2 border-t border-border/60">
-        <Button
-          variant="ghost"
-          size="sm"
-          className="w-full gap-1.5 text-muted-foreground hover:text-foreground h-8 text-xs"
-          onClick={() => onAddCard(column.id)}
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Adicionar card
-        </Button>
-      </div>
+      {/* Add card button — apenas para quem pode criar cards */}
+      {canAddCard && (
+        <div className="p-2 border-t border-border/60">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full gap-1.5 text-muted-foreground hover:text-foreground h-8 text-xs"
+            onClick={() => onAddCard(column.id)}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Adicionar card
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

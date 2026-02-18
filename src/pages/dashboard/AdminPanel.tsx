@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Navigate } from 'react-router-dom';
@@ -73,6 +73,7 @@ import {
   UserPlus,
   Phone,
   AlertTriangle,
+  Briefcase,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ManageInboxUsersDialog from '@/components/dashboard/ManageInboxUsersDialog';
@@ -799,7 +800,7 @@ const AdminPanel = () => {
                                 <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-primary" /> Super Admin</span>
                               </SelectItem>
                               <SelectItem value="gerente">
-                                <span className="flex items-center gap-1.5"><User className="w-3.5 h-3.5 text-blue-400" /> Gerente</span>
+                                <span className="flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5 text-info" /> Gerente</span>
                               </SelectItem>
                               <SelectItem value="user">
                                 <span className="flex items-center gap-1.5"><Headphones className="w-3.5 h-3.5 text-muted-foreground" /> Atendente</span>
@@ -865,9 +866,19 @@ const AdminPanel = () => {
                       </div>
                       <Badge
                         variant="outline"
-                        className={u.app_role === 'super_admin' ? 'gap-1 shrink-0 bg-primary/10 text-primary border-primary/20' : u.app_role === 'gerente' ? 'gap-1 shrink-0 bg-blue-500/10 text-blue-400 border-blue-500/20' : 'gap-1 shrink-0 text-muted-foreground'}
+                        className={
+                          u.app_role === 'super_admin'
+                            ? 'gap-1 shrink-0 bg-primary/10 text-primary border-primary/20'
+                            : u.app_role === 'gerente'
+                            ? 'gap-1 shrink-0 bg-info/10 text-info border-info/20'
+                            : 'gap-1 shrink-0 bg-muted text-muted-foreground border-border'
+                        }
                       >
-                        {u.app_role === 'super_admin' ? <><Shield className="w-3 h-3" /> Admin</> : u.app_role === 'gerente' ? <><User className="w-3 h-3" /> Gerente</> : <><Headphones className="w-3 h-3" /> Atendente</>}
+                        {u.app_role === 'super_admin'
+                          ? <><Shield className="w-3 h-3" /> Admin</>
+                          : u.app_role === 'gerente'
+                          ? <><Briefcase className="w-3 h-3" /> Gerente</>
+                          : <><Headphones className="w-3 h-3" /> Atendente</>}
                       </Badge>
                     </div>
                     <div className="flex flex-wrap gap-2">
@@ -876,9 +887,15 @@ const AdminPanel = () => {
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="super_admin">Super Admin</SelectItem>
-                          <SelectItem value="gerente">Gerente</SelectItem>
-                          <SelectItem value="user">Atendente</SelectItem>
+                          <SelectItem value="super_admin">
+                            <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-primary" /> Super Admin</span>
+                          </SelectItem>
+                          <SelectItem value="gerente">
+                            <span className="flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5 text-info" /> Gerente</span>
+                          </SelectItem>
+                          <SelectItem value="user">
+                            <span className="flex items-center gap-1.5"><Headphones className="w-3.5 h-3.5 text-muted-foreground" /> Atendente</span>
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                       <Button variant="outline" size="sm" className="flex-1 h-9 text-xs" onClick={() => { setManageInstancesUser(u); setIsManageInstancesOpen(true); }}>
@@ -1037,22 +1054,23 @@ const AdminPanel = () => {
               <Label>Perfil de Acesso *</Label>
               <div className="grid grid-cols-3 gap-2">
                 {([
-                  { value: 'super_admin', label: 'Super Admin', desc: 'Acesso total' },
-                  { value: 'gerente', label: 'Gerente', desc: 'Atendimento e CRM' },
-                  { value: 'user', label: 'Atendente', desc: 'Apenas caixas' },
-                ] as { value: AppRole; label: string; desc: string }[]).map(opt => (
+                  { value: 'super_admin', label: 'Super Admin', desc: 'Acesso total ao sistema', Icon: Shield },
+                  { value: 'gerente', label: 'Gerente', desc: 'Atendimento e CRM', Icon: Briefcase },
+                  { value: 'user', label: 'Atendente', desc: 'Apenas suas caixas', Icon: Headphones },
+                ] as { value: AppRole; label: string; desc: string; Icon: React.ElementType }[]).map(opt => (
                   <button
                     key={opt.value}
                     type="button"
                     onClick={() => setNewUserRole(opt.value)}
-                    className={`flex flex-col items-center gap-1 p-3 rounded-lg border text-center transition-all ${
+                    className={`flex flex-col items-center gap-1.5 p-3 rounded-lg border text-center transition-all ${
                       newUserRole === opt.value
                         ? 'border-primary bg-primary/10 text-primary'
                         : 'border-border bg-muted/20 text-muted-foreground hover:border-primary/40'
                     }`}
                   >
-                    <span className="text-xs font-semibold">{opt.label}</span>
-                    <span className="text-[10px] opacity-70">{opt.desc}</span>
+                    <opt.Icon className={`w-5 h-5 ${newUserRole === opt.value ? 'text-primary' : 'text-muted-foreground'}`} />
+                    <span className="text-xs font-semibold leading-tight">{opt.label}</span>
+                    <span className="text-[10px] opacity-70 leading-tight">{opt.desc}</span>
                   </button>
                 ))}
               </div>
