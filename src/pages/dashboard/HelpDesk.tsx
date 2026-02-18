@@ -377,6 +377,13 @@ const HelpDesk = () => {
     );
   };
 
+  const handleInboxChange = (newInboxId: string) => {
+    setSelectedConversation(null);
+    setLabelFilter(null);
+    setSelectedInboxId(newInboxId);
+    if (isMobile) setMobileView('list');
+  };
+
   const [assignmentFilter, setAssignmentFilter] = useState<'todas' | 'minhas' | 'nao-atribuidas'>('todas');
   const [priorityFilter, setPriorityFilter] = useState<'todas' | 'alta' | 'media' | 'baixa'>('todas');
 
@@ -436,7 +443,7 @@ const HelpDesk = () => {
         {inboxes.length > 0 && (
           <div className="ml-auto flex items-center gap-1.5 shrink-0">
             <span className="hidden md:inline text-xs text-muted-foreground">Caixa:</span>
-            <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
+            <Select value={selectedInboxId} onValueChange={handleInboxChange}>
               <SelectTrigger className="w-36 md:w-48 h-7 text-xs border-border/30 bg-secondary/50">
                 <SelectValue placeholder="Selecionar inbox" />
               </SelectTrigger>
