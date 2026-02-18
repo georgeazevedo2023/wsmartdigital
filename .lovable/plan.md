@@ -1,72 +1,50 @@
 
-# Scrollbars Discretas e Modernas
+# Bug Fix: Limpar conversa ao trocar de caixa de entrada
 
-## O que será feito
+## Diagnóstico
 
-Atualmente o projeto tem apenas a classe `.no-scrollbar` (que esconde a barra completamente). A imagem mostra uma barra de rolagem branca/clara que destoa do tema dark — visivelmente no painel de chat e na lista de conversas.
+No `HelpDesk.tsx`, o seletor de caixa chama diretamente `setSelectedInboxId`:
 
-Vou adicionar regras CSS globais no `src/index.css` que estilizam todas as barras de rolagem do sistema para ficarem discretas, finas e alinhadas ao tema dark premium já existente.
+```tsx
+<Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
+```
 
----
+Quando o valor muda, `fetchConversations()` é chamado (via `useEffect` que depende de `selectedInboxId`), mas o `selectedConversation` **nunca é resetado para `null`**.
 
-## Estratégia visual
+Resultado: o chat panel continua mostrando a conversa da caixa anterior, mesmo que ela não pertença à nova caixa selecionada.
 
-- **Largura fina**: `6px` (não `8px` padrão do browser)
-- **Cor da track**: totalmente transparente (track invisível)
-- **Cor do thumb**: `hsl(220 16% 30% / 0.5)` — cinza-azulado escuro com 50% de opacidade, quase invisível no fundo dark
-- **Hover**: sobe para `hsl(220 16% 40% / 0.7)` — fica um pouco mais visível só quando o usuário está usando
-- **Bordas arredondadas**: `border-radius: 999px` para visual pill/moderno
-- **Comportamento Firefox**: usa `scrollbar-width: thin` e `scrollbar-color` (API moderna)
+## Solução
 
----
+Criar um handler intermediário `handleInboxChange` que:
+1. Limpa `selectedConversation` → `null`
+2. Chama `setSelectedInboxId` com o novo valor
+3. No mobile, volta para a view de lista (`setMobileView('list')`)
+4. Limpa filtros secundários que são específicos da caixa (label filter)
 
 ## Arquivo a modificar
 
-### `src/index.css`
+### `src/pages/dashboard/HelpDesk.tsx`
 
-Adicionar ao final do arquivo, fora dos `@layer`, para garantir que as regras se apliquem globalmente:
+**1. Adicionar o handler `handleInboxChange` após o `handleAgentAssigned`:**
 
-```css
-/* ===== SCROLLBAR GLOBAL — Discreta e Moderna ===== */
-
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(220 16% 30% / 0.4) transparent;
-}
-
-/* Chrome, Safari, Edge */
-*::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
-
-*::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-*::-webkit-scrollbar-thumb {
-  background: hsl(220 16% 30% / 0.45);
-  border-radius: 999px;
-}
-
-*::-webkit-scrollbar-thumb:hover {
-  background: hsl(220 16% 42% / 0.7);
-}
-
-*::-webkit-scrollbar-corner {
-  background: transparent;
-}
+```tsx
+const handleInboxChange = (newInboxId: string) => {
+  setSelectedConversation(null);
+  setLabelFilter(null);
+  setSelectedInboxId(newInboxId);
+  if (isMobile) setMobileView('list');
+};
 ```
 
----
+**2. Atualizar o `<Select>` do seletor de caixa para usar o novo handler:**
 
-## Resultado esperado
+```tsx
+<Select value={selectedInboxId} onValueChange={handleInboxChange}>
+```
 
-| Antes | Depois |
-|---|---|
-| Barra branca/clara larga e visualmente pesada | Barra cinza-azulada fina (5px), quase invisível |
-| Track (trilho) branca ou cinza claro | Track completamente transparente |
-| Sem hover effect | Ligeiramente mais visível ao passar o mouse |
+## Impacto
 
-A mudança afeta todo o app (lista de conversas, painel de chat, painel admin, etc.) de forma consistente com o tema dark.
+- Sem mudanças de banco de dados
+- Sem mudanças de UI
+- Correção cirúrgica: apenas 1 handler novo + 1 referência atualizada
+- Resolve o bug no mobile e desktop
