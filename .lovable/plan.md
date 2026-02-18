@@ -1,72 +1,100 @@
 
-# Fix definitivo: Bruno não aparece — RLS de `inbox_users` bloqueia a query
+# Fix Crítico: Recursão infinita nas políticas RLS
 
-## Causa raiz confirmada via banco de dados
+## O problema
 
-A query de duas etapas está correta no código. O problema está na **política RLS da tabela `inbox_users`**:
-
-```
-Policy: "Users can view own inbox memberships"
-USING (auth.uid() = user_id)
-```
-
-Esta política faz com que Milena, ao executar:
-```typescript
-supabase.from('inbox_users').select('user_id').eq('inbox_id', conversation.inbox_id)
-```
-
-...receba **apenas a própria linha** (seu próprio `user_id`). Bruno e Arthur ficam invisíveis para ela. A segunda query no `user_profiles` recebe só o ID de Milena, e é por isso apenas ela aparece.
-
-Simulação confirmada no banco:
-- Banco real tem: Arthur, Bruno, Milena na inbox
-- Milena vê apenas: ela própria (1 row)
-
-## Solução
-
-### 1. Nova política RLS em `inbox_users` (migração)
-
-Adicionar uma política que permite que membros de uma inbox vejam os outros membros da mesma inbox:
+A última migração criou uma política em `inbox_users` que consulta a própria tabela `inbox_users`:
 
 ```sql
+-- CAUSA DO PROBLEMA: inbox_users consultando inbox_users
 CREATE POLICY "Inbox members can view co-members"
-ON public.inbox_users
-FOR SELECT
+ON public.inbox_users FOR SELECT
 USING (
   EXISTS (
-    SELECT 1 FROM inbox_users my_membership
+    SELECT 1 FROM inbox_users my_membership  -- <-- self-reference!
     WHERE my_membership.user_id = auth.uid()
-      AND my_membership.inbox_id = inbox_users.inbox_id
+    AND my_membership.inbox_id = inbox_users.inbox_id
   )
 );
 ```
 
-**Como funciona:** Milena pode ver qualquer linha de `inbox_users` onde `inbox_id` seja uma inbox que ela mesma já faz parte. Isso é seguro — ela não vê membros de inboxes alheias.
+Quando o Postgres avalia essa política para qualquer linha de `inbox_users`, ele precisa consultar `inbox_users` novamente para verificar o `EXISTS`, o que dispara a mesma política, criando um loop infinito. Resultado: **erro 42P17 - infinite recursion** que derruba absolutamente todas as queries que tocam `inbox_users` ou `user_profiles` (que também faz JOIN em `inbox_users`).
 
-## Por que apenas o banco precisa mudar
+## A solução correta: função SECURITY DEFINER
 
-O código em `ContactInfoPanel.tsx` já está implementado corretamente com as duas queries sequenciais. Uma vez que a política RLS libere a leitura dos co-membros em `inbox_users`, a query retornará os IDs de Arthur, Bruno e Milena, e a segunda query em `user_profiles` (já protegida pela política "Inbox members can view co-member profiles") resolverá os nomes corretamente.
+O padrão correto para evitar recursão em RLS é criar uma **função com `SECURITY DEFINER`**, que executa com os privilégios do owner (superuser), bypassando completamente as políticas RLS ao fazer a consulta interna:
 
-## Fluxo após o fix
-
-```text
-Milena acessa ContactInfoPanel
-  → Query 1: inbox_users WHERE inbox_id = X
-    → Retorna: [milena_id, bruno_id, arthur_id]  ✓ (antes: só [milena_id])
-  → Query 2: user_profiles WHERE id IN [milena_id, bruno_id, arthur_id]
-    → Retorna: [{Milena}, {Bruno}, {Arthur}]     ✓ (antes: só [{Milena}])
-  → Dropdown exibe: — Nenhum —, Arthur, Bruno, Milena  ✓
+```sql
+-- Função que verifica membership SEM acionar RLS
+CREATE OR REPLACE FUNCTION public.is_inbox_member(_user_id uuid, _inbox_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.inbox_users
+    WHERE user_id = _user_id AND inbox_id = _inbox_id
+  );
+$$;
 ```
 
-## Arquivo a modificar
+Com essa função, as políticas podem verificar membership sem recursão:
 
-- **`supabase/migrations/`**: Nova migração adicionando a política RLS em `inbox_users`
-- **Nenhum arquivo de código precisa ser modificado** — `ContactInfoPanel.tsx` já está correto
+```sql
+-- Política sem recursão
+CREATE POLICY "Inbox members can view co-members"
+ON public.inbox_users FOR SELECT
+USING (
+  public.is_inbox_member(auth.uid(), inbox_id)
+  --    ^^ chama a função SECURITY DEFINER que bypassa RLS
+);
+```
 
-## Políticas finais na tabela `inbox_users`
+## O que a migração fará
 
-| Política existente | Função |
-|---|---|
-| `Inbox admins and gestors can manage members` | CRUD para admins/gestores |
-| `Super admins can manage all inbox_users` | CRUD para super admins |
-| `Users can view own inbox memberships` | Usuário vê seus próprios vínculos |
-| **`Inbox members can view co-members`** ← **NOVA** | Membros veem colegas da mesma inbox |
+1. **Dropar** a política problemática `"Inbox members can view co-members"` em `inbox_users`
+2. **Dropar** a política problemática `"Inbox members can view co-member profiles"` em `user_profiles` (também causa recursão via inbox_users)
+3. **Criar** a função `is_inbox_member(_user_id, _inbox_id)` com `SECURITY DEFINER`
+4. **Recriar** ambas as políticas usando a função segura
+
+## Como funciona após o fix
+
+```text
+Milena consulta inbox_users (para listar co-membros):
+  → Política "Inbox members can view co-members" é avaliada
+  → Chama is_inbox_member(milena_id, inbox_id) -- SECURITY DEFINER, sem RLS
+  → Função confirma: Milena É membro dessa inbox
+  → Retorna TRUE → Milena vê a linha
+  → Resultado: retorna Arthur, Bruno, Milena (todos os membros da inbox)
+
+Milena consulta user_profiles (para resolver nomes):
+  → Política "Inbox members can view co-member profiles" é avaliada
+  → Chama is_inbox_member(milena_id, inbox_id da linha) -- SECURITY DEFINER
+  → Sem recursão pois a função bypassa RLS
+  → Retorna TRUE → Milena vê o perfil de Bruno/Arthur
+```
+
+## Políticas RLS finais (após migração)
+
+Tabela `inbox_users`:
+
+| Política | Operação | Condição |
+|---|---|---|
+| `Inbox admins and gestors can manage members` | ALL | admin/gestor da inbox |
+| `Super admins can manage all inbox_users` | ALL | super_admin role |
+| `Users can view own inbox memberships` | SELECT | `auth.uid() = user_id` |
+| `Inbox members can view co-members` | SELECT | `is_inbox_member(auth.uid(), inbox_id)` |
+
+Tabela `user_profiles`:
+
+| Política | Operação | Condição |
+|---|---|---|
+| `Users can view own profile` | SELECT | `auth.uid() = id` |
+| `Inbox members can view co-member profiles` | SELECT | `is_inbox_member(auth.uid(), iu.inbox_id)` via JOIN seguro |
+
+## Arquivo a criar
+
+- **Nova migração SQL**: Remove as políticas problemáticas, cria a função SECURITY DEFINER, e recria as políticas corretamente
+- **Sem mudanças de código** — `ContactInfoPanel.tsx` já está correto com as duas queries sequenciais
