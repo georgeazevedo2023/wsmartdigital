@@ -338,7 +338,7 @@ Deno.serve(async (req) => {
       'video/mp4': 'mp4',
     }
 
-    if (mediaType !== 'text' && externalId && instance.token) {
+    if (mediaType !== 'text' && mediaType !== 'contact' && externalId && instance.token) {
       console.log('Requesting persistent media link from UAZAPI...')
       const persistentResult = await getMediaLink(externalId, instance.token, mediaType === 'audio')
       if (persistentResult) {
