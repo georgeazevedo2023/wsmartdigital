@@ -20,7 +20,8 @@ async function formatReportWithAI(
   totalConvs: number,
   resolvedConvs: number,
   openConvs: number,
-  topReasons: { reason: string; count: number }[]
+  topReasons: { reason: string; count: number }[],
+  topAgent: { name: string; count: number } | null
 ): Promise<string> {
   const reasonsList = topReasons
     .slice(0, 5)
@@ -38,9 +39,10 @@ Seja conciso e direto. Máximo de 20 linhas. Responda APENAS com o texto do rela
 - Conversas resolvidas: ${resolvedConvs}
 - Conversas em aberto: ${openConvs}
 - Taxa de resolução: ${totalConvs > 0 ? Math.round((resolvedConvs / totalConvs) * 100) : 0}%
+${topAgent ? `- Atendente destaque: ${topAgent.name} (${topAgent.count} conversa${topAgent.count !== 1 ? "s" : ""})` : ""}
 ${topReasons.length > 0 ? `- Principais assuntos:\n${reasonsList}` : ""}
 
-Inclua um cabeçalho com data e nome da caixa, os KPIs principais, os assuntos se disponíveis, e um rodapé indicando que foi gerado automaticamente pelo WsmartQR.`;
+Inclua um cabeçalho com data e nome da caixa, os KPIs principais${topAgent ? `, o atendente destaque com ícone 🏆` : ""}, os assuntos se disponíveis, e um rodapé indicando que foi gerado automaticamente pelo WsmartQR.`;
 
   try {
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -62,14 +64,14 @@ Inclua um cabeçalho com data e nome da caixa, os KPIs principais, os assuntos s
     if (!aiResponse.ok) {
       console.error("[shift-report] AI error:", aiResponse.status);
       // Fallback to template
-      return buildFallbackReport(inboxName, date, totalConvs, resolvedConvs, openConvs, topReasons);
+      return buildFallbackReport(inboxName, date, totalConvs, resolvedConvs, openConvs, topReasons, topAgent);
     }
 
     const aiData = await aiResponse.json();
-    return aiData.choices?.[0]?.message?.content || buildFallbackReport(inboxName, date, totalConvs, resolvedConvs, openConvs, topReasons);
+    return aiData.choices?.[0]?.message?.content || buildFallbackReport(inboxName, date, totalConvs, resolvedConvs, openConvs, topReasons, topAgent);
   } catch (e) {
     console.error("[shift-report] AI call failed:", e);
-    return buildFallbackReport(inboxName, date, totalConvs, resolvedConvs, openConvs, topReasons);
+    return buildFallbackReport(inboxName, date, totalConvs, resolvedConvs, openConvs, topReasons, topAgent);
   }
 }
 
@@ -79,7 +81,8 @@ function buildFallbackReport(
   totalConvs: number,
   resolvedConvs: number,
   openConvs: number,
-  topReasons: { reason: string; count: number }[]
+  topReasons: { reason: string; count: number }[],
+  topAgent: { name: string; count: number } | null
 ): string {
   const resolutionRate = totalConvs > 0 ? Math.round((resolvedConvs / totalConvs) * 100) : 0;
   const reasonsList = topReasons
@@ -94,6 +97,7 @@ function buildFallbackReport(
 📞 *Atendimentos do dia:* ${totalConvs} conversa${totalConvs !== 1 ? "s" : ""}
 ✅ Resolvidas: ${resolvedConvs} (${resolutionRate}%)
 🔄 Em aberto: ${openConvs}
+${topAgent ? `\n🏆 *Atendente destaque:* ${topAgent.name} (${topAgent.count} conversa${topAgent.count !== 1 ? "s" : ""})` : ""}
 ${topReasons.length > 0 ? `\n🔝 *Principais assuntos:*\n${reasonsList}` : ""}
 
 ⏱️ _Relatório gerado automaticamente pelo WsmartQR_`;
@@ -173,7 +177,7 @@ async function processShiftReport(config: any, testMode = false): Promise<{ succ
   // Get today's conversations for this inbox
   const { data: todayConvs, error: convError } = await serviceSupabase
     .from("conversations")
-    .select("id, status, ai_summary")
+    .select("id, status, ai_summary, assigned_to")
     .eq("inbox_id", config.inbox_id)
     .gte("created_at", todayStart.toISOString())
     .lte("created_at", todayEnd.toISOString());
@@ -205,6 +209,30 @@ async function processShiftReport(config: any, testMode = false): Promise<{ succ
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
+  // Find top agent (most assigned conversations)
+  const agentMap: Record<string, number> = {};
+  for (const conv of conversations) {
+    if (conv.assigned_to) {
+      agentMap[conv.assigned_to] = (agentMap[conv.assigned_to] || 0) + 1;
+    }
+  }
+
+  let topAgent: { name: string; count: number } | null = null;
+  const topAgentEntry = Object.entries(agentMap).sort((a, b) => b[1] - a[1])[0];
+  if (topAgentEntry) {
+    const [topAgentId, topAgentCount] = topAgentEntry;
+    const { data: agentProfile } = await serviceSupabase
+      .from("user_profiles")
+      .select("full_name")
+      .eq("id", topAgentId)
+      .single();
+    topAgent = {
+      name: agentProfile?.full_name || "—",
+      count: topAgentCount,
+    };
+    console.log(`[shift-report] Top agent: ${topAgent.name} (${topAgent.count} conversations)`);
+  }
+
   // Format date in Brazilian Portuguese
   const dateStr = now.toLocaleDateString("pt-BR", {
     day: "2-digit",
@@ -220,7 +248,8 @@ async function processShiftReport(config: any, testMode = false): Promise<{ succ
     totalConvs,
     resolvedConvs,
     openConvs,
-    topReasons
+    topReasons,
+    topAgent
   );
 
   if (testMode) {
