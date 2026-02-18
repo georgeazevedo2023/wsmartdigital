@@ -1,59 +1,81 @@
 
-# Bug: Card de Contato do Bruno não é Renderizado Corretamente
+# Bug: Milena salva como texto em vez de card de contato
 
-## Diagnóstico
+## Diagnóstico definitivo (confirmado pelos logs)
 
-O fluxo no webhook `whatsapp-webhook` tem um bug de ordem de operações:
+Os logs da Edge Function mostram o payload exato que chegou da Milena:
+```json
+{
+  "messageType": "ContactMessage",
+  "content": {
+    "displayName": "Milena",
+    "vcard": "BEGIN:VCARD..."
+  }
+}
+```
 
-**Linha 293-301** (correto): Quando o tipo é `contact`, o webhook monta o `mediaUrl` como JSON:
+O log de processamento registrou: `mediaType=text` — provando que o tipo foi detectado errado.
+
+**Causa raiz:** A função `normalizeMediaType` (linha 277) usa:
 ```ts
-mediaUrl = JSON.stringify({ displayName: "Bruno", vcard: "BEGIN:VCARD..." })
+normalizeMediaType(message.mediaType || message.type || '')
 ```
 
-**Linha 341** (bug): Logo depois, a condição `if (mediaType !== 'text')` engloba `contact` também, chamando `getMediaLink()` na UAZAPI para tentar buscar um link de mídia — o que não faz sentido para contatos.
+Mas a UAZAPI envia o tipo como **`messageType`** (não `mediaType` nem `type`). O campo `messageType: "ContactMessage"` nunca é consultado.
 
-**Linha 343-376**: Se a UAZAPI retornar qualquer resultado (URL), o `mediaUrl` é sobrescrito:
+**Por que Eliane e Bruno funcionaram?** Provavelmente foram recebidos em um momento em que outro campo (`type` ou `mediaType`) estava preenchido, ou a UAZAPI enviou o payload com estrutura ligeiramente diferente naquele momento.
+
+**Confirmação no banco:**
+- Eliane: `media_type: contact`, `media_url: {"displayName":"Eliane","vcard":"..."}` — correto
+- Milena: `media_type: text`, `media_url: null` — incorreto (salva como texto puro)
+
+## Solução — 2 correções
+
+### Correção 1: `whatsapp-webhook/index.ts` — incluir `messageType` na detecção
+
+**Linha 277, antes:**
 ```ts
-mediaUrl = persistentResult.url  // ← apaga o JSON da vCard!
-```
-
-Resultado: O `media_url` salvo no banco não é `{"displayName":"Bruno","vcard":"..."}` mas sim uma URL quebrada ou inválida. O `MessageBubble.tsx` tenta fazer `JSON.parse(media_url)` e falha silenciosamente (retorna `null`), então renderiza o campo `content` como texto puro — o que exibe:
-```
-Bruno
-Company: Neo Blindados;
-Email: bruno@neoblindados.com.br
-URL: https://neoblindados.com.br/
-Phone (Celular): 5581989432973
-```
-
-A Eliane funciona porque ou foi recebida antes do bug, ou a UAZAPI não retornou resultado para o `getMediaLink` dela, então o JSON ficou intacto.
-
-## Solução
-
-### Arquivo a modificar: `supabase/functions/whatsapp-webhook/index.ts`
-
-**Uma correção cirúrgica** na condição da linha 341: excluir `contact` do bloco que busca link de mídia persistente.
-
-**Antes (linha 341):**
-```ts
-if (mediaType !== 'text' && externalId && instance.token) {
+const mediaType = normalizeMediaType(message.mediaType || message.type || '')
 ```
 
 **Depois:**
 ```ts
-if (mediaType !== 'text' && mediaType !== 'contact' && externalId && instance.token) {
+const mediaType = normalizeMediaType(message.mediaType || message.messageType || message.type || '')
 ```
 
-Isso garante que mensagens do tipo `contact` nunca entrem no bloco de download de mídia, preservando o `mediaUrl` com o JSON da vCard intacto.
+Isso garante que `"ContactMessage"` seja reconhecido e normalizado para `"contact"`.
+
+### Correção 2: Banco de dados — corrigir mensagens da Milena já salvas
+
+As duas mensagens da Milena no banco (`id: 7622978e...` e `id: 998ef56c...`) precisam ser corrigidas. O vCard já foi recebido corretamente nos logs — apenas não foi salvo certo.
+
+A migração SQL irá:
+1. Atualizar `media_type` de `text` → `contact`
+2. Atualizar `media_url` com o JSON da vCard correto
+3. Atualizar `content` para `"Milena"` (limpo, sem a formatação de texto)
+
+SQL a executar:
+```sql
+-- Corrigir mensagem da Milena (20:02 de 18/02)
+UPDATE conversation_messages 
+SET 
+  media_type = 'contact',
+  media_url = '{"displayName":"Milena","vcard":"BEGIN:VCARD\nVERSION:3.0\nN:Milena\nFN:Milena\nORG:Neo Blindados;\nEMAIL:milena@neoblindados.com.br\nURL:https://neoblindados.com.br/\nitem1.TEL;waid=558193202137:5581993202137\nitem1.X-ABLabel:Celular\nEND:VCARD"}',
+  content = 'Milena'
+WHERE id IN (
+  '7622978e-1548-4f68-b2c9-45231a471f18',
+  '998ef56c-cc8e-4523-98a1-b22b33d0db1c'
+);
+```
+
+## Arquivos a modificar
+
+1. **`supabase/functions/whatsapp-webhook/index.ts`** — linha 277: adicionar `message.messageType` na cadeia de fallback
+2. **Migration SQL** — corrigir os registros da Milena já salvos no banco
 
 ## Impacto
 
-- Sem mudanças de banco de dados
 - Sem mudanças de UI
-- Sem risco de regressão: apenas exclui `contact` de um bloco de download que não se aplica a ele
-- Cards de contato recebidos **após o deploy** serão exibidos corretamente como card WhatsApp-style
-- Mensagens antigas do Bruno com `media_url` corrompido precisariam ser corrigidas manualmente no banco (ou o contato precisa reenviar o cartão)
-
-## Nota sobre mensagens já salvas
-
-As mensagens do Bruno que já estão salvas no banco com `media_url` inválido **não serão corrigidas automaticamente** — apenas novas mensagens de contato receberão o tratamento correto. Se quiser corrigir o histórico, seria necessário executar uma query de atualização manual.
+- Zero risco de regressão: `messageType` é apenas um campo adicional de fallback
+- Todos os cards de contato futuros (independente de qual campo UAZAPI usar) serão detectados corretamente
+- Mensagens históricas da Milena serão corrigidas e exibidas como card no helpdesk imediatamente após o deploy
