@@ -1,62 +1,50 @@
 
-# Fix definitivo: Bruno não aparece e opção "Nenhum" não funciona
+# Fix: Nenhum agente aparece no seletor — Correção da query
 
-## Diagnóstico completo
+## Causa raiz confirmada
 
-Confirmado via banco de dados que:
-- A política RLS `"Inbox members can view co-member profiles"` está criada e funcionando corretamente
-- Milena, Bruno e Arthur estão todos na mesma inbox (`79575754-f7a2-4945-8d88-bfc7e1f20ed4`)
-- A query simulada como Milena retorna os 3 perfis corretamente
+O erro HTTP 400 visível nos logs de rede diz exatamente:
 
-O problema real está no **timing e na lógica de fallback do código**:
+> "Could not find a relationship between 'inbox_users' and 'user_profiles' in the schema cache"
 
-1. `agentNamesMap` em `HelpDesk.tsx` é populado de forma assíncrona. Quando `ContactInfoPanel` renderiza, ele pode ainda estar vazio `{}`
-2. Quando `agentNamesMap[uid]` é `undefined`, o fallback `uid.slice(0, 8)` exibe `"d3606f7a"` — um UUID truncado que parece um bug, não um nome
-3. Na screenshot, o dropdown mostra apenas "Milena" porque o UUID truncado de Bruno não é reconhecido visualmente, ou `inboxUserIds` só retornou um registro
+O código atual tenta fazer um join aninhado do Supabase:
+```typescript
+supabase.from('inbox_users').select('user_id, user_profiles(id, full_name)')
+```
 
-**Para "Nenhum" não funcionar**: No Select do Radix UI, quando `conversation.assigned_to` é `null`, o valor do Select é `'__none__'`. Ao selecionar "Nenhum" novamente, o `onValueChange` não dispara (mesmo valor). Se já está sem agente e abre o dropdown, o item "Nenhum" parece estar sem marcação visual correta.
+Isso só funciona quando existe uma **chave estrangeira declarada** entre as tabelas. A tabela `inbox_users` tem a coluna `user_id` que referencia `auth.users`, não `user_profiles`. Por isso a query falha, `data` vem vazio, e nenhum agente aparece.
+
+O banco de dados está correto — a query direta via `JOIN` retorna Arthur, Bruno e Milena normalmente.
 
 ## Solução
 
-### `src/components/helpdesk/ContactInfoPanel.tsx`
+Substituir a query com join aninhado por **duas queries separadas** em `ContactInfoPanel.tsx`:
 
-Substituir a dependência do `agentNamesMap` externo por uma **query local direta** que busca os membros da inbox com seus nomes em uma única chamada usando `user_profiles` — que agora tem a política RLS correta.
+1. Buscar os `user_id`s via `inbox_users` (já funciona)
+2. Buscar os nomes via `user_profiles` com `.in('id', userIds)` (funciona com a política RLS que criamos)
 
 ```typescript
-// Nova query que funciona após o fix de RLS
-const { data } = await supabase
+// Passo 1: buscar user_ids da inbox
+const { data: members } = await supabase
   .from('inbox_users')
-  .select('user_id, user_profiles(id, full_name)')
+  .select('user_id')
   .eq('inbox_id', conversation.inbox_id);
+
+const userIds = members?.map(m => m.user_id) ?? [];
+
+// Passo 2: buscar nomes dos perfis
+const { data: profiles } = await supabase
+  .from('user_profiles')
+  .select('id, full_name')
+  .in('id', userIds);
 ```
 
-Isso resolve o timing problem pois a lista de agentes é carregada diretamente no componente, sem depender do estado externo.
-
-### Fluxo corrigido
-
-```text
-ContactInfoPanel monta
-  → fetchAgentIds() query: inbox_users + join user_profiles
-  → retorna [{user_id: milena_id, name: "Milena"}, {user_id: bruno_id, name: "Bruno"}, ...]
-  → agents = [{user_id, full_name}] com nomes reais
-  → dropdown exibe: "Nenhum", "Arthur", "Bruno", "Milena"
-```
-
-### Fix do "Nenhum" (remover atribuição)
-
-O problema é que quando `assigned_to` já é `null`, o Select exibe o placeholder mas ao clicar "Nenhum" não dispara porque o valor não mudou (`__none__` → `__none__`). A solução é:
-- Verificar se `conversation.assigned_to` é `null` e nesse caso o trigger continua funcionando
-- Garantir que o `handleAssignAgent` com `value === '__none__'` realmente chama `update({ assigned_to: null })`
-
-O código atual já tem essa lógica, mas vou garantir que o broadcast também é enviado com `assigned_to: null` explicitamente.
+Isso evita o erro de foreign key não encontrado e usa a política RLS "Inbox members can view co-member profiles" que já está correta.
 
 ## Arquivo a modificar
 
-### `src/components/helpdesk/ContactInfoPanel.tsx`
-- Mudar `fetchAgentIds` para fazer join direto com `user_profiles` via query aninhada do Supabase
-- Remover dependência do `agentNamesMap` externo para o dropdown (manter apenas para exibição no header do chat)
-- Garantir que o "Nenhum" funciona corretamente com `null`
+- **`src/components/helpdesk/ContactInfoPanel.tsx`**: Substituir `fetchAgents` para usar duas queries sequenciais em vez do join aninhado que está falhando
 
-## Nenhuma mudança de banco necessária
+## Resultado esperado
 
-A política RLS já está correta. Apenas o código precisa ser atualizado.
+O dropdown exibirá: **— Nenhum —**, Arthur, Bruno, Milena (em ordem alfabética), e o botão ✕ para remover atribuição continuará funcionando.
