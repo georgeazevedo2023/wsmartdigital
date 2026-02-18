@@ -2,7 +2,7 @@ import { cn } from '@/lib/utils';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { smartDateBR } from '@/lib/dateUtils';
 import { ConversationLabels, type Label } from './ConversationLabels';
-import { UserCheck } from 'lucide-react';
+import { UserCheck, StickyNote } from 'lucide-react';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
 
 interface ConversationItemProps {
@@ -11,6 +11,7 @@ interface ConversationItemProps {
   onClick: () => void;
   labels?: Label[];
   agentName?: string | null;
+  hasNotes?: boolean;
 }
 
 const priorityColors: Record<string, string> = {
@@ -19,7 +20,7 @@ const priorityColors: Record<string, string> = {
   baixa: 'bg-primary',
 };
 
-export const ConversationItem = ({ conversation, isSelected, onClick, labels = [], agentName }: ConversationItemProps) => {
+export const ConversationItem = ({ conversation, isSelected, onClick, labels = [], agentName, hasNotes }: ConversationItemProps) => {
   const contact = conversation.contact;
   const name = contact?.name || contact?.phone || 'Desconhecido';
   const initials = name.charAt(0).toUpperCase();
@@ -69,12 +70,18 @@ export const ConversationItem = ({ conversation, isSelected, onClick, labels = [
           )}
         </div>
 
-        {(labels.length > 0 || agentName) && (
+        {(labels.length > 0 || agentName || hasNotes) && (
           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
             {agentName && (
               <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground bg-secondary/50 rounded px-1 py-0.5">
                 <UserCheck className="w-2.5 h-2.5" />
                 {agentName}
+              </span>
+            )}
+            {hasNotes && (
+              <span className="inline-flex items-center gap-0.5 text-[10px] text-warning bg-secondary/50 rounded px-1 py-0.5">
+                <StickyNote className="w-2.5 h-2.5" />
+                Nota
               </span>
             )}
             {labels.length > 0 && <ConversationLabels labels={labels} size="sm" />}

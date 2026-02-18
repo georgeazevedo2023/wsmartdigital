@@ -27,6 +27,7 @@ interface ConversationListProps {
   inboxId?: string;
   onLabelsChanged?: () => void;
   agentNamesMap?: Record<string, string>;
+  conversationNotesSet?: Set<string>;
 }
 
 const statusTabs = [
@@ -54,6 +55,7 @@ export const ConversationList = ({
   inboxId,
   onLabelsChanged,
   agentNamesMap = {},
+  conversationNotesSet = new Set(),
 }: ConversationListProps) => {
   const unreadCount = conversations.filter(c => !c.is_read).length;
   const [manageOpen, setManageOpen] = useState(false);
@@ -135,6 +137,7 @@ export const ConversationList = ({
                 onClick={() => onSelect(c)}
                 labels={inboxLabels.filter(l => (conversationLabelsMap[c.id] || []).includes(l.id))}
                 agentName={c.assigned_to ? agentNamesMap[c.assigned_to] || null : null}
+                hasNotes={conversationNotesSet.has(c.id)}
               />
             ))}
           </div>

@@ -94,6 +94,7 @@ const HelpDesk = () => {
   const [conversationLabelsMap, setConversationLabelsMap] = useState<Record<string, string[]>>({});
   const [labelFilter, setLabelFilter] = useState<string | null>(null);
   const [agentNamesMap, setAgentNamesMap] = useState<Record<string, string>>({});
+  const [conversationNotesSet, setConversationNotesSet] = useState<Set<string>>(new Set());
 
   const { isSuperAdmin } = useAuth();
 
@@ -185,6 +186,22 @@ const HelpDesk = () => {
     setConversationLabelsMap(map);
   }, []);
 
+  // Fetch which conversations have private notes
+  const fetchConversationNotes = useCallback(async (convIds: string[]) => {
+    if (convIds.length === 0) {
+      setConversationNotesSet(new Set());
+      return;
+    }
+    const { data } = await supabase
+      .from('conversation_messages')
+      .select('conversation_id')
+      .in('conversation_id', convIds)
+      .eq('direction', 'private_note');
+
+    const noteSet = new Set<string>((data || []).map((m: any) => m.conversation_id));
+    setConversationNotesSet(noteSet);
+  }, []);
+
   const fetchConversations = async () => {
     if (!user || !selectedInboxId) return;
     setLoading(true);
@@ -204,8 +221,11 @@ const HelpDesk = () => {
 
       const convIds = (data || []).map((c: any) => c.id);
 
-      // Fetch conversation labels in parallel
-      await fetchConversationLabels(convIds);
+      // Fetch conversation labels and notes in parallel
+      await Promise.all([
+        fetchConversationLabels(convIds),
+        fetchConversationNotes(convIds),
+      ]);
 
       const mapped: Conversation[] = (data || []).map((c: any) => ({
         ...c,
@@ -424,6 +444,7 @@ const HelpDesk = () => {
     inboxId: selectedInboxId,
     onLabelsChanged: handleLabelsChanged,
     agentNamesMap,
+    conversationNotesSet,
   };
 
   if (isMobile) {
