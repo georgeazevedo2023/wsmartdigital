@@ -1,39 +1,64 @@
+# Notas Privadas: Substituir por Ícone + Painel de Notas
 
+## Problema Atual
 
-# Garantir compatibilidade entre payload enviado e recebido no fluxo de IA
+As notas privadas aparecem inline no fluxo de mensagens, misturadas com as conversas normais. Isso polui o chat e as notas "sobem" conforme novas mensagens chegam.
 
-## Problema
+## Solução Proposta
 
-O payload enviado pelo botao "Ativar IA" usa os campos `instance_name` e `instance_id` (com underscore), mas o webhook handler procura por `instanceName` ou `instance` (sem underscore). Quando o sistema externo devolve o payload com `status_ia: "ligada"`, o webhook nao consegue encontrar a instancia.
+1. **Ocultar notas do fluxo de mensagens** — Mensagens com `direction === 'private_note'` não serão mais renderizadas no `ChatPanel` junto com as mensagens normais.
+2. **Ícone de notas no cabeçalho do chat** — Quando existir ao menos uma nota na conversa, um ícone 📝 aparece no cabeçalho do `ChatPanel` com um badge de contagem.
+3. **Painel de notas (Sheet/Dialog lateral)** — Ao clicar no ícone, abre um painel listando todas as notas com:
+  - Conteúdo da nota e agente que escreveu a nota
+  - Horário de criação
+  - Botão de excluir cada nota individualmente
+4. **Ícone na lista de conversas** — No `ConversationItem`, exibir um pequeno ícone 📝 quando a conversa possui notas, para sinalizar visualmente sem precisar abrir o chat.
 
-## Alteracoes
+## Arquivos Afetados
 
-### 1. `supabase/functions/whatsapp-webhook/index.ts` - ampliar busca de instancia (linha 115)
+### `src/components/helpdesk/ChatPanel.tsx`
 
-Incluir os campos `instance_name` e `instance_id` na logica de busca da instancia no bloco de `status_ia`:
+- Separar mensagens normais das notas: `const notes = messages.filter(m => m.direction === 'private_note')`
+- Renderizar apenas `messages.filter(m => m.direction !== 'private_note')` no fluxo do chat
+- Adicionar botão com ícone `StickyNote` no header com badge de contagem quando `notes.length > 0`
+- Ao clicar no ícone, abrir um `Sheet` (painel lateral) com a lista de notas
 
+### `src/components/helpdesk/NotesPanel.tsx` *(novo)*
+
+- Componente `Sheet` com lista de notas
+- Cada nota exibe: texto, horário (formatBR), botão de excluir (ícone de lixeira)
+- Ao excluir, chama `supabase.from('conversation_messages').delete().eq('id', noteId)` e atualiza a lista localmente
+
+### `src/components/helpdesk/ConversationItem.tsx`
+
+- Receber prop `hasNotes?: boolean`
+- Exibir ícone `StickyNote` pequeno ao lado dos labels quando `hasNotes === true`
+
+### `src/components/helpdesk/ConversationList.tsx` / `src/pages/dashboard/HelpDesk.tsx`
+
+- Carregar se a conversa tem notas (query adicional ou incluída no fetch de mensagens)
+- Passar prop `hasNotes` ao `ConversationItem`
+
+## Fluxo de Dados
+
+```text
+ChatPanel.fetchMessages()
+  → messages = todos os tipos
+  → notes = messages.filter(direction === 'private_note')
+  → chatMessages = messages.filter(direction !== 'private_note')
+
+Header:
+  → notes.length > 0 → mostra botão StickyNote com badge
+  → onClick → abre NotesPanel
+
+NotesPanel:
+  → lista notes
+  → delete → supabase.delete → atualiza estado local
 ```
-const iaInstanceName = payload.instanceName || payload.instance || payload.instance_name ||
-  unwrapped?.instanceName || unwrapped?.instance || unwrapped?.instance_name || ''
-const iaInstanceId = payload.instance_id || unwrapped?.instance_id || ''
-```
 
-E usar `iaInstanceId` como primeiro criterio de busca (match direto pelo ID), caindo para busca por nome apenas se nao houver ID.
+## Detalhes Técnicos
 
-### 2. `src/components/helpdesk/ChatPanel.tsx` - adicionar `instanceName` ao payload (linha 185-201)
-
-Adicionar o campo `instanceName` (sem underscore) ao payload de saida, para manter compatibilidade direta com o webhook handler caso o sistema externo devolva os campos como recebeu:
-
-```
-instanceName: instanceData?.name || '',
-```
-
-## Resultado
-
-O sistema externo pode devolver qualquer combinacao dos campos (`instanceName`, `instance_name`, `instance_id`, `remotejid`, `chatid`, `sender`) e o webhook vai conseguir localizar a instancia, inbox, contato e conversa para atualizar o `status_ia` e exibir o badge "IA Ativada".
-
-## Arquivos afetados
-
-- `supabase/functions/whatsapp-webhook/index.ts` - ampliar campos aceitos na busca de instancia
-- `src/components/helpdesk/ChatPanel.tsx` - adicionar `instanceName` ao payload
-
+- O `Sheet` do shadcn/ui já está disponível no projeto — será utilizado para o painel de notas
+- A exclusão é local (sem refresh) via `setMessages(prev => prev.filter(m => m.id !== id))` após confirmação do delete no banco
+- O ícone no `ConversationItem` requer apenas verificar se alguma mensagem da conversa é `private_note` — isso pode ser feito com uma coluna derivada ou com uma query separada no `HelpDesk.tsx`
+- Para evitar N+1 queries, a informação de "tem notas" pode ser carregada com um campo `has_notes` calculado no fetch de conversas via subquery SQL no Supabase
