@@ -51,29 +51,34 @@ export const ContactInfoPanel = ({
   const contact = conversation.contact;
   const name = contact?.name || contact?.phone || 'Desconhecido';
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
-  const [inboxUserIds, setInboxUserIds] = useState<string[]>([]);
+  const [agents, setAgents] = useState<InboxAgent[]>([]);
 
-  // Fetch only user_ids from inbox_users (no join with user_profiles, avoids RLS issue)
+  // Fetch inbox members with their names directly (join inbox_users + user_profiles)
   useEffect(() => {
-    const fetchAgentIds = async () => {
+    const fetchAgents = async () => {
       if (!conversation.inbox_id) return;
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('inbox_users')
-        .select('user_id')
+        .select('user_id, user_profiles(id, full_name)')
         .eq('inbox_id', conversation.inbox_id);
 
+      if (error) {
+        console.error('[ContactInfoPanel] fetchAgents error:', error);
+        return;
+      }
+
       if (data) {
-        setInboxUserIds(data.map((d: any) => d.user_id));
+        const agentList: InboxAgent[] = data
+          .map((d: any) => ({
+            user_id: d.user_id,
+            full_name: d.user_profiles?.full_name || d.user_id.slice(0, 8),
+          }))
+          .sort((a: InboxAgent, b: InboxAgent) => a.full_name.localeCompare(b.full_name));
+        setAgents(agentList);
       }
     };
-    fetchAgentIds();
+    fetchAgents();
   }, [conversation.inbox_id]);
-
-  // Build agents list from inboxUserIds + agentNamesMap
-  const agents: InboxAgent[] = inboxUserIds.map(uid => ({
-    user_id: uid,
-    full_name: agentNamesMap[uid] || uid.slice(0, 8),
-  })).sort((a, b) => a.full_name.localeCompare(b.full_name));
 
   const assignedLabels = inboxLabels.filter(l => assignedLabelIds.includes(l.id));
 
@@ -92,13 +97,19 @@ export const ContactInfoPanel = ({
 
   const handleAssignAgent = async (value: string) => {
     const agentId = value === '__none__' ? null : value;
-    const agentName = agentId ? (agentNamesMap[agentId] || agentId.slice(0, 8)) : null;
+    const agent = agentId ? agents.find(a => a.user_id === agentId) : null;
+    const agentName = agent?.full_name || null;
 
     // Update DB
-    await supabase
+    const { error } = await supabase
       .from('conversations')
       .update({ assigned_to: agentId })
       .eq('id', conversation.id);
+
+    if (error) {
+      toast.error('Erro ao atribuir agente');
+      return;
+    }
 
     // Broadcast para sync em tempo real
     await supabase.channel('helpdesk-conversations').send({
@@ -113,6 +124,11 @@ export const ContactInfoPanel = ({
     // Update local via callback
     onUpdateConversation(conversation.id, { assigned_to: agentId } as any);
     toast.success(agentId ? `Atribuído a ${agentName}` : 'Agente removido');
+  };
+
+  // Allow re-selecting "Nenhum" even when already null (force clear)
+  const handleSelectOpenChange = (open: boolean) => {
+    if (!open && conversation.assigned_to !== null) return;
   };
 
   return (
@@ -213,22 +229,35 @@ export const ContactInfoPanel = ({
           <UserCheck className="w-3 h-3" />
           Agente Responsável
         </label>
-        <Select
-          value={conversation.assigned_to || '__none__'}
-          onValueChange={handleAssignAgent}
-        >
-          <SelectTrigger className="h-8 text-sm">
-            <SelectValue placeholder="Nenhum" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="__none__">Nenhum</SelectItem>
-            {agents.map(agent => (
-              <SelectItem key={agent.user_id} value={agent.user_id}>
-                {agent.full_name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-1">
+          <Select
+            value={conversation.assigned_to || '__none__'}
+            onValueChange={handleAssignAgent}
+          >
+            <SelectTrigger className="h-8 text-sm flex-1">
+              <SelectValue placeholder="Nenhum" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__none__">— Nenhum —</SelectItem>
+              {agents.map(agent => (
+                <SelectItem key={agent.user_id} value={agent.user_id}>
+                  {agent.full_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {conversation.assigned_to && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+              onClick={() => handleAssignAgent('__none__')}
+              title="Remover atribuição"
+            >
+              ✕
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Inbox */}
