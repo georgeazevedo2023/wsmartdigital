@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Inbox } from 'lucide-react';
+import { Search, Inbox, UserCheck, AlertCircle } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { ConversationItem } from './ConversationItem';
@@ -11,14 +11,10 @@ import type { Label } from './ConversationLabels';
 interface ConversationListProps {
   conversations: Conversation[];
   selectedId: string | null;
-  statusFilter: string;
-  onStatusFilterChange: (status: string) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   onSelect: (c: Conversation) => void;
   loading: boolean;
-  onSync?: () => void;
-  syncing?: boolean;
   inboxLabels?: Label[];
   conversationLabelsMap?: Record<string, string[]>;
   labelFilter?: string | null;
@@ -33,14 +29,7 @@ interface ConversationListProps {
   onPriorityFilterChange?: (v: 'todas' | 'alta' | 'media' | 'baixa') => void;
 }
 
-const statusTabs = [
-  { value: 'aberta', label: 'Abertas' },
-  { value: 'pendente', label: 'Pendentes' },
-  { value: 'resolvida', label: 'Resolvidas' },
-  { value: 'todas', label: 'Todas' },
-];
-
-const assignmentTabs: { value: 'todas' | 'minhas' | 'nao-atribuidas'; label: string }[] = [
+const assignmentOptions: { value: 'todas' | 'minhas' | 'nao-atribuidas'; label: string }[] = [
   { value: 'todas', label: 'Todas' },
   { value: 'minhas', label: 'Minhas' },
   { value: 'nao-atribuidas', label: 'Não atribuídas' },
@@ -48,16 +37,14 @@ const assignmentTabs: { value: 'todas' | 'minhas' | 'nao-atribuidas'; label: str
 
 const priorityOptions: { value: 'todas' | 'alta' | 'media' | 'baixa'; label: string }[] = [
   { value: 'todas', label: 'Prioridade' },
-  { value: 'alta', label: 'Alta' },
-  { value: 'media', label: 'Média' },
-  { value: 'baixa', label: 'Baixa' },
+  { value: 'alta', label: '🔴 Alta' },
+  { value: 'media', label: '🟡 Média' },
+  { value: 'baixa', label: '🔵 Baixa' },
 ];
 
 export const ConversationList = ({
   conversations,
   selectedId,
-  statusFilter,
-  onStatusFilterChange,
   searchQuery,
   onSearchChange,
   onSelect,
@@ -77,75 +64,99 @@ export const ConversationList = ({
 }: ConversationListProps) => {
   const [manageOpen, setManageOpen] = useState(false);
 
+  const hasActiveFilters =
+    assignmentFilter !== 'todas' ||
+    priorityFilter !== 'todas' ||
+    !!labelFilter;
+
   return (
     <>
       {/* Filters */}
-      <div className="p-3 border-b border-border/50">
-        {/* Status tabs */}
-        <div className="flex gap-1 mb-2">
-          {statusTabs.map(tab => (
-            <button
-              key={tab.value}
-              onClick={() => onStatusFilterChange(tab.value)}
-              className={cn(
-                'px-2.5 py-1 rounded-md text-xs font-medium transition-colors',
-                statusFilter === tab.value
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-secondary'
-              )}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <div className="p-2.5 border-b border-border/50 space-y-2">
+        {/* Search */}
+        <div className="relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            value={searchQuery}
+            onChange={e => onSearchChange(e.target.value)}
+            placeholder="Buscar conversa..."
+            className="pl-8 h-8 text-sm bg-secondary/40 border-border/30 focus-visible:ring-1"
+          />
         </div>
 
-        {/* Assignment + Priority filters */}
-        <div className="flex items-center gap-2 mb-2">
-          <div className="flex gap-1 flex-1 min-w-0">
-            {assignmentTabs.map(tab => (
-              <button
-                key={tab.value}
-                onClick={() => onAssignmentFilterChange?.(tab.value)}
-                className={cn(
-                  'px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
-                  assignmentFilter === tab.value
-                    ? 'bg-secondary text-foreground ring-1 ring-border'
-                    : 'text-muted-foreground hover:bg-secondary/60'
-                )}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
+        {/* Compact filter row */}
+        <div className="flex gap-1.5">
+          {/* Assignment select */}
           <Select
-            value={priorityFilter}
-            onValueChange={(v) => onPriorityFilterChange?.(v as 'todas' | 'alta' | 'media' | 'baixa')}
+            value={assignmentFilter}
+            onValueChange={(v) => onAssignmentFilterChange?.(v as 'todas' | 'minhas' | 'nao-atribuidas')}
           >
-            <SelectTrigger className="h-7 text-xs w-28 border-border/30 bg-secondary/50 shrink-0">
+            <SelectTrigger
+              className={cn(
+                'flex-1 h-7 text-xs border-border/30 gap-1 min-w-0',
+                assignmentFilter !== 'todas'
+                  ? 'bg-primary/10 border-primary/30 text-primary'
+                  : 'bg-secondary/40'
+              )}
+            >
+              <UserCheck className="w-3 h-3 shrink-0" />
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {priorityOptions.map(opt => (
-                <SelectItem key={opt.value} value={opt.value}>
+              {assignmentOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value} className="text-xs">
                   {opt.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-        </div>
 
-        {/* Label filter */}
-        {inboxLabels.length > 0 && onLabelFilterChange && (
-          <div className="mb-2">
-            <Select value={labelFilter || '_all'} onValueChange={v => onLabelFilterChange(v === '_all' ? null : v)}>
-              <SelectTrigger className="h-7 text-xs">
-                <SelectValue placeholder="Filtrar por etiqueta" />
+          {/* Priority select */}
+          <Select
+            value={priorityFilter}
+            onValueChange={(v) => onPriorityFilterChange?.(v as 'todas' | 'alta' | 'media' | 'baixa')}
+          >
+            <SelectTrigger
+              className={cn(
+                'flex-1 h-7 text-xs border-border/30 gap-1 min-w-0',
+                priorityFilter !== 'todas'
+                  ? 'bg-primary/10 border-primary/30 text-primary'
+                  : 'bg-secondary/40'
+              )}
+            >
+              <AlertCircle className="w-3 h-3 shrink-0" />
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {priorityOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value} className="text-xs">
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Label select — só se houver etiquetas */}
+          {inboxLabels.length > 0 && onLabelFilterChange && (
+            <Select
+              value={labelFilter || '_all'}
+              onValueChange={v => onLabelFilterChange(v === '_all' ? null : v)}
+            >
+              <SelectTrigger
+                className={cn(
+                  'flex-1 h-7 text-xs border-border/30 gap-1 min-w-0',
+                  labelFilter
+                    ? 'bg-primary/10 border-primary/30 text-primary'
+                    : 'bg-secondary/40'
+                )}
+              >
+                <SelectValue placeholder="Etiqueta" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="_all">Todas as etiquetas</SelectItem>
+                <SelectItem value="_all" className="text-xs">Etiquetas</SelectItem>
                 {inboxLabels.map(l => (
-                  <SelectItem key={l.id} value={l.id}>
-                    <div className="flex items-center gap-2">
+                  <SelectItem key={l.id} value={l.id} className="text-xs">
+                    <div className="flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: l.color }} />
                       {l.name}
                     </div>
@@ -153,19 +164,22 @@ export const ConversationList = ({
                 ))}
               </SelectContent>
             </Select>
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            value={searchQuery}
-            onChange={e => onSearchChange(e.target.value)}
-            placeholder="Buscar conversa..."
-            className="pl-8 h-8 text-sm bg-secondary/50 border-border/30"
-          />
+          )}
         </div>
+
+        {/* Active filters indicator */}
+        {hasActiveFilters && (
+          <button
+            onClick={() => {
+              onAssignmentFilterChange?.('todas');
+              onPriorityFilterChange?.('todas');
+              onLabelFilterChange?.(null);
+            }}
+            className="text-[10px] text-primary/80 hover:text-primary transition-colors"
+          >
+            ✕ Limpar filtros
+          </button>
+        )}
       </div>
 
       {/* List */}
@@ -176,8 +190,11 @@ export const ConversationList = ({
           </div>
         ) : conversations.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-muted-foreground">
-            <Inbox className="w-10 h-10 mb-2" />
+            <Inbox className="w-10 h-10 mb-2 opacity-40" />
             <p className="text-sm">Nenhuma conversa</p>
+            {hasActiveFilters && (
+              <p className="text-xs mt-1 opacity-70">Tente limpar os filtros</p>
+            )}
           </div>
         ) : (
           <div className="divide-y divide-border/30">
