@@ -1,52 +1,62 @@
 
-# Fix: Outros agentes não aparecem no seletor de Agente Responsável
+# Fix definitivo: Bruno não aparece e opção "Nenhum" não funciona
 
-## Causa Raiz
+## Diagnóstico completo
 
-A função `fetchAgentNames` no `HelpDesk.tsx` faz a seguinte query:
-```typescript
-supabase.from('user_profiles').select('id, full_name')
-```
+Confirmado via banco de dados que:
+- A política RLS `"Inbox members can view co-member profiles"` está criada e funcionando corretamente
+- Milena, Bruno e Arthur estão todos na mesma inbox (`79575754-f7a2-4945-8d88-bfc7e1f20ed4`)
+- A query simulada como Milena retorna os 3 perfis corretamente
 
-Porém a política RLS atual da tabela `user_profiles` tem apenas:
-- `Users can view own profile` — `USING (auth.uid() = id)` 
-- `Super admin can view all profiles` — só para super admins
+O problema real está no **timing e na lógica de fallback do código**:
 
-Isso significa que **Milena consegue ler apenas o próprio perfil**. Bruno não aparece no `agentNamesMap`. O `ContactInfoPanel` encontra o `user_id` do Bruno via `inbox_users` (essa query funciona), mas ao tentar resolver o nome via `agentNamesMap[brunoid]` retorna `undefined` — exibindo um UUID truncado ou não exibindo corretamente.
+1. `agentNamesMap` em `HelpDesk.tsx` é populado de forma assíncrona. Quando `ContactInfoPanel` renderiza, ele pode ainda estar vazio `{}`
+2. Quando `agentNamesMap[uid]` é `undefined`, o fallback `uid.slice(0, 8)` exibe `"d3606f7a"` — um UUID truncado que parece um bug, não um nome
+3. Na screenshot, o dropdown mostra apenas "Milena" porque o UUID truncado de Bruno não é reconhecido visualmente, ou `inboxUserIds` só retornou um registro
 
-A opção "Nenhum" já existe no código (`__none__`), então o botão de remover atribuição já funciona quando a lista está correta.
+**Para "Nenhum" não funcionar**: No Select do Radix UI, quando `conversation.assigned_to` é `null`, o valor do Select é `'__none__'`. Ao selecionar "Nenhum" novamente, o `onValueChange` não dispara (mesmo valor). Se já está sem agente e abre o dropdown, o item "Nenhum" parece estar sem marcação visual correta.
 
 ## Solução
 
-### 1. Migração de banco de dados (única mudança necessária)
+### `src/components/helpdesk/ContactInfoPanel.tsx`
 
-Adicionar uma nova política RLS em `user_profiles` que permite que membros de uma mesma inbox vejam os perfis uns dos outros:
+Substituir a dependência do `agentNamesMap` externo por uma **query local direta** que busca os membros da inbox com seus nomes em uma única chamada usando `user_profiles` — que agora tem a política RLS correta.
 
-```sql
-CREATE POLICY "Inbox members can view co-member profiles"
-ON public.user_profiles
-FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1 FROM inbox_users iu1
-    JOIN inbox_users iu2 ON iu1.inbox_id = iu2.inbox_id
-    WHERE iu1.user_id = auth.uid()
-    AND iu2.user_id = user_profiles.id
-  )
-);
+```typescript
+// Nova query que funciona após o fix de RLS
+const { data } = await supabase
+  .from('inbox_users')
+  .select('user_id, user_profiles(id, full_name)')
+  .eq('inbox_id', conversation.inbox_id);
 ```
 
-**Como funciona:** Milena (autenticada) pode ver o perfil de Bruno se ambos compartilham pelo menos uma inbox na tabela `inbox_users`. Nenhuma alteração de código é necessária.
+Isso resolve o timing problem pois a lista de agentes é carregada diretamente no componente, sem depender do estado externo.
 
-## Impacto nos Arquivos
+### Fluxo corrigido
 
-- **`supabase/migrations/`**: Nova migração com a política RLS
-- **Nenhum arquivo de código precisa ser modificado** — o `fetchAgentNames`, `agentNamesMap` e `ContactInfoPanel` já estão implementados corretamente. Só faltava o banco liberar a leitura dos co-membros.
+```text
+ContactInfoPanel monta
+  → fetchAgentIds() query: inbox_users + join user_profiles
+  → retorna [{user_id: milena_id, name: "Milena"}, {user_id: bruno_id, name: "Bruno"}, ...]
+  → agents = [{user_id, full_name}] com nomes reais
+  → dropdown exibe: "Nenhum", "Arthur", "Bruno", "Milena"
+```
 
-## Resultado Esperado
+### Fix do "Nenhum" (remover atribuição)
 
-Após a migração:
-- `agentNamesMap` terá os nomes de **todos os agentes** da inbox (Milena, Bruno, etc.)
-- O dropdown "Agente Responsável" exibirá todos os agentes por nome
-- A opção "Nenhum" (que já existe) permitirá remover a atribuição
-- A auto-atribuição ao responder continuará funcionando normalmente via broadcast
+O problema é que quando `assigned_to` já é `null`, o Select exibe o placeholder mas ao clicar "Nenhum" não dispara porque o valor não mudou (`__none__` → `__none__`). A solução é:
+- Verificar se `conversation.assigned_to` é `null` e nesse caso o trigger continua funcionando
+- Garantir que o `handleAssignAgent` com `value === '__none__'` realmente chama `update({ assigned_to: null })`
+
+O código atual já tem essa lógica, mas vou garantir que o broadcast também é enviado com `assigned_to: null` explicitamente.
+
+## Arquivo a modificar
+
+### `src/components/helpdesk/ContactInfoPanel.tsx`
+- Mudar `fetchAgentIds` para fazer join direto com `user_profiles` via query aninhada do Supabase
+- Remover dependência do `agentNamesMap` externo para o dropdown (manter apenas para exibição no header do chat)
+- Garantir que o "Nenhum" funciona corretamente com `null`
+
+## Nenhuma mudança de banco necessária
+
+A política RLS já está correta. Apenas o código precisa ser atualizado.
