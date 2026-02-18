@@ -1,9 +1,8 @@
 import { useState } from 'react';
-import { Search, Inbox, RefreshCw, Tags } from 'lucide-react';
+import { Search, Inbox } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { ConversationItem } from './ConversationItem';
-import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ManageLabelsDialog } from './ManageLabelsDialog';
 import type { Conversation } from '@/pages/dashboard/HelpDesk';
@@ -28,6 +27,10 @@ interface ConversationListProps {
   onLabelsChanged?: () => void;
   agentNamesMap?: Record<string, string>;
   conversationNotesSet?: Set<string>;
+  assignmentFilter?: 'todas' | 'minhas' | 'nao-atribuidas';
+  onAssignmentFilterChange?: (v: 'todas' | 'minhas' | 'nao-atribuidas') => void;
+  priorityFilter?: 'todas' | 'alta' | 'media' | 'baixa';
+  onPriorityFilterChange?: (v: 'todas' | 'alta' | 'media' | 'baixa') => void;
 }
 
 const statusTabs = [
@@ -35,6 +38,19 @@ const statusTabs = [
   { value: 'pendente', label: 'Pendentes' },
   { value: 'resolvida', label: 'Resolvidas' },
   { value: 'todas', label: 'Todas' },
+];
+
+const assignmentTabs: { value: 'todas' | 'minhas' | 'nao-atribuidas'; label: string }[] = [
+  { value: 'todas', label: 'Todas' },
+  { value: 'minhas', label: 'Minhas' },
+  { value: 'nao-atribuidas', label: 'Não atribuídas' },
+];
+
+const priorityOptions: { value: 'todas' | 'alta' | 'media' | 'baixa'; label: string }[] = [
+  { value: 'todas', label: 'Prioridade' },
+  { value: 'alta', label: 'Alta' },
+  { value: 'media', label: 'Média' },
+  { value: 'baixa', label: 'Baixa' },
 ];
 
 export const ConversationList = ({
@@ -46,8 +62,6 @@ export const ConversationList = ({
   onSearchChange,
   onSelect,
   loading,
-  onSync,
-  syncing,
   inboxLabels = [],
   conversationLabelsMap = {},
   labelFilter,
@@ -56,8 +70,11 @@ export const ConversationList = ({
   onLabelsChanged,
   agentNamesMap = {},
   conversationNotesSet = new Set(),
+  assignmentFilter = 'todas',
+  onAssignmentFilterChange,
+  priorityFilter = 'todas',
+  onPriorityFilterChange,
 }: ConversationListProps) => {
-  const unreadCount = conversations.filter(c => !c.is_read).length;
   const [manageOpen, setManageOpen] = useState(false);
 
   return (
@@ -65,7 +82,7 @@ export const ConversationList = ({
       {/* Filters */}
       <div className="p-3 border-b border-border/50">
         {/* Status tabs */}
-        <div className="flex gap-1 mb-3">
+        <div className="flex gap-1 mb-2">
           {statusTabs.map(tab => (
             <button
               key={tab.value}
@@ -82,9 +99,44 @@ export const ConversationList = ({
           ))}
         </div>
 
+        {/* Assignment + Priority filters */}
+        <div className="flex items-center gap-2 mb-2">
+          <div className="flex gap-1 flex-1 min-w-0">
+            {assignmentTabs.map(tab => (
+              <button
+                key={tab.value}
+                onClick={() => onAssignmentFilterChange?.(tab.value)}
+                className={cn(
+                  'px-2 py-1 rounded-md text-xs font-medium transition-colors whitespace-nowrap',
+                  assignmentFilter === tab.value
+                    ? 'bg-secondary text-foreground ring-1 ring-border'
+                    : 'text-muted-foreground hover:bg-secondary/60'
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <Select
+            value={priorityFilter}
+            onValueChange={(v) => onPriorityFilterChange?.(v as 'todas' | 'alta' | 'media' | 'baixa')}
+          >
+            <SelectTrigger className="h-7 text-xs w-28 border-border/30 bg-secondary/50 shrink-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {priorityOptions.map(opt => (
+                <SelectItem key={opt.value} value={opt.value}>
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
         {/* Label filter */}
         {inboxLabels.length > 0 && onLabelFilterChange && (
-          <div className="mb-3">
+          <div className="mb-2">
             <Select value={labelFilter || '_all'} onValueChange={v => onLabelFilterChange(v === '_all' ? null : v)}>
               <SelectTrigger className="h-7 text-xs">
                 <SelectValue placeholder="Filtrar por etiqueta" />
