@@ -1,89 +1,59 @@
 
-# Bug Persistente: Conversa não limpa ao trocar de caixa
+# Bug: Card de Contato do Bruno não é Renderizado Corretamente
 
-## Diagnóstico completo
+## Diagnóstico
 
-O `handleInboxChange` foi implementado e está chamando `setSelectedConversation(null)` corretamente (linha 380). Porém, o bug persiste. A causa real foi identificada:
+O fluxo no webhook `whatsapp-webhook` tem um bug de ordem de operações:
 
-**O problema está no `useEffect` do `fetchConversations` (linha 244):**
-
-```tsx
-useEffect(() => {
-  if (selectedInboxId) {
-    fetchConversations();
-  }
-}, [user, statusFilter, selectedInboxId]);
+**Linha 293-301** (correto): Quando o tipo é `contact`, o webhook monta o `mediaUrl` como JSON:
+```ts
+mediaUrl = JSON.stringify({ displayName: "Bruno", vcard: "BEGIN:VCARD..." })
 ```
 
-O React agrupa (batches) os `setState` dentro de event handlers — mas `setSelectedConversation(null)` e `setSelectedInboxId(newInboxId)` são executados em sequência. O problema está em **quando** o `fetchConversations` resolve: ele é assíncrono e, após retornar, o `setConversations(mapped)` sobrescreve o estado — mas o `selectedConversation` já foi setado para `null`.
+**Linha 341** (bug): Logo depois, a condição `if (mediaType !== 'text')` engloba `contact` também, chamando `getMediaLink()` na UAZAPI para tentar buscar um link de mídia — o que não faz sentido para contatos.
 
-**A causa real identificada**: Olhando as screenshots, o Salomão Tavares aparece **na lista da nova caixa (Neo Blindados)** também — ou seja, o mesmo contato existe nas duas caixas. O `selectedConversation` fica `null` momentaneamente, mas há uma **race condition com o canal de realtime** (linha 250-296): quando `selectedInboxId` muda, o canal antigo ainda está ativo por um instante e pode disparar `setConversations` ou `setSelectedConversation` com dados da caixa anterior antes de ser removido.
-
-**Segundo problema confirmado**: A função `fetchConversations` na linha 204 **não é `useCallback`** — ela é recriada a cada render. O `useEffect` do broadcast (linha 272) chama `fetchConversations()` dentro do handler, capturando a closure com o `selectedInboxId` antigo, o que pode causar busca na caixa errada momentaneamente.
-
-## Solução — 3 correções cirúrgicas
-
-### Correção 1: Adicionar `useEffect` de guarda (defensive reset)
-
-Adicionar um `useEffect` que monitora `selectedInboxId` e força a limpeza da `selectedConversation` se ela não pertence à caixa atual:
-
-```tsx
-useEffect(() => {
-  setSelectedConversation(prev => {
-    if (prev && prev.inbox_id !== selectedInboxId) return null;
-    return prev;
-  });
-}, [selectedInboxId]);
+**Linha 343-376**: Se a UAZAPI retornar qualquer resultado (URL), o `mediaUrl` é sobrescrito:
+```ts
+mediaUrl = persistentResult.url  // ← apaga o JSON da vCard!
 ```
 
-Isso garante que mesmo se houver race condition, a conversa errada seja descartada.
-
-### Correção 2: Converter `fetchConversations` em `useCallback`
-
-A função precisa de `useCallback` para que o `useEffect` do realtime sempre capture a versão correta com o `selectedInboxId` atual:
-
-```tsx
-const fetchConversations = useCallback(async () => {
-  if (!user || !selectedInboxId) return;
-  // ... resto do código
-}, [user, selectedInboxId, statusFilter, fetchConversationLabels, fetchConversationNotes]);
+Resultado: O `media_url` salvo no banco não é `{"displayName":"Bruno","vcard":"..."}` mas sim uma URL quebrada ou inválida. O `MessageBubble.tsx` tenta fazer `JSON.parse(media_url)` e falha silenciosamente (retorna `null`), então renderiza o campo `content` como texto puro — o que exibe:
+```
+Bruno
+Company: Neo Blindados;
+Email: bruno@neoblindados.com.br
+URL: https://neoblindados.com.br/
+Phone (Celular): 5581989432973
 ```
 
-E atualizar o `useEffect` que a chama:
-```tsx
-useEffect(() => {
-  if (selectedInboxId) fetchConversations();
-}, [fetchConversations]);
+A Eliane funciona porque ou foi recebida antes do bug, ou a UAZAPI não retornou resultado para o `getMediaLink` dela, então o JSON ficou intacto.
+
+## Solução
+
+### Arquivo a modificar: `supabase/functions/whatsapp-webhook/index.ts`
+
+**Uma correção cirúrgica** na condição da linha 341: excluir `contact` do bloco que busca link de mídia persistente.
+
+**Antes (linha 341):**
+```ts
+if (mediaType !== 'text' && externalId && instance.token) {
 ```
 
-### Correção 3: Atualizar o `useEffect` do realtime para usar a versão correta
-
-```tsx
-useEffect(() => {
-  // ... channel setup
-  .on('broadcast', { event: 'new-message' }, (payload) => {
-    // ...
-    if (data?.inbox_id === selectedInboxId) {
-      // ...
-      fetchConversations(); // agora usa a closure correta via useCallback
-    }
-  })
-}, [selectedInboxId, fetchConversations]);
+**Depois:**
+```ts
+if (mediaType !== 'text' && mediaType !== 'contact' && externalId && instance.token) {
 ```
 
-## Arquivo a modificar
-
-### `src/pages/dashboard/HelpDesk.tsx`
-
-**Mudanças:**
-1. Converter `fetchConversations` de função regular → `useCallback` com dependências corretas
-2. Atualizar `useEffect` de carregamento para depender de `fetchConversations`
-3. Adicionar `useEffect` de guarda que limpa `selectedConversation` ao trocar de caixa
-4. Atualizar `useEffect` do realtime para incluir `fetchConversations` nas dependências
+Isso garante que mensagens do tipo `contact` nunca entrem no bloco de download de mídia, preservando o `mediaUrl` com o JSON da vCard intacto.
 
 ## Impacto
 
 - Sem mudanças de banco de dados
-- Sem mudanças de UI visível
-- Elimina a race condition completamente
-- Garante que a conversa sempre seja da caixa selecionada, mesmo em cenários de timing adverso
+- Sem mudanças de UI
+- Sem risco de regressão: apenas exclui `contact` de um bloco de download que não se aplica a ele
+- Cards de contato recebidos **após o deploy** serão exibidos corretamente como card WhatsApp-style
+- Mensagens antigas do Bruno com `media_url` corrompido precisariam ser corrigidas manualmente no banco (ou o contato precisa reenviar o cartão)
+
+## Nota sobre mensagens já salvas
+
+As mensagens do Bruno que já estão salvas no banco com `media_url` inválido **não serão corrigidas automaticamente** — apenas novas mensagens de contato receberão o tratamento correto. Se quiser corrigir o histórico, seria necessário executar uma query de atualização manual.
