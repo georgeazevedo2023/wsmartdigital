@@ -275,6 +275,18 @@ const HelpDesk = () => {
           });
         }
       })
+      .on('broadcast', { event: 'assigned-agent' }, (payload) => {
+        const { conversation_id, assigned_to } = payload.payload || {};
+        if (!conversation_id) return;
+        // Atualiza lista de conversas
+        setConversations(prev =>
+          prev.map(c => c.id === conversation_id ? { ...c, assigned_to: assigned_to ?? null } : c)
+        );
+        // Atualiza conversa selecionada
+        setSelectedConversation(prev =>
+          prev?.id === conversation_id ? { ...prev, assigned_to: assigned_to ?? null } : prev
+        );
+      })
       .subscribe((status) => {
         console.log('[HelpDesk] channel status:', status);
       });
@@ -481,6 +493,7 @@ const HelpDesk = () => {
               inboxLabels={inboxLabels}
               assignedLabelIds={conversationLabelsMap[selectedConversation.id] || []}
               onLabelsChanged={handleLabelsChanged}
+              agentNamesMap={agentNamesMap}
             />
           </div>
         )}
@@ -539,6 +552,7 @@ const HelpDesk = () => {
               inboxLabels={inboxLabels}
               assignedLabelIds={conversationLabelsMap[selectedConversation.id] || []}
               onLabelsChanged={handleLabelsChanged}
+              agentNamesMap={agentNamesMap}
             />
           </div>
         )}
