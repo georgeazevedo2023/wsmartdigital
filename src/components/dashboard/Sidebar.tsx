@@ -15,6 +15,7 @@ import {
   Send,
   Headphones,
   Inbox,
+  BrainCircuit,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -68,6 +69,7 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
   ];
 
   const adminItems = [
+    { icon: BrainCircuit, label: 'Inteligência', path: '/dashboard/intelligence' },
     { icon: ShieldCheck, label: 'Administração', path: '/dashboard/admin' },
     { icon: Settings, label: 'Configurações', path: '/dashboard/settings' },
   ];

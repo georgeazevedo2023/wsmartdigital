@@ -26,6 +26,7 @@ const HelpDesk = lazy(() => import("./pages/dashboard/HelpDesk"));
 const InboxManagement = lazy(() => import("./pages/dashboard/InboxManagement"));
 const InboxUsersManagement = lazy(() => import("./pages/dashboard/InboxUsersManagement"));
 const AdminPanel = lazy(() => import("./pages/dashboard/AdminPanel"));
+const Intelligence = lazy(() => import("./pages/dashboard/Intelligence"));
 
 const queryClient = new QueryClient();
 
@@ -128,6 +129,7 @@ const AppRoutes = () => {
         <Route path="inboxes" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxManagement /></Suspense></AdminRoute>} />
         <Route path="inbox-users" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></AdminRoute>} />
         <Route path="admin" element={<AdminRoute><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></AdminRoute>} />
+        <Route path="intelligence" element={<AdminRoute><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></AdminRoute>} />
         {/* Redirect legacy/bookmarked URLs */}
         <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
         <Route path="users" element={<Navigate to="/dashboard/admin" replace />} />
