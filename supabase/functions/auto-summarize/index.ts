@@ -13,7 +13,7 @@ const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
 const serviceSupabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-async function summarizeConversation(conversationId: string): Promise<void> {
+async function summarizeConversation(conversationId: string): Promise<boolean> {
   // Fetch messages
   const { data: messages, error: msgError } = await serviceSupabase
     .from("conversation_messages")
@@ -22,9 +22,9 @@ async function summarizeConversation(conversationId: string): Promise<void> {
     .neq("direction", "private_note")
     .order("created_at", { ascending: true });
 
-  if (msgError || !messages || messages.length < 2) {
-    console.log(`[auto-summarize] Skipping ${conversationId}: not enough messages`);
-    return;
+  if (msgError || !messages || messages.length < 3) {
+    console.log(`[auto-summarize] Skipping ${conversationId}: not enough messages (${messages?.length ?? 0})`);
+    return false;
   }
 
   // Format conversation history
@@ -78,7 +78,7 @@ Responda APENAS com um JSON válido, sem markdown, sem blocos de código, sem te
 
   if (!aiResponse.ok) {
     console.error(`[auto-summarize] AI error for ${conversationId}:`, aiResponse.status);
-    return;
+    return false;
   }
 
   const aiData = await aiResponse.json();
@@ -90,7 +90,7 @@ Responda APENAS com um JSON válido, sem markdown, sem blocos de código, sem te
     parsedSummary = JSON.parse(cleaned);
   } catch (e) {
     console.error(`[auto-summarize] Failed to parse AI response for ${conversationId}:`, rawContent);
-    return;
+    return false;
   }
 
   const summaryData = {
@@ -113,9 +113,11 @@ Responda APENAS com um JSON válido, sem markdown, sem blocos de código, sem te
 
   if (updateError) {
     console.error(`[auto-summarize] Failed to save summary for ${conversationId}:`, updateError);
-  } else {
-    console.log(`[auto-summarize] Summary saved for ${conversationId}`);
+    return false;
   }
+
+  console.log(`[auto-summarize] Summary saved for ${conversationId}`);
+  return true;
 }
 
 serve(async (req) => {
@@ -125,11 +127,10 @@ serve(async (req) => {
 
   try {
     const body = await req.json();
-    const { conversation_id, mode } = body;
+    const { conversation_id, mode, limit } = body;
 
-    // Mode: single conversation (triggered by status change trigger)
+    // Mode: single conversation (triggered by status change trigger or manual call)
     if (conversation_id) {
-      // Verify conversation exists and doesn't already have a fresh summary
       const { data: conv } = await serviceSupabase
         .from("conversations")
         .select("id, ai_summary, ai_summary_expires_at")
@@ -158,9 +159,68 @@ serve(async (req) => {
         }
       }
 
-      await summarizeConversation(conversation_id);
+      const success = await summarizeConversation(conversation_id);
 
-      return new Response(JSON.stringify({ success: true }), {
+      return new Response(JSON.stringify({ success }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Mode: backfill — process conversations without summary (regardless of status)
+    // Includes conversas inativas há mais de 1h E com pelo menos 3 mensagens
+    if (mode === "backfill") {
+      const batchLimit = Math.min(limit || 20, 50); // max 50 per call
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+
+      // We fetch candidates and filter by message count in JS (no subquery in REST API)
+      const { data: candidates, error } = await serviceSupabase
+        .from("conversations")
+        .select("id, last_message_at")
+        .is("ai_summary", null)
+        .lt("last_message_at", oneHourAgo)
+        .order("last_message_at", { ascending: false })
+        .limit(batchLimit * 3); // fetch more to account for those with <3 messages
+
+      if (error) {
+        console.error("[auto-summarize] Error fetching backfill candidates:", error);
+        return new Response(JSON.stringify({ error: "Failed to fetch conversations" }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      if (!candidates || candidates.length === 0) {
+        console.log("[auto-summarize] Backfill: no candidates found");
+        return new Response(JSON.stringify({ processed: 0, total_candidates: 0 }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      console.log(`[auto-summarize] Backfill: processing up to ${batchLimit} from ${candidates.length} candidates`);
+
+      let processed = 0;
+      let skipped = 0;
+
+      for (const conv of candidates) {
+        if (processed >= batchLimit) break;
+
+        try {
+          const success = await summarizeConversation(conv.id);
+          if (success) {
+            processed++;
+          } else {
+            skipped++;
+          }
+          // Small delay to avoid AI rate limits
+          await new Promise(resolve => setTimeout(resolve, 300));
+        } catch (err) {
+          console.error(`[auto-summarize] Backfill error processing ${conv.id}:`, err);
+          skipped++;
+        }
+      }
+
+      console.log(`[auto-summarize] Backfill complete: ${processed} processed, ${skipped} skipped`);
+      return new Response(JSON.stringify({ processed, skipped, total_candidates: candidates.length }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -168,15 +228,15 @@ serve(async (req) => {
     // Mode: inactive conversations (triggered by hourly cron)
     if (mode === "inactive") {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+      const batchLimit = limit || 20;
 
-      // Find conversations with no activity for 1+ hour, no summary yet, and at least some messages
       const { data: inactiveConvs, error } = await serviceSupabase
         .from("conversations")
         .select("id")
         .lt("last_message_at", oneHourAgo)
         .is("ai_summary", null)
-        .neq("status", "resolvida") // resolvida already triggers on status change
-        .limit(20); // process max 20 per hour to avoid overload
+        .order("last_message_at", { ascending: false })
+        .limit(batchLimit * 3); // fetch extra to account for those with <3 messages
 
       if (error) {
         console.error("[auto-summarize] Error fetching inactive conversations:", error);
@@ -193,14 +253,14 @@ serve(async (req) => {
         });
       }
 
-      console.log(`[auto-summarize] Processing ${inactiveConvs.length} inactive conversations`);
+      console.log(`[auto-summarize] Processing ${inactiveConvs.length} inactive conversation candidates`);
 
-      // Process sequentially to avoid rate limits
       let processed = 0;
       for (const conv of inactiveConvs) {
+        if (processed >= batchLimit) break;
         try {
-          await summarizeConversation(conv.id);
-          processed++;
+          const success = await summarizeConversation(conv.id);
+          if (success) processed++;
           // Small delay to avoid AI rate limits
           await new Promise(resolve => setTimeout(resolve, 500));
         } catch (err) {
@@ -213,7 +273,7 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ error: "Invalid request: provide conversation_id or mode=inactive" }), {
+    return new Response(JSON.stringify({ error: "Invalid request: provide conversation_id, mode=backfill, or mode=inactive" }), {
       status: 400,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
