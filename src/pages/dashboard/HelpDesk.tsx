@@ -402,42 +402,83 @@ const HelpDesk = () => {
 
   const [manageLabelsOpen, setManageLabelsOpen] = useState(false);
 
+  const statusTabs = [
+    { value: 'aberta', label: 'Abertas' },
+    { value: 'pendente', label: 'Pendentes' },
+    { value: 'resolvida', label: 'Resolvidas' },
+    { value: 'todas', label: 'Todas' },
+  ];
+
   const unifiedHeader = (
-    <div className="flex items-center justify-between px-4 py-2 border-b border-border/50 bg-card/50 backdrop-blur-sm shrink-0">
-      <div className="flex items-center gap-2">
-        <h2 className="font-display font-bold text-base">Atendimento</h2>
-      </div>
-      {inboxes.length > 0 && (
-        <div className="flex items-center gap-2">
-          <span className="hidden md:inline text-xs text-muted-foreground">Caixa:</span>
-          <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
-            <SelectTrigger className="w-32 md:w-48 h-7 text-xs border-border/30 bg-secondary/50">
-              <SelectValue placeholder="Selecionar inbox" />
-            </SelectTrigger>
-            <SelectContent>
-              {inboxes.map(inbox => (
-                <SelectItem key={inbox.id} value={inbox.id}>
-                  {inbox.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+    <div className="shrink-0 bg-card/50 backdrop-blur-sm border-b border-border/50">
+      {/* Linha principal: título + tabs (desktop) + seletor */}
+      <div className="flex items-center gap-2 px-4 h-11">
+        <h2 className="font-display font-bold text-base shrink-0">Atendimento</h2>
+
+        {/* Status tabs — visíveis só no desktop */}
+        <div className="hidden md:flex items-center gap-0.5 flex-1 overflow-x-auto no-scrollbar">
+          {statusTabs.map(tab => (
+            <button
+              key={tab.value}
+              onClick={() => setStatusFilter(tab.value)}
+              className={cn(
+                'px-3 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap',
+                statusFilter === tab.value
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:bg-secondary'
+              )}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
-      )}
+
+        {inboxes.length > 0 && (
+          <div className="ml-auto flex items-center gap-1.5 shrink-0">
+            <span className="hidden md:inline text-xs text-muted-foreground">Caixa:</span>
+            <Select value={selectedInboxId} onValueChange={setSelectedInboxId}>
+              <SelectTrigger className="w-36 md:w-48 h-7 text-xs border-border/30 bg-secondary/50">
+                <SelectValue placeholder="Selecionar inbox" />
+              </SelectTrigger>
+              <SelectContent>
+                {inboxes.map(inbox => (
+                  <SelectItem key={inbox.id} value={inbox.id}>
+                    {inbox.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+      </div>
+
+      {/* Status tabs — apenas no mobile, linha separada com scroll horizontal */}
+      <div className="md:hidden flex items-center gap-0.5 px-3 pb-2 overflow-x-auto no-scrollbar">
+        {statusTabs.map(tab => (
+          <button
+            key={tab.value}
+            onClick={() => setStatusFilter(tab.value)}
+            className={cn(
+              'px-3 py-1 rounded-full text-xs font-medium transition-colors whitespace-nowrap shrink-0',
+              statusFilter === tab.value
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-secondary'
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 
   const listProps = {
     conversations: filteredConversations,
     selectedId: selectedConversation?.id || null,
-    statusFilter,
-    onStatusFilterChange: setStatusFilter,
     searchQuery,
     onSearchChange: setSearchQuery,
     onSelect: handleSelectConversation,
     loading,
-    onSync: handleSync,
-    syncing,
     inboxLabels,
     conversationLabelsMap,
     labelFilter,

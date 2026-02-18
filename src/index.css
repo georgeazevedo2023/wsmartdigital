@@ -235,3 +235,12 @@
   0%, 100% { box-shadow: 0 0 20px -5px hsl(142 70% 45% / 0.3); }
   50% { box-shadow: 0 0 40px -5px hsl(142 70% 45% / 0.5); }
 }
+
+/* Hide scrollbar but keep scroll functionality */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
