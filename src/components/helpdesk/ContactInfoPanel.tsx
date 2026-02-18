@@ -4,17 +4,27 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
-import { Phone, ArrowLeft, Tags, Settings2, UserCheck, Sparkles, RefreshCw, Clock, Target, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Phone, ArrowLeft, Tags, Settings2, UserCheck, Sparkles, RefreshCw, Clock, Target, CheckCircle2, AlertCircle, History, ChevronDown, ChevronUp, MessageSquare } from 'lucide-react';
 import type { Conversation, AiSummary } from '@/pages/dashboard/HelpDesk';
 import { ConversationLabels, type Label } from './ConversationLabels';
 import { LabelPicker } from './LabelPicker';
 import { ManageLabelsDialog } from './ManageLabelsDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { formatBR } from '@/lib/dateUtils';
 
 interface InboxAgent {
   user_id: string;
   full_name: string;
+}
+
+interface PastConversation {
+  id: string;
+  status: string;
+  last_message_at: string | null;
+  created_at: string;
+  ai_summary: AiSummary | null;
+  last_message: string | null;
 }
 
 interface ContactInfoPanelProps {
@@ -39,6 +49,18 @@ const priorityOptions = [
   { value: 'baixa', label: 'Baixa', color: 'bg-primary text-primary-foreground' },
 ];
 
+const statusBadgeClass: Record<string, string> = {
+  aberta: 'bg-primary/15 text-primary border-primary/30',
+  pendente: 'bg-warning/15 text-warning border-warning/30',
+  resolvida: 'bg-success/15 text-success border-success/30',
+};
+
+const statusLabel: Record<string, string> = {
+  aberta: 'Aberta',
+  pendente: 'Pendente',
+  resolvida: 'Resolvida',
+};
+
 export const ContactInfoPanel = ({
   conversation,
   onUpdateConversation,
@@ -55,10 +77,46 @@ export const ContactInfoPanel = ({
   const [aiSummary, setAiSummary] = useState<AiSummary | null>(conversation.ai_summary || null);
   const [summarizing, setSummarizing] = useState(false);
 
+  // Past conversations state
+  const [pastConversations, setPastConversations] = useState<PastConversation[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyExpanded, setHistoryExpanded] = useState(true);
+  const [expandedSummaries, setExpandedSummaries] = useState<Set<string>>(new Set());
+
   // Sync aiSummary when conversation changes
   useEffect(() => {
     setAiSummary(conversation.ai_summary || null);
   }, [conversation.id, conversation.ai_summary]);
+
+  // Fetch past conversations for this contact
+  useEffect(() => {
+    const fetchHistory = async () => {
+      if (!conversation.contact_id) return;
+      setHistoryLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('conversations')
+          .select('id, status, last_message_at, created_at, ai_summary, last_message')
+          .eq('contact_id', conversation.contact_id)
+          .neq('id', conversation.id)
+          .order('last_message_at', { ascending: false })
+          .limit(10);
+
+        if (error) throw error;
+        setPastConversations(
+          (data || []).map((c: any) => ({
+            ...c,
+            ai_summary: c.ai_summary || null,
+          }))
+        );
+      } catch (err) {
+        console.error('[ContactInfoPanel] fetchHistory error:', err);
+      } finally {
+        setHistoryLoading(false);
+      }
+    };
+    fetchHistory();
+  }, [conversation.id, conversation.contact_id]);
 
   const handleSummarize = async (forceRefresh = false) => {
     setSummarizing(true);
@@ -185,9 +243,16 @@ export const ContactInfoPanel = ({
     toast.success(agentId ? `Atribuído a ${agentName}` : 'Agente removido');
   };
 
-  // Allow re-selecting "Nenhum" even when already null (force clear)
-  const handleSelectOpenChange = (open: boolean) => {
-    if (!open && conversation.assigned_to !== null) return;
+  const toggleSummaryExpanded = (convId: string) => {
+    setExpandedSummaries(prev => {
+      const next = new Set(prev);
+      if (next.has(convId)) {
+        next.delete(convId);
+      } else {
+        next.add(convId);
+      }
+      return next;
+    });
   };
 
   return (
@@ -319,7 +384,7 @@ export const ContactInfoPanel = ({
         </div>
       </div>
 
-      {/* AI Summary */}
+      {/* AI Summary — current conversation */}
       <div className="space-y-2 border border-border/50 rounded-lg p-3 bg-muted/30">
         <div className="flex items-center justify-between">
           <label className="text-xs font-medium flex items-center gap-1.5 text-foreground">
@@ -347,7 +412,7 @@ export const ContactInfoPanel = ({
           </div>
         )}
 
-      {!summarizing && !aiSummary && (
+        {!summarizing && !aiSummary && (
           <p className="text-xs text-muted-foreground italic py-1">
             Resumo gerado automaticamente ao resolver a conversa ou após 1h de inatividade.
           </p>
@@ -392,6 +457,171 @@ export const ContactInfoPanel = ({
               </div>
               <span className="text-muted-foreground">{aiSummary.message_count} msgs</span>
             </div>
+          </div>
+        )}
+      </div>
+
+      {/* Contact History Timeline */}
+      <div className="space-y-2">
+        <button
+          onClick={() => setHistoryExpanded(v => !v)}
+          className="w-full flex items-center justify-between text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
+        >
+          <span className="flex items-center gap-1.5">
+            <History className="w-3.5 h-3.5" />
+            Histórico do contato
+            {!historyLoading && (
+              <span className="inline-flex items-center justify-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                {pastConversations.length}
+              </span>
+            )}
+          </span>
+          {historyExpanded ? (
+            <ChevronUp className="w-3.5 h-3.5" />
+          ) : (
+            <ChevronDown className="w-3.5 h-3.5" />
+          )}
+        </button>
+
+        {historyExpanded && (
+          <div className="space-y-0">
+            {historyLoading && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground py-3 pl-1">
+                <div className="w-3 h-3 rounded-full border border-muted-foreground/30 border-t-primary animate-spin" />
+                Carregando histórico...
+              </div>
+            )}
+
+            {!historyLoading && pastConversations.length === 0 && (
+              <p className="text-xs text-muted-foreground italic py-2 pl-1">
+                Nenhuma conversa anterior com este contato.
+              </p>
+            )}
+
+            {!historyLoading && pastConversations.length > 0 && (
+              <div className="relative">
+                {/* Timeline vertical line */}
+                <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border/60" />
+
+                <div className="space-y-0">
+                  {pastConversations.map((past, idx) => {
+                    const dateStr = past.last_message_at || past.created_at;
+                    const isExpanded = expandedSummaries.has(past.id);
+                    const hasSummary = !!past.ai_summary;
+
+                    return (
+                      <div key={past.id} className="relative pl-5 pb-4 last:pb-0">
+                        {/* Timeline dot */}
+                        <div className={cn(
+                          'absolute left-0 top-1.5 w-3.5 h-3.5 rounded-full border-2 bg-background flex items-center justify-center',
+                          past.status === 'resolvida'
+                            ? 'border-success'
+                            : past.status === 'pendente'
+                            ? 'border-warning'
+                            : 'border-primary'
+                        )}>
+                          <div className={cn(
+                            'w-1.5 h-1.5 rounded-full',
+                            past.status === 'resolvida'
+                              ? 'bg-success'
+                              : past.status === 'pendente'
+                              ? 'bg-warning'
+                              : 'bg-primary'
+                          )} />
+                        </div>
+
+                        {/* Card */}
+                        <div className="rounded-md border border-border/40 bg-muted/20 overflow-hidden">
+                          {/* Header */}
+                          <div className="flex items-center justify-between px-2.5 py-1.5 gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="text-[11px] font-medium text-foreground shrink-0">
+                                {formatBR(dateStr, 'dd/MM/yyyy')}
+                              </span>
+                              <span className="text-[10px] text-muted-foreground shrink-0">
+                                {formatBR(dateStr, 'HH:mm')}
+                              </span>
+                            </div>
+                            <span className={cn(
+                              'text-[10px] font-medium px-1.5 py-0.5 rounded-full border shrink-0',
+                              statusBadgeClass[past.status] || 'bg-muted text-muted-foreground border-border'
+                            )}>
+                              {statusLabel[past.status] || past.status}
+                            </span>
+                          </div>
+
+                          {/* Last message preview (if no summary) */}
+                          {!hasSummary && past.last_message && (
+                            <div className="px-2.5 pb-2">
+                              <div className="flex items-start gap-1">
+                                <MessageSquare className="w-2.5 h-2.5 text-muted-foreground mt-0.5 shrink-0" />
+                                <p className="text-[11px] text-muted-foreground leading-relaxed line-clamp-2">
+                                  {past.last_message}
+                                </p>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* AI Summary */}
+                          {hasSummary && (
+                            <div className="border-t border-border/30">
+                              {/* Reason always visible */}
+                              <div className="px-2.5 py-1.5">
+                                <div className="flex items-start gap-1">
+                                  <Target className="w-2.5 h-2.5 text-primary mt-0.5 shrink-0" />
+                                  <p className="text-[11px] text-foreground leading-relaxed">
+                                    {past.ai_summary!.reason}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Expanded detail */}
+                              {isExpanded && (
+                                <div className="px-2.5 pb-2 space-y-1.5 border-t border-border/20 pt-1.5">
+                                  {past.ai_summary!.summary && (
+                                    <div className="flex items-start gap-1">
+                                      <AlertCircle className="w-2.5 h-2.5 text-muted-foreground mt-0.5 shrink-0" />
+                                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        {past.ai_summary!.summary}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {past.ai_summary!.resolution && (
+                                    <div className="flex items-start gap-1">
+                                      <CheckCircle2 className="w-2.5 h-2.5 text-success mt-0.5 shrink-0" />
+                                      <p className="text-[11px] text-muted-foreground leading-relaxed">
+                                        {past.ai_summary!.resolution}
+                                      </p>
+                                    </div>
+                                  )}
+                                  {past.ai_summary!.message_count && (
+                                    <p className="text-[10px] text-muted-foreground/60">
+                                      {past.ai_summary!.message_count} mensagens
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* Toggle expand */}
+                              <button
+                                onClick={() => toggleSummaryExpanded(past.id)}
+                                className="w-full flex items-center justify-center gap-1 py-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors border-t border-border/20"
+                              >
+                                {isExpanded ? (
+                                  <>Ver menos <ChevronUp className="w-3 h-3" /></>
+                                ) : (
+                                  <>Ver resumo completo <ChevronDown className="w-3 h-3" /></>
+                                )}
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
