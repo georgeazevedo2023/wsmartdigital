@@ -219,9 +219,16 @@ Responda APENAS com um JSON válido, sem markdown, sem blocos de código, sem te
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
     );
 
+    // Save summary with 60-day expiry
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 60);
+
     const { error: updateError } = await serviceSupabase
       .from("conversations")
-      .update({ ai_summary: summaryData })
+      .update({
+        ai_summary: summaryData,
+        ai_summary_expires_at: expiresAt.toISOString(),
+      })
       .eq("id", conversation_id);
 
     if (updateError) {
