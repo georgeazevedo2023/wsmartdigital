@@ -1,100 +1,100 @@
 
-# Fix Crítico: Recursão infinita nas políticas RLS
+# Auto-atribuição ao enviar mensagem: fix do feedback visual em tempo real
 
-## O problema
+## O que já está funcionando
 
-A última migração criou uma política em `inbox_users` que consulta a própria tabela `inbox_users`:
+A lógica central já existe no `ChatInput.tsx`:
+- A função `autoAssignAgent()` já existe (linha 26-46)
+- Já é chamada ao enviar texto (linha 551), áudio (linha 313) e arquivo (linha 440)
+- O broadcast `assigned-agent` já é disparado via `helpdesk-conversations`
+- O `HelpDesk.tsx` já escuta o broadcast e atualiza `selectedConversation`
 
-```sql
--- CAUSA DO PROBLEMA: inbox_users consultando inbox_users
-CREATE POLICY "Inbox members can view co-members"
-ON public.inbox_users FOR SELECT
-USING (
-  EXISTS (
-    SELECT 1 FROM inbox_users my_membership  -- <-- self-reference!
-    WHERE my_membership.user_id = auth.uid()
-    AND my_membership.inbox_id = inbox_users.inbox_id
-  )
-);
+## O problema real
+
+A função `autoAssignAgent()` no `ChatInput` apenas:
+1. Faz UPDATE no banco
+2. Dispara broadcast
+
+Mas **não chama nenhum callback local imediato**. Isso cria dois problemas:
+
+1. O `ContactInfoPanel` depende do `conversation.assigned_to` recebido como prop. Se o broadcast chegar com delay ou a conversa não estiver selecionada no canal certo, o dropdown continua mostrando "— Nenhum —"
+
+2. O `ChatInput` não tem referência ao `onUpdateConversation` do `ContactInfoPanel` — eles são componentes irmãos, ambos recebendo `conversation` do `HelpDesk` pai
+
+## Solução
+
+Adicionar um **callback `onAgentAssigned`** no `ChatInput` para que, após auto-atribuição, o estado local seja atualizado imediatamente no `HelpDesk.tsx` (sem depender do broadcast):
+
+### 1. `ChatInput.tsx` — adicionar prop `onAgentAssigned`
+
+```typescript
+interface ChatInputProps {
+  conversation: Conversation;
+  onMessageSent: () => void;
+  onAgentAssigned?: (conversationId: string, agentId: string) => void; // NOVA
+  // ...
+}
 ```
 
-Quando o Postgres avalia essa política para qualquer linha de `inbox_users`, ele precisa consultar `inbox_users` novamente para verificar o `EXISTS`, o que dispara a mesma política, criando um loop infinito. Resultado: **erro 42P17 - infinite recursion** que derruba absolutamente todas as queries que tocam `inbox_users` ou `user_profiles` (que também faz JOIN em `inbox_users`).
+E dentro de `autoAssignAgent()`, após o update bem-sucedido:
 
-## A solução correta: função SECURITY DEFINER
+```typescript
+const autoAssignAgent = async () => {
+  if (!user || conversation.assigned_to === user.id) return;
+  try {
+    await supabase
+      .from('conversations')
+      .update({ assigned_to: user.id })
+      .eq('id', conversation.id);
 
-O padrão correto para evitar recursão em RLS é criar uma **função com `SECURITY DEFINER`**, que executa com os privilégios do owner (superuser), bypassando completamente as políticas RLS ao fazer a consulta interna:
+    // Callback imediato para UI local
+    onAgentAssigned?.(conversation.id, user.id); // NOVO
 
-```sql
--- Função que verifica membership SEM acionar RLS
-CREATE OR REPLACE FUNCTION public.is_inbox_member(_user_id uuid, _inbox_id uuid)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.inbox_users
-    WHERE user_id = _user_id AND inbox_id = _inbox_id
+    // Broadcast para outros agentes
+    await supabase.channel('helpdesk-conversations').send({...});
+  } catch (err) {...}
+};
+```
+
+### 2. `HelpDesk.tsx` — passar callback e processar atualização
+
+Criar um handler `handleAgentAssigned` que atualiza `selectedConversation` e `conversations` localmente:
+
+```typescript
+const handleAgentAssigned = (conversationId: string, agentId: string) => {
+  setConversations(prev =>
+    prev.map(c => c.id === conversationId ? { ...c, assigned_to: agentId } : c)
   );
-$$;
+  setSelectedConversation(prev =>
+    prev?.id === conversationId ? { ...prev, assigned_to: agentId } : prev
+  );
+};
 ```
 
-Com essa função, as políticas podem verificar membership sem recursão:
-
-```sql
--- Política sem recursão
-CREATE POLICY "Inbox members can view co-members"
-ON public.inbox_users FOR SELECT
-USING (
-  public.is_inbox_member(auth.uid(), inbox_id)
-  --    ^^ chama a função SECURITY DEFINER que bypassa RLS
-);
+E passar para o `ChatInput`:
+```tsx
+<ChatInput
+  conversation={selectedConversation}
+  onMessageSent={handleMessageSent}
+  onAgentAssigned={handleAgentAssigned} // NOVO
+  ...
+/>
 ```
 
-## O que a migração fará
+### 3. `ChatPanel.tsx` — propagar a prop até `ChatInput`
 
-1. **Dropar** a política problemática `"Inbox members can view co-members"` em `inbox_users`
-2. **Dropar** a política problemática `"Inbox members can view co-member profiles"` em `user_profiles` (também causa recursão via inbox_users)
-3. **Criar** a função `is_inbox_member(_user_id, _inbox_id)` com `SECURITY DEFINER`
-4. **Recriar** ambas as políticas usando a função segura
+O `ChatInput` está dentro do `ChatPanel`. Será necessário passar `onAgentAssigned` como prop também pelo `ChatPanel`.
 
-## Como funciona após o fix
+## Arquivos a modificar
 
-```text
-Milena consulta inbox_users (para listar co-membros):
-  → Política "Inbox members can view co-members" é avaliada
-  → Chama is_inbox_member(milena_id, inbox_id) -- SECURITY DEFINER, sem RLS
-  → Função confirma: Milena É membro dessa inbox
-  → Retorna TRUE → Milena vê a linha
-  → Resultado: retorna Arthur, Bruno, Milena (todos os membros da inbox)
+- **`src/components/helpdesk/ChatInput.tsx`**: Adicionar prop `onAgentAssigned` e chamá-la dentro de `autoAssignAgent()`
+- **`src/components/helpdesk/ChatPanel.tsx`**: Adicionar e propagar prop `onAgentAssigned`
+- **`src/pages/dashboard/HelpDesk.tsx`**: Criar `handleAgentAssigned` e passar para `ChatPanel`
 
-Milena consulta user_profiles (para resolver nomes):
-  → Política "Inbox members can view co-member profiles" é avaliada
-  → Chama is_inbox_member(milena_id, inbox_id da linha) -- SECURITY DEFINER
-  → Sem recursão pois a função bypassa RLS
-  → Retorna TRUE → Milena vê o perfil de Bruno/Arthur
-```
+## Resultado esperado
 
-## Políticas RLS finais (após migração)
-
-Tabela `inbox_users`:
-
-| Política | Operação | Condição |
-|---|---|---|
-| `Inbox admins and gestors can manage members` | ALL | admin/gestor da inbox |
-| `Super admins can manage all inbox_users` | ALL | super_admin role |
-| `Users can view own inbox memberships` | SELECT | `auth.uid() = user_id` |
-| `Inbox members can view co-members` | SELECT | `is_inbox_member(auth.uid(), inbox_id)` |
-
-Tabela `user_profiles`:
-
-| Política | Operação | Condição |
-|---|---|---|
-| `Users can view own profile` | SELECT | `auth.uid() = id` |
-| `Inbox members can view co-member profiles` | SELECT | `is_inbox_member(auth.uid(), iu.inbox_id)` via JOIN seguro |
-
-## Arquivo a criar
-
-- **Nova migração SQL**: Remove as políticas problemáticas, cria a função SECURITY DEFINER, e recria as políticas corretamente
-- **Sem mudanças de código** — `ContactInfoPanel.tsx` já está correto com as duas queries sequenciais
+Quando Milena enviar uma mensagem em uma conversa sem agente:
+1. A mensagem é enviada
+2. `autoAssignAgent()` faz o UPDATE no banco
+3. `onAgentAssigned` é chamado imediatamente → o dropdown "Agente Responsável" muda de "— Nenhum —" para "Milena" instantaneamente, sem depender do broadcast
+4. O broadcast ainda é disparado para que outros agentes conectados também vejam a mudança em tempo real
