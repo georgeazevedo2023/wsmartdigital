@@ -1,131 +1,89 @@
 
-# Etapa 2 — Dashboard de Inteligência de Negócios
+# Incluir Atendente Mais Solicitado no Relatório de Turno
 
-## Contexto e Dados Disponíveis
+## O que será feito
 
-Atualmente existem 10 conversas com `ai_summary` no banco, cada uma com a estrutura:
-- `reason`: motivo principal do contato (ex: "Solicitação de orçamento para retirada de blindagem")
-- `summary`: resumo em 2-3 frases
-- `resolution`: como foi resolvido
-- `generated_at`, `message_count`
+O relatório de turno passará a incluir o atendente com mais conversas atribuídas no dia, exibindo o nome do agente e a quantidade de conversas que ele atendeu.
 
-Esse JSON estruturado é a matéria-prima para toda a análise de inteligência.
+## Como funciona atualmente
 
-## Estratégia de Implementação
+A função `processShiftReport` em `supabase/functions/send-shift-report/index.ts` busca as conversas do dia com:
 
-Em vez de criar uma tabela `ai_analytics_snapshots` separada (que só faz sentido com centenas de resumos), vamos fazer análise **direta sobre as conversas** usando a Edge Function `analyze-summaries`. Ela busca os `ai_summary` existentes, envia para a IA agregar e retorna métricas prontas para o dashboard. O resultado é cacheado em sessionStorage por 30 minutos para economizar chamadas de IA.
-
-## Arquitetura da Solução
-
-```text
-[Dashboard de Inteligência]
-        │
-        ▼
-[Edge Function: analyze-summaries]
-        │
-        ├── busca conversas com ai_summary (filtro: período + inbox)
-        │
-        ├── agrupa os reason/summary/resolution em texto
-        │
-        └── Gemini Flash → JSON estruturado:
-                {
-                  top_reasons: [...],
-                  top_products: [...],
-                  top_objections: [...],
-                  sentiment_distribution: {...},
-                  key_insights: "..."
-                }
+```typescript
+.select("id, status, ai_summary")
 ```
 
-## Arquivos a Criar/Modificar
+Ela NÃO busca o campo `assigned_to` (que é o UUID do agente responsável) nem faz join com `user_profiles` para obter o nome.
 
-| Arquivo | Ação |
-|---|---|
-| `supabase/functions/analyze-summaries/index.ts` | Criar — Edge Function de análise agregada |
-| `supabase/config.toml` | Editar — registrar nova função |
-| `src/pages/dashboard/Intelligence.tsx` | Criar — nova página |
-| `src/App.tsx` | Editar — nova rota `/dashboard/intelligence` |
-| `src/components/dashboard/Sidebar.tsx` | Editar — novo item "Inteligência" (admin only) |
+## Mudanças necessárias
 
-## Detalhes Técnicos
+### 1. Edge Function `send-shift-report/index.ts`
 
-### Edge Function `analyze-summaries`
+**Passo 1 — Buscar `assigned_to` nas conversas:**
+```typescript
+.select("id, status, ai_summary, assigned_to")
+```
 
-Recebe via POST:
-```json
-{
-  "inbox_id": "uuid | null",
-  "period_days": 7
+**Passo 2 — Contar conversas por agente:**
+```typescript
+const agentMap: Record<string, number> = {};
+for (const conv of conversations) {
+  if (conv.assigned_to) {
+    agentMap[conv.assigned_to] = (agentMap[conv.assigned_to] || 0) + 1;
+  }
 }
 ```
 
-Fluxo interno:
-1. Busca todas as conversas com `ai_summary IS NOT NULL` do período (sem JWT — usa service_role)
-2. Filtra por `inbox_id` se informado
-3. Concatena todos os `reason`, `summary`, `resolution` em um único texto
-4. Chama Gemini Flash com prompt especializado em análise de negócio
-5. Retorna JSON com métricas e insights
-
-Prompt para análise agregada:
-```
-Você é um analista de negócios especializado em atendimento ao cliente.
-Analise estes N resumos de conversas de WhatsApp de uma empresa e retorne APENAS JSON válido com:
-- "top_reasons": array de {reason, count} com os 5 motivos mais frequentes
-- "top_products": array de {product, count} com produtos/serviços mais citados
-- "top_objections": array de {objection, count} com principais objeções dos clientes
-- "sentiment": {"positive": %, "neutral": %, "negative": %}
-- "key_insights": texto de 2-3 frases com os insights mais importantes para o negócio
-- "total_analyzed": número de conversas analisadas
+**Passo 3 — Buscar o nome do agente mais solicitado via `user_profiles`:**
+```typescript
+const topAgentId = Object.entries(agentMap).sort((a,b) => b[1] - a[1])[0]?.[0];
+const { data: agentProfile } = await serviceSupabase
+  .from("user_profiles")
+  .select("full_name")
+  .eq("id", topAgentId)
+  .single();
+const topAgent = { name: agentProfile?.full_name || "—", count: agentMap[topAgentId] };
 ```
 
-### Página `Intelligence.tsx`
+**Passo 4 — Passar `topAgent` para `formatReportWithAI` e `buildFallbackReport`:**
 
-Layout com 3 seções:
+Ambas as funções receberão o novo parâmetro e incluirão no texto:
 
-**Seção 1 — Filtros e Ação**
-- Select de período: Últimos 7 dias / 30 dias / 90 dias
-- Select de caixa de entrada (todas ou específica)
-- Botão "Analisar" que dispara a Edge Function
-
-**Seção 2 — Cards de KPI**
-- Card: Motivo #1 de contato (com contagem)
-- Card: Produto mais procurado
-- Card: Principal objeção
-- Card: Sentimento médio (positivo/neutro/negativo)
-
-**Seção 3 — Gráficos e Insights (Recharts)**
-- Gráfico de barras horizontais: Top 5 motivos de contato
-- Gráfico de barras: Top produtos/serviços
-- Gráfico de pizza: Distribuição de sentimento
-- Card de texto: "Insights Chave" gerados pela IA
-
-**Estados da página:**
-- Estado inicial: Ilustração + botão "Gerar análise de inteligência"
-- Estado carregando: Skeleton + mensagem "Analisando N conversas..."
-- Estado com dados: Todos os gráficos e cards visíveis
-- Estado sem dados: "Nenhuma conversa com resumo no período selecionado"
-
-### Item no Sidebar
-
-Adicionado na seção Admin com ícone `BrainCircuit` (Lucide):
-- Visível apenas para `isSuperAdmin`
-- Rota: `/dashboard/intelligence`
-- Label: "Inteligência"
-
-### Rota no App.tsx
-
-```tsx
-const Intelligence = lazy(() => import("./pages/dashboard/Intelligence"));
-// ...
-<Route path="intelligence" element={<AdminRoute><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></AdminRoute>} />
+```
+- Atendente mais solicitado: João Silva (12 conversas)
 ```
 
-## Segurança
+O prompt da IA será atualizado para incluir esse dado no corpo do relatório com o ícone 🏆.
 
-A Edge Function `analyze-summaries` usa `service_role` internamente — nenhum dado sensível é exposto. A autenticação é validada pelo JWT do usuário na request HTTP. Somente super admins podem acessar a rota pela configuração do `AdminRoute` no front-end.
+### 2. Nenhuma mudança de banco de dados necessária
 
-## Limitação de Custo
+O campo `assigned_to` já existe na tabela `conversations` e `user_profiles` já está acessível via service role na Edge Function. Nenhuma migração é necessária.
 
-- Cache de 30 minutos em `sessionStorage` com chave baseada nos filtros
-- Alerta visual quando há menos de 5 resumos disponíveis ("Poucos dados para análise confiável")
-- Limite máximo de 100 conversas por análise para controlar custos de IA
+### 3. Exemplo do relatório atualizado
+
+```
+📊 *Relatório de Turno — 18/02/2026*
+
+🏷️ *Caixa:* Suporte Técnico
+
+📞 *Atendimentos do dia:* 45 conversas
+✅ Resolvidas: 38 (84%)
+🔄 Em aberto: 7
+
+🏆 *Atendente destaque:* João Silva (12 conversas)
+
+🔝 *Principais assuntos:*
+1. Solicitação de orçamento (8)
+2. Dúvida sobre produto (6)
+3. Suporte técnico (5)
+
+⏱️ _Relatório gerado automaticamente pelo WsmartQR_
+```
+
+## Arquivo modificado
+
+| Arquivo | Ação |
+|---|---|
+| `supabase/functions/send-shift-report/index.ts` | Editar — adicionar lógica de atendente mais solicitado |
+
+Apenas **1 arquivo** será modificado. Sem alteração de banco de dados, sem mudança de frontend.
