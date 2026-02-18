@@ -1,0 +1,124 @@
+import { useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { GripVertical } from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+export interface CardData {
+  id: string;
+  title: string;
+  column_id: string;
+  board_id: string;
+  assigned_to: string | null;
+  tags: string[];
+  position: number;
+  assignedName?: string;
+  primaryFieldValue?: string;
+  primaryFieldName?: string;
+}
+
+interface KanbanCardItemProps {
+  card: CardData;
+  onClick: () => void;
+  isDragging?: boolean;
+}
+
+const TAG_COLORS = [
+  'bg-primary/10 text-primary border-primary/20',
+  'bg-purple-500/10 text-purple-400 border-purple-500/20',
+  'bg-amber-500/10 text-amber-400 border-amber-500/20',
+  'bg-rose-500/10 text-rose-400 border-rose-500/20',
+  'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+];
+
+const getTagColor = (tag: string) => {
+  let hash = 0;
+  for (let i = 0; i < tag.length; i++) hash = tag.charCodeAt(i) + ((hash << 5) - hash);
+  return TAG_COLORS[Math.abs(hash) % TAG_COLORS.length];
+};
+
+const getInitials = (name: string) => {
+  return name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2);
+};
+
+export function KanbanCardItem({ card, onClick, isDragging }: KanbanCardItemProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging: isSortDragging,
+  } = useSortable({ id: card.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cn(
+        'group relative flex flex-col gap-2 p-3 rounded-lg border border-border bg-card',
+        'cursor-pointer hover:border-primary/30 hover:shadow-md transition-all duration-150',
+        (isSortDragging || isDragging) && 'opacity-40 shadow-xl border-primary/50',
+      )}
+      onClick={onClick}
+    >
+      {/* Drag handle */}
+      <div
+        {...attributes}
+        {...listeners}
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing p-0.5 rounded text-muted-foreground hover:text-foreground"
+        onClick={e => e.stopPropagation()}
+      >
+        <GripVertical className="w-3.5 h-3.5" />
+      </div>
+
+      {/* Title */}
+      <p className="text-sm font-medium text-foreground leading-snug pr-6 line-clamp-2">
+        {card.title}
+      </p>
+
+      {/* Primary field value */}
+      {card.primaryFieldValue && (
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-muted-foreground">{card.primaryFieldName}:</span>
+          <span className="text-xs font-medium text-foreground">{card.primaryFieldValue}</span>
+        </div>
+      )}
+
+      {/* Tags */}
+      {card.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {card.tags.slice(0, 3).map(tag => (
+            <span
+              key={tag}
+              className={cn('text-[10px] px-1.5 py-0.5 rounded-full border font-medium', getTagColor(tag))}
+            >
+              {tag}
+            </span>
+          ))}
+          {card.tags.length > 3 && (
+            <span className="text-[10px] text-muted-foreground">+{card.tags.length - 3}</span>
+          )}
+        </div>
+      )}
+
+      {/* Assignee */}
+      {card.assignedName && (
+        <div className="flex items-center gap-1.5 mt-0.5">
+          <Avatar className="w-5 h-5">
+            <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+              {getInitials(card.assignedName)}
+            </AvatarFallback>
+          </Avatar>
+          <span className="text-[10px] text-muted-foreground truncate">{card.assignedName}</span>
+        </div>
+      )}
+    </div>
+  );
+}
