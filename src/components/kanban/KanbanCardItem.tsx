@@ -16,7 +16,7 @@ export interface CardData {
   assignedName?: string;
   primaryFieldValue?: string;
   primaryFieldName?: string;
-  fieldValues?: Array<{ name: string; value: string; isPrimary: boolean }>;
+  fieldValues?: Array<{ name: string; value: string; isPrimary: boolean; showOnCard: boolean }>;
 }
 
 interface KanbanCardItemProps {
@@ -94,10 +94,10 @@ export function KanbanCardItem({ card, onClick, isDragging }: KanbanCardItemProp
       )}
 
       {/* Outros campos (exceto o primário), até 3 */}
-      {card.fieldValues && card.fieldValues.filter(fv => !fv.isPrimary && fv.value).length > 0 && (
+      {card.fieldValues && card.fieldValues.filter(fv => !fv.isPrimary && fv.value && fv.showOnCard).length > 0 && (
         <div className="flex flex-col gap-0.5">
           {card.fieldValues
-            .filter(fv => !fv.isPrimary && fv.value)
+            .filter(fv => !fv.isPrimary && fv.value && fv.showOnCard)
             .slice(0, 5)
             .map(fv => (
               <div key={fv.name} className="flex items-center gap-1">

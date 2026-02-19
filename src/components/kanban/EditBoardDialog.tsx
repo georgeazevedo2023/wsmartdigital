@@ -40,6 +40,7 @@ interface KanbanField {
   position: number;
   is_primary: boolean;
   required: boolean;
+  show_on_card: boolean;
 }
 
 interface Inbox {
@@ -121,6 +122,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       setFields(fieldRes.data.map(f => ({
         ...f,
         options: f.options ? (f.options as string[]) : null,
+        show_on_card: (f as any).show_on_card ?? false,
       })) as KanbanField[]);
     }
 
@@ -216,6 +218,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       position: fields.length,
       is_primary: fields.length === 0,
       required: false,
+      show_on_card: false,
     };
     setFields(prev => [...prev, newField]);
   };
@@ -338,7 +341,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       const isNew = field.id.startsWith('new_');
-      const payload = { board_id: board.id, name: field.name, field_type: field.field_type, options: field.options as any, position: i, is_primary: field.is_primary, required: field.required };
+      const payload = { board_id: board.id, name: field.name, field_type: field.field_type, options: field.options as any, position: i, is_primary: field.is_primary, required: field.required, show_on_card: field.show_on_card };
       if (isNew) {
         await supabase.from('kanban_fields').insert(payload);
       } else {
@@ -556,20 +559,25 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                       <p className="text-[10px] text-muted-foreground mt-1">Separe as opções por vírgula</p>
                     </div>
                   )}
-                  <div className="flex items-center gap-4 pl-6">
+                  <div className="flex flex-wrap items-center gap-4 pl-6">
                     <div className="flex items-center gap-2">
                       <Switch
                         id={`primary_${field.id}`}
                         checked={field.is_primary}
                         onCheckedChange={v => updateField(field.id, { is_primary: v })}
                       />
-                      <div>
-                        <Label htmlFor={`primary_${field.id}`} className="text-xs font-medium">Título do card</Label>
-                        {field.is_primary && (
-                          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Os demais campos aparecem automaticamente no card (até 5)</p>
-                        )}
-                      </div>
+                      <Label htmlFor={`primary_${field.id}`} className="text-xs font-medium">Título do card</Label>
                     </div>
+                    {!field.is_primary && (
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          id={`show_on_card_${field.id}`}
+                          checked={field.show_on_card}
+                          onCheckedChange={v => updateField(field.id, { show_on_card: v })}
+                        />
+                        <Label htmlFor={`show_on_card_${field.id}`} className="text-xs">Exibir no card</Label>
+                      </div>
+                    )}
                     <div className="flex items-center gap-2">
                       <Switch
                         id={`required_${field.id}`}
