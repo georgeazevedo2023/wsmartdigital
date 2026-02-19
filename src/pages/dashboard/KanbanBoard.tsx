@@ -130,18 +130,22 @@ const KanbanBoard = () => {
     const { data: rawCards } = await query;
     if (!rawCards) return;
 
-    // Load primary field values for all cards at once
+    // Load ALL field values for all cards at once
     const cardIds = rawCards.map(c => c.id);
-    const primaryField = (fields.length > 0 ? fields : []).find(f => f.is_primary);
+    const currentFields = fields.length > 0 ? fields : [];
+    const primaryField = currentFields.find(f => f.is_primary);
 
-    let cardDataMap: Record<string, string> = {};
-    if (primaryField && cardIds.length > 0) {
+    // Map: card_id → { field_id → value }
+    const allFieldsMap: Record<string, Record<string, string>> = {};
+    if (cardIds.length > 0) {
       const { data: cardData } = await supabase
         .from('kanban_card_data')
-        .select('card_id, value')
-        .in('card_id', cardIds)
-        .eq('field_id', primaryField.id);
-      (cardData || []).forEach(d => { cardDataMap[d.card_id] = d.value || ''; });
+        .select('card_id, field_id, value')
+        .in('card_id', cardIds);
+      (cardData || []).forEach(d => {
+        if (!allFieldsMap[d.card_id]) allFieldsMap[d.card_id] = {};
+        allFieldsMap[d.card_id][d.field_id] = d.value || '';
+      });
     }
 
     // Load assignee names
@@ -157,18 +161,30 @@ const KanbanBoard = () => {
       });
     }
 
-    setCards(rawCards.map(c => ({
-      id: c.id,
-      title: c.title,
-      column_id: c.column_id,
-      board_id: c.board_id,
-      assigned_to: c.assigned_to,
-      tags: c.tags || [],
-      position: c.position,
-      assignedName: c.assigned_to ? nameMap[c.assigned_to] : undefined,
-      primaryFieldValue: primaryField ? cardDataMap[c.id] : undefined,
-      primaryFieldName: primaryField?.name,
-    })));
+    setCards(rawCards.map(c => {
+      const cardFieldMap = allFieldsMap[c.id] || {};
+      const fieldValuesArr = currentFields
+        .map(f => ({
+          name: f.name,
+          value: cardFieldMap[f.id] || '',
+          isPrimary: f.is_primary,
+        }))
+        .filter(fv => fv.value);
+
+      return {
+        id: c.id,
+        title: c.title,
+        column_id: c.column_id,
+        board_id: c.board_id,
+        assigned_to: c.assigned_to,
+        tags: c.tags || [],
+        position: c.position,
+        assignedName: c.assigned_to ? nameMap[c.assigned_to] : undefined,
+        primaryFieldValue: primaryField ? (cardFieldMap[primaryField.id] || undefined) : undefined,
+        primaryFieldName: primaryField?.name,
+        fieldValues: fieldValuesArr,
+      };
+    }));
   };
 
   const loadTeamMembers = async (boardData: BoardData) => {
@@ -180,7 +196,9 @@ const KanbanBoard = () => {
       const members = (data || [])
         .map((d: any) => d.user_profiles)
         .filter(Boolean) as TeamMember[];
-      setTeamMembers(members);
+      // Deduplicar por id
+      const unique = [...new Map(members.map(m => [m.id, m])).values()];
+      setTeamMembers(unique);
     } else {
       // Sem inbox: apenas membros diretos do quadro via kanban_board_members
       const { data: memberRows } = await supabase

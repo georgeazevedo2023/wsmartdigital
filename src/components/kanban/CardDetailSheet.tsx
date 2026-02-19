@@ -85,14 +85,26 @@ export function CardDetailSheet({
   };
 
   const handleSave = async () => {
-    if (!card || !title.trim()) return;
+    if (!card) return;
     setSaving(true);
+
+    // Usar o valor do campo primário como título, se existir
+    const primaryField = fields.find(f => f.is_primary);
+    const effectiveTitle = primaryField
+      ? (fieldValues[primaryField.id]?.trim() || title.trim())
+      : title.trim();
+
+    if (!effectiveTitle) {
+      toast.error('Preencha o campo principal');
+      setSaving(false);
+      return;
+    }
 
     // Update card
     const { error: cardErr } = await supabase
       .from('kanban_cards')
       .update({
-        title: title.trim(),
+        title: effectiveTitle,
         column_id: columnId,
         assigned_to: assignedTo !== 'none' ? assignedTo : null,
         tags,
@@ -182,16 +194,18 @@ export function CardDetailSheet({
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Title */}
-          <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Nome / Título *</Label>
-            <Input
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-              placeholder="Nome do lead ou cliente"
-              className="font-medium"
-            />
-          </div>
+          {/* Title — só exibe quando não há campo primário configurado */}
+          {!fields.some(f => f.is_primary) && (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Nome / Título *</Label>
+              <Input
+                value={title}
+                onChange={e => setTitle(e.target.value)}
+                placeholder="Nome do lead ou cliente"
+                className="font-medium"
+              />
+            </div>
+          )}
 
           {/* Column */}
           <div className="space-y-1.5">
@@ -284,7 +298,7 @@ export function CardDetailSheet({
           <Button
             className="w-full gap-2"
             onClick={handleSave}
-            disabled={!title.trim() || saving}
+            disabled={saving}
           >
             <Save className="w-4 h-4" />
             {saving ? 'Salvando...' : 'Salvar Alterações'}
