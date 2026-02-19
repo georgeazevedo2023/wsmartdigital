@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { ArrowLeft, Search, Kanban, Plus } from 'lucide-react';
+import { ArrowLeft, Search, Kanban, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
 import { KanbanColumn, ColumnData } from '@/components/kanban/KanbanColumn';
 import { KanbanCardItem, CardData } from '@/components/kanban/KanbanCardItem';
 import { CardDetailSheet } from '@/components/kanban/CardDetailSheet';
@@ -66,6 +66,13 @@ const KanbanBoard = () => {
   const [addingCard, setAddingCard] = useState(false);
 
   const [activeCard, setActiveCard] = useState<CardData | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const scrollBoard = (dir: 'left' | 'right') => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollBy({ left: dir === 'right' ? 300 : -300, behavior: 'smooth' });
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -425,7 +432,24 @@ const KanbanBoard = () => {
       </div>
 
       {/* Kanban board */}
-      <div className="flex-1 overflow-x-auto overflow-y-hidden">
+      <div className="relative flex-1 overflow-hidden">
+        {/* Scroll buttons — visíveis em touch/tablet */}
+        <button
+          onClick={() => scrollBoard('left')}
+          className="absolute left-1 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-card/90 border border-border shadow-md text-muted-foreground hover:text-foreground hover:bg-card active:scale-95 transition-all md:hidden"
+          aria-label="Rolar para esquerda"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => scrollBoard('right')}
+          className="absolute right-1 top-1/2 -translate-y-1/2 z-10 flex items-center justify-center w-8 h-8 rounded-full bg-card/90 border border-border shadow-md text-muted-foreground hover:text-foreground hover:bg-card active:scale-95 transition-all md:hidden"
+          aria-label="Rolar para direita"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
+
+        <div ref={scrollRef} className="h-full overflow-x-auto overflow-y-hidden">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCorners}
@@ -475,6 +499,7 @@ const KanbanBoard = () => {
             )}
           </DragOverlay>
         </DndContext>
+        </div>
       </div>
 
       {/* Add card dialog */}
