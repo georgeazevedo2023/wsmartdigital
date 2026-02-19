@@ -2,24 +2,15 @@ import { useEffect, useState, memo } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
-import { BarChart, Bar, XAxis, YAxis, Cell, ResponsiveContainer, CartesianGrid } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Cell } from 'recharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Bot, Clock } from 'lucide-react';
 
-interface IARateData {
+interface IAResponseData {
   inbox_name: string;
   inbox_id: string;
-  total_conversations: number;
-  ia_activated: number;
-  ia_rate: number;
-}
-
-interface AgentResponseData {
-  inbox_name: string;
-  inbox_id: string;
-  agent_name: string;
-  avg_response_minutes: number;
-  conversations_count: number;
+  avg_seconds: number;
+  msg_count: number;
 }
 
 interface AgentGroup {
@@ -36,6 +27,13 @@ const COLORS = [
   'hsl(186 64% 42%)',
 ];
 
+const formatSeconds = (secs: number) => {
+  if (secs < 60) return `${Math.round(secs)}s`;
+  const m = Math.floor(secs / 60);
+  const s = Math.round(secs % 60);
+  return s > 0 ? `${m}min ${s}s` : `${m}min`;
+};
+
 const formatMinutes = (minutes: number) => {
   if (minutes < 60) return `${Math.round(minutes)}min`;
   const h = Math.floor(minutes / 60);
@@ -44,7 +42,7 @@ const formatMinutes = (minutes: number) => {
 };
 
 const HelpdeskMetricsCharts = () => {
-  const [iaData, setIaData] = useState<IARateData[]>([]);
+  const [iaData, setIaData] = useState<IAResponseData[]>([]);
   const [agentData, setAgentData] = useState<AgentGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -55,12 +53,12 @@ const HelpdeskMetricsCharts = () => {
   const fetchMetrics = async () => {
     setLoading(true);
     try {
-      // Fetch all conversations with inbox info and status_ia
-      const [convsRes, agentRes] = await Promise.all([
+      // Fetch conversations with IA activated + their messages, and all convs for agent times
+      const [iaConvsRes, agentRes] = await Promise.all([
         supabase
           .from('conversations')
-          .select('inbox_id, status_ia, inboxes(name)')
-          .neq('status', 'deleted'),
+          .select('id, inbox_id, inboxes(name), conversation_messages(created_at, direction)')
+          .eq('status_ia', 'ligada'),
         supabase
           .from('conversations')
           .select(`
@@ -73,36 +71,46 @@ const HelpdeskMetricsCharts = () => {
           .not('assigned_to', 'is', null),
       ]);
 
-      // Process IA rate per inbox
-      if (convsRes.data) {
-        const inboxMap = new Map<string, { name: string; total: number; ia: number }>();
-        convsRes.data.forEach((conv: any) => {
-          const key = conv.inbox_id;
-          const name = conv.inboxes?.name || conv.inbox_id;
-          const existing = inboxMap.get(key) || { name, total: 0, ia: 0 };
-          existing.total++;
-          if (conv.status_ia === 'ligada') existing.ia++;
-          inboxMap.set(key, existing);
+      // --- IA response time in seconds ---
+      if (iaConvsRes.data) {
+        const inboxSecMap = new Map<string, { name: string; secs: number[]; }>();
+
+        iaConvsRes.data.forEach((conv: any) => {
+          const msgs: { created_at: string; direction: string }[] = conv.conversation_messages || [];
+          const sorted = [...msgs].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+
+          // For each incoming message, find the next outgoing message
+          sorted.forEach((msg, idx) => {
+            if (msg.direction !== 'incoming') return;
+            const inTime = new Date(msg.created_at).getTime();
+            const nextOut = sorted.slice(idx + 1).find(m => m.direction === 'outgoing');
+            if (!nextOut) return;
+            const outTime = new Date(nextOut.created_at).getTime();
+            const diffSecs = (outTime - inTime) / 1000;
+            if (diffSecs <= 0 || diffSecs >= 3600) return; // ignore > 1h or negative
+
+            const key = conv.inbox_id;
+            const name = conv.inboxes?.name || conv.inbox_id;
+            const existing = inboxSecMap.get(key) || { name, secs: [] };
+            existing.secs.push(diffSecs);
+            inboxSecMap.set(key, existing);
+          });
         });
 
-        const iaRateData: IARateData[] = Array.from(inboxMap.entries())
+        const iaResponseData: IAResponseData[] = Array.from(inboxSecMap.entries())
           .map(([id, val]) => ({
             inbox_id: id,
             inbox_name: val.name,
-            total_conversations: val.total,
-            ia_activated: val.ia,
-            ia_rate: val.total > 0 ? Math.round((val.ia / val.total) * 100 * 10) / 10 : 0,
+            avg_seconds: Math.round((val.secs.reduce((a, b) => a + b, 0) / val.secs.length) * 10) / 10,
+            msg_count: val.secs.length,
           }))
-          .sort((a, b) => b.ia_rate - a.ia_rate);
-        setIaData(iaRateData);
+          .sort((a, b) => a.avg_seconds - b.avg_seconds); // fastest first
+        setIaData(iaResponseData);
       }
 
-      // Process agent response times
+      // --- Agent response times ---
       if (agentRes.data) {
-        // Get all user IDs from assigned_to
         const assignedIds = [...new Set(agentRes.data.map((c: any) => c.assigned_to).filter(Boolean))];
-        
-        // Fetch agent names
         const { data: profiles } = await supabase
           .from('user_profiles')
           .select('id, full_name')
@@ -110,8 +118,7 @@ const HelpdeskMetricsCharts = () => {
 
         const profileMap = new Map(profiles?.map(p => [p.id, p.full_name]) || []);
 
-        // Compute response times per inbox+agent
-        const agentInboxMap = new Map<string, { inbox: string; agent: string; minutes: number[]; }>();
+        const agentInboxMap = new Map<string, { inbox: string; agent: string; minutes: number[] }>();
 
         agentRes.data.forEach((conv: any) => {
           const msgs = conv.conversation_messages || [];
@@ -119,13 +126,11 @@ const HelpdeskMetricsCharts = () => {
           const outgoing = msgs.filter((m: any) => m.direction === 'outgoing').sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
 
           if (!incoming.length || !outgoing.length) return;
-
           const firstIn = new Date(incoming[0].created_at).getTime();
           const firstOut = new Date(outgoing[0].created_at).getTime();
           if (firstOut <= firstIn) return;
-
           const diffMins = (firstOut - firstIn) / 60000;
-          if (diffMins >= 1440) return; // ignore > 24h
+          if (diffMins >= 1440) return;
 
           const agentId = conv.assigned_to;
           const agentName = profileMap.get(agentId) || 'Desconhecido';
@@ -137,7 +142,6 @@ const HelpdeskMetricsCharts = () => {
           agentInboxMap.set(key, existing);
         });
 
-        // Group by inbox
         const inboxGroups = new Map<string, AgentGroup>();
         agentInboxMap.forEach((val) => {
           const avg = val.minutes.reduce((a, b) => a + b, 0) / val.minutes.length;
@@ -146,7 +150,6 @@ const HelpdeskMetricsCharts = () => {
           inboxGroups.set(val.inbox, existing);
         });
 
-        // Sort agents by response time ascending within each inbox
         const grouped: AgentGroup[] = Array.from(inboxGroups.values()).map(g => ({
           ...g,
           agents: g.agents.sort((a, b) => a.minutes - b.minutes),
@@ -176,32 +179,31 @@ const HelpdeskMetricsCharts = () => {
     <div className="space-y-4">
       <h2 className="text-lg font-semibold">Métricas do Helpdesk</h2>
       <div className="grid gap-4 md:grid-cols-2">
-        {/* IA Rate per Inbox */}
+        {/* IA Average Response Time per Inbox (in seconds) */}
         <Card className="glass-card-hover">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
               <Bot className="w-4 h-4 text-primary" />
-              Taxa de Resposta da IA por Caixa
+              Tempo de Resposta da IA por Caixa
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
             {hasIaData ? (
               <ChartContainer
-                config={{ ia_rate: { label: 'Taxa IA (%)', color: 'hsl(262 80% 55%)' } }}
+                config={{ avg_seconds: { label: 'Tempo médio (s)', color: 'hsl(262 80% 55%)' } }}
                 className="h-[220px] w-full"
               >
                 <BarChart
                   data={iaData.map(d => ({
                     name: d.inbox_name.length > 18 ? d.inbox_name.slice(0, 18) + '…' : d.inbox_name,
                     fullName: d.inbox_name,
-                    ia_rate: d.ia_rate,
-                    total: d.total_conversations,
-                    ia: d.ia_activated,
+                    avg_seconds: d.avg_seconds,
+                    msg_count: d.msg_count,
                   }))}
                   layout="vertical"
-                  margin={{ left: 10, right: 50 }}
+                  margin={{ left: 10, right: 65 }}
                 >
-                  <XAxis type="number" domain={[0, 100]} hide />
+                  <XAxis type="number" hide />
                   <YAxis
                     type="category"
                     dataKey="name"
@@ -216,17 +218,17 @@ const HelpdeskMetricsCharts = () => {
                         labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName || ''}
                         formatter={(value, _name, props) => (
                           <span className="font-medium">
-                            {value}% ({props.payload.ia}/{props.payload.total} conversas)
+                            {formatSeconds(Number(value))} ({props.payload.msg_count} msgs)
                           </span>
                         )}
                       />
                     }
                   />
-                  <Bar dataKey="ia_rate" radius={[0, 4, 4, 0]} maxBarSize={22}
+                  <Bar dataKey="avg_seconds" radius={[0, 4, 4, 0]} maxBarSize={22}
                     label={{
                       position: 'right',
                       fontSize: 11,
-                      formatter: (v: number) => `${v}%`,
+                      formatter: (v: number) => formatSeconds(v),
                       fill: 'hsl(var(--muted-foreground))',
                     }}
                   >
@@ -238,7 +240,7 @@ const HelpdeskMetricsCharts = () => {
               </ChartContainer>
             ) : (
               <div className="h-[220px] flex items-center justify-center text-muted-foreground text-sm">
-                Nenhum dado de IA disponível
+                Nenhuma conversa com IA ativada encontrada
               </div>
             )}
           </CardContent>
