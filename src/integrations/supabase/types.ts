@@ -528,6 +528,7 @@ export type Database = {
           created_at: string
           created_by: string
           id: string
+          notes: string | null
           position: number
           tags: string[]
           title: string
@@ -540,6 +541,7 @@ export type Database = {
           created_at?: string
           created_by: string
           id?: string
+          notes?: string | null
           position?: number
           tags?: string[]
           title: string
@@ -552,6 +554,7 @@ export type Database = {
           created_at?: string
           created_by?: string
           id?: string
+          notes?: string | null
           position?: number
           tags?: string[]
           title?: string

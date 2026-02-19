@@ -17,10 +17,10 @@ import {
 import { arrayMove } from '@dnd-kit/sortable';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Label } from '@/components/ui/label';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { ArrowLeft, Search, Kanban, Plus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Search, Kanban, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { KanbanColumn, ColumnData } from '@/components/kanban/KanbanColumn';
 import { KanbanCardItem, CardData } from '@/components/kanban/KanbanCardItem';
 import { CardDetailSheet } from '@/components/kanban/CardDetailSheet';
@@ -54,16 +54,12 @@ const KanbanBoard = () => {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [filterAssignee, setFilterAssignee] = useState<string | null>(null);
   // Role from kanban_board_members: null = not a direct member (inbox or admin)
   const [directMemberRole, setDirectMemberRole] = useState<'editor' | 'viewer' | null>(null);
 
   const [selectedCard, setSelectedCard] = useState<CardData | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
-
-  const [addCardOpen, setAddCardOpen] = useState(false);
-  const [addCardColumn, setAddCardColumn] = useState('');
-  const [newCardTitle, setNewCardTitle] = useState('');
-  const [addingCard, setAddingCard] = useState(false);
 
   const [activeCard, setActiveCard] = useState<CardData | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -333,38 +329,28 @@ const KanbanBoard = () => {
   };
 
   // ── Add card ─────────────────────────────────────────────
-  const handleAddCard = async () => {
-    if (!newCardTitle.trim() || !user || !boardId) return;
-    setAddingCard(true);
+  const handleAddCard = async (columnId: string, title: string) => {
+    if (!title.trim() || !user || !boardId) return;
 
-    const colCards = cards.filter(c => c.column_id === addCardColumn);
+    const colCards = cards.filter(c => c.column_id === columnId);
 
     // Em quadros privados sem inbox, auto-atribuir ao usuário logado
     const autoAssign = board?.visibility === 'private' ? user.id : null;
 
     const { error } = await supabase.from('kanban_cards').insert({
       board_id: boardId,
-      column_id: addCardColumn,
-      title: newCardTitle.trim(),
+      column_id: columnId,
+      title: title.trim(),
       created_by: user.id,
       assigned_to: autoAssign,
       position: colCards.length,
       tags: [],
     });
 
-    setAddingCard(false);
     if (error) { toast.error('Erro ao criar card'); return; }
 
     toast.success('Card criado!');
-    setNewCardTitle('');
-    setAddCardOpen(false);
     loadAll();
-  };
-
-  const openAddCard = (columnId: string) => {
-    setAddCardColumn(columnId);
-    setNewCardTitle('');
-    setAddCardOpen(true);
   };
 
   const handleCardClick = (card: CardData) => {
@@ -399,7 +385,7 @@ const KanbanBoard = () => {
   };
 
   // ── Filter ───────────────────────────────────────────────
-  const filteredCards = search
+  const searchFiltered = search
     ? cards.filter(c =>
         c.title.toLowerCase().includes(search.toLowerCase()) ||
         c.tags.some(t => t.toLowerCase().includes(search.toLowerCase())) ||
@@ -407,8 +393,18 @@ const KanbanBoard = () => {
       )
     : cards;
 
+  const filteredByAssignee = filterAssignee
+    ? searchFiltered.filter(c => c.assigned_to === filterAssignee)
+    : searchFiltered;
+
+  const filteredCards = filteredByAssignee;
+
   const getColumnCards = (colId: string) =>
     filteredCards.filter(c => c.column_id === colId).sort((a, b) => a.position - b.position);
+
+  // Helper: initials from name
+  const getInitials = (name: string) =>
+    name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2);
 
   if (loading) {
     return (
@@ -420,40 +416,88 @@ const KanbanBoard = () => {
 
   if (!board) return null;
 
+  // Members who actually have cards (for chips)
+  const membersWithCards = teamMembers.filter(m =>
+    cards.some(c => c.assigned_to === m.id)
+  );
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
-        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/dashboard/crm')}>
-          <ArrowLeft className="w-4 h-4" />
-        </Button>
-        <div className="flex items-center gap-2 min-w-0">
-          <Kanban className="w-4 h-4 text-primary shrink-0" />
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold text-foreground truncate">{board.name}</h1>
-            {board.description && (
-              <p className="text-[10px] text-muted-foreground truncate hidden sm:block">{board.description}</p>
+      <div className="flex flex-col gap-2 px-4 py-3 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => navigate('/dashboard/crm')}>
+            <ArrowLeft className="w-4 h-4" />
+          </Button>
+          <div className="flex items-center gap-2 min-w-0">
+            <Kanban className="w-4 h-4 text-primary shrink-0" />
+            <div className="min-w-0">
+              <h1 className="text-sm font-bold text-foreground truncate">{board.name}</h1>
+              {board.description && (
+                <p className="text-[10px] text-muted-foreground truncate hidden sm:block">{board.description}</p>
+              )}
+            </div>
+          </div>
+          <div className="flex-1" />
+          {/* Search */}
+          <div className="relative hidden sm:block">
+            <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Buscar cards..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              className="h-8 pl-8 w-48 text-sm"
+            />
+          </div>
+          <span className="text-xs text-muted-foreground shrink-0">
+            {filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}
+          </span>
+          {directMemberRole === 'viewer' && (
+            <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
+              👁️ Visualizador
+            </span>
+          )}
+        </div>
+
+        {/* Assignee filter chips */}
+        {membersWithCards.length > 0 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-muted-foreground shrink-0">Filtrar:</span>
+            {membersWithCards.map(m => {
+              const name = m.full_name || m.email;
+              const count = cards.filter(c => c.assigned_to === m.id).length;
+              const isActive = filterAssignee === m.id;
+              return (
+                <button
+                  key={m.id}
+                  onClick={() => setFilterAssignee(isActive ? null : m.id)}
+                  className={cn(
+                    'flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full border text-[10px] font-medium transition-all',
+                    isActive
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted/50 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
+                  )}
+                >
+                  <Avatar className="w-4 h-4 shrink-0">
+                    <AvatarFallback className={cn('text-[8px]', isActive ? 'bg-primary-foreground/20 text-primary-foreground' : 'bg-primary/10 text-primary')}>
+                      {getInitials(name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span>{name.split(' ')[0]}</span>
+                  <span className={cn('px-1 rounded-full text-[9px]', isActive ? 'bg-primary-foreground/20' : 'bg-muted')}>{count}</span>
+                </button>
+              );
+            })}
+            {filterAssignee && (
+              <button
+                onClick={() => setFilterAssignee(null)}
+                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <X className="w-3 h-3" />
+                Limpar
+              </button>
             )}
           </div>
-        </div>
-        <div className="flex-1" />
-        {/* Search */}
-        <div className="relative hidden sm:block">
-          <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar cards..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            className="h-8 pl-8 w-48 text-sm"
-          />
-        </div>
-        <span className="text-xs text-muted-foreground shrink-0">
-          {filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}
-        </span>
-        {directMemberRole === 'viewer' && (
-          <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1">
-            👁️ Visualizador
-          </span>
         )}
       </div>
 
@@ -490,7 +534,7 @@ const KanbanBoard = () => {
                 column={col}
                 cards={getColumnCards(col.id)}
                 onCardClick={handleCardClick}
-                onAddCard={openAddCard}
+                onAddCard={handleAddCard}
                 canAddCard={canAddCard}
                 onMoveCard={handleMoveCard}
                 hasPrev={colIdx > 0}
@@ -531,35 +575,6 @@ const KanbanBoard = () => {
         </div>
       </div>
 
-      {/* Add card dialog */}
-      <Dialog open={addCardOpen} onOpenChange={setAddCardOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Novo Card</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-1.5 py-2">
-            <Label>Nome do Lead / Cliente *</Label>
-            <Input
-              value={newCardTitle}
-              onChange={e => setNewCardTitle(e.target.value)}
-              placeholder="Ex: João Silva"
-              onKeyDown={e => { if (e.key === 'Enter') handleAddCard(); }}
-              autoFocus
-            />
-            <p className="text-xs text-muted-foreground">
-              Coluna: <strong>{columns.find(c => c.id === addCardColumn)?.name}</strong>
-            </p>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setAddCardOpen(false)}>Cancelar</Button>
-            <Button onClick={handleAddCard} disabled={!newCardTitle.trim() || addingCard} className="gap-1">
-              <Plus className="w-4 h-4" />
-              {addingCard ? 'Criando...' : 'Criar Card'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* Card detail sheet */}
       <CardDetailSheet
         card={selectedCard}
@@ -575,4 +590,7 @@ const KanbanBoard = () => {
   );
 };
 
+
+
 export default KanbanBoard;
+
