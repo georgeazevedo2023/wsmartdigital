@@ -16,6 +16,7 @@ export interface KanbanField {
   options: string[] | null;
   is_primary: boolean;
   required: boolean;
+  show_on_card: boolean;
 }
 
 interface DynamicFormFieldProps {
