@@ -7,6 +7,7 @@ import DashboardCharts from '@/components/dashboard/DashboardCharts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Server, Users, Wifi, WifiOff, MessageSquare, UsersRound, RefreshCw, UserPlus } from 'lucide-react';
+import HelpdeskMetricsCharts from '@/components/dashboard/HelpdeskMetricsCharts';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import InstanceFilterSelect from '@/components/dashboard/InstanceFilterSelect';
@@ -496,6 +497,11 @@ const DashboardHome = () => {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Helpdesk Metrics Section */}
+      <div className="animate-fade-in" style={{ animationDelay: '250ms' }}>
+        <HelpdeskMetricsCharts />
       </div>
 
       {/* Recent Instances */}
