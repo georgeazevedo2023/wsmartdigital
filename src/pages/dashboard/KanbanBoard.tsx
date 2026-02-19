@@ -182,12 +182,26 @@ const KanbanBoard = () => {
         .filter(Boolean) as TeamMember[];
       setTeamMembers(members);
     } else {
-      // If no inbox, show all users visible
-      const { data } = await supabase
+      // Sem inbox: apenas membros diretos do quadro via kanban_board_members
+      const { data: memberRows } = await supabase
+        .from('kanban_board_members')
+        .select('user_id')
+        .eq('board_id', boardData.id);
+
+      const memberIds = (memberRows || []).map(r => r.user_id);
+
+      if (memberIds.length === 0) {
+        setTeamMembers([]);
+        return;
+      }
+
+      const { data: profiles } = await supabase
         .from('user_profiles')
         .select('id, full_name, email')
+        .in('id', memberIds)
         .order('full_name');
-      setTeamMembers((data || []) as TeamMember[]);
+
+      setTeamMembers((profiles || []) as TeamMember[]);
     }
   };
 
