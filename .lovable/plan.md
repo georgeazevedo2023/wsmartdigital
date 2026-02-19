@@ -1,127 +1,73 @@
 
-# Correção do CardDetailSheet e KanbanCardItem
+# Simplificação da Configuração de Campos do Kanban
 
-## Problemas Identificados
+## Problema Atual
 
-### 1. Responsável não salva (RLS bloqueando UPDATE)
-A política de UPDATE em `kanban_cards` é:
-```sql
-USING (created_by = auth.uid() OR assigned_to = auth.uid() OR board creator)
+O toggle **"Campo principal (exibe no card)"** na aba Campos causa confusão porque o usuário entende que precisa marcar individualmente quais campos aparecerão no card. Na prática, o sistema já funciona assim:
+
+- **1 campo marcado como principal** → vira o título do card (destaque)
+- **Todos os demais campos** → já são exibidos no card automaticamente (até 3, pelo código atual)
+
+Mas o label enganoso faz o usuário achar que precisa fazer algo especial para que os outros campos apareçam, quando na verdade o problema pode estar apenas no limite (3 campos extras, não 5).
+
+## Mudanças Planejadas
+
+### 1. `src/components/kanban/EditBoardDialog.tsx` — Clarificar o label do toggle
+
+**Antes:**
 ```
-Quando um Super Admin tenta atribuir responsável a um card que não criou e ainda não tem responsável, o UPDATE passa pela condição de board creator (quem criou o board) — mas se o usuário logado é o `created_by` do card, deveria funcionar. O problema real é outro: o `handleSave` no `CardDetailSheet` usa `title.trim()` como campo obrigatório, mas **o campo Title foi sincronizado com o campo primário dinâmico**. Se o usuário preenche o campo dinâmico "Nome do Cliente" mas deixa o "Nome/Título" vazio (por confusão), o save nem executa (`if (!title.trim()) return`).
+Switch: "Campo principal (exibe no card)"
+```
 
-**Solução**: Remover o campo title separado — usar o valor do campo primário como título automaticamente durante o save.
+**Depois:**
+```
+Switch: "Título do card"
+         ↳ texto de ajuda: "Os demais campos aparecem automaticamente no card (até 5)"
+```
 
-### 2. Nomes duplicados no dropdown
-Na função `loadTeamMembers` com inbox, o query é:
+Manter o comportamento de rádio (apenas um pode ser marcado por vez) — já funciona corretamente via `updateField`.
+
+Adicionar também um texto explicativo no topo da aba Campos:
+> "O campo marcado como **Título** aparece em destaque no card. Os demais campos com valor são exibidos automaticamente abaixo, até 5 campos."
+
+### 2. `src/components/kanban/KanbanCardItem.tsx` — Aumentar limite de campos extras de 3 para 5
+
+Linha 101 atual:
 ```typescript
-supabase.from('inbox_users').select('user_profiles(id, full_name, email)').eq('inbox_id', ...)
+.slice(0, 3)
 ```
-Se um usuário aparecer em múltiplos registros de `inbox_users` (cenário de múltiplos roles na mesma inbox), retorna perfis duplicados. 
 
-**Solução**: Deduplicate o array de `teamMembers` por `id` após o fetch. Também deduplicate para o caso de boards sem inbox.
-
-### 3. Remover campo "Nome / Título" duplicado
-O `CardDetailSheet` exibe:
-- Campo "Nome / Título" (estado `title`) — o título interno do card
-- Campo "Nome do Cliente" com badge `principal` (campo dinâmico primário)
-
-O usuário preenche os dois com o mesmo valor — redundante e confuso.
-
-**Solução**: No `CardDetailSheet`:
-- Ocultar o input de `title` separado
-- Quando o campo primário `is_primary = true` existir, usar o seu valor como `title` automaticamente no `handleSave`
-- Se não houver campo primário, manter o título como campo editável (fallback)
-
-### 4. Exibir outros campos no card (KanbanCardItem)
-Hoje o `KanbanCardItem` mostra apenas o `primaryFieldValue`. O usuário quer ver outros campos também.
-
-**Solução em duas partes**:
-
-**Parte A** — `loadCards` em `KanbanBoard.tsx`: buscar valores de **todos** os campos (não só o primário) e mapeá-los no `CardData`.
-
-**Parte B** — `KanbanCardItem.tsx`: exibir até 2-3 campos não-primários abaixo do campo primário, no formato `Label: Valor`.
-
-## Mudanças por Arquivo
-
-### `src/components/kanban/KanbanCardItem.tsx`
-
-Adicionar `fieldValues?: Array<{ name: string; value: string; isPrimary: boolean }>` ao `CardData`. Exibir campos adicionais no card:
-
+Muda para:
+```typescript
+.slice(0, 5)
 ```
+
+### Resultado Visual Esperado
+
+```text
 ┌─────────────────────────────────────┐
-│  George Azevedo          ⠿          │  ← título (campo primário ou title)
-│  Nome do Cliente: George Azevedo    │  ← primário (se title ≠ primaryField)
-│  CPF: 123.456.789-00                │  ← outros campos
-│  Valor: R$ 150.000,00               │  ← até 2 extras
+│  George Azevedo              ⠿       │  ← campo Título (is_primary)
+│  CPF: 123.456.789-00                │  ← campo extra 1
+│  Origem: Indicação                  │  ← campo extra 2
+│  Valor: R$ 150.000,00               │  ← campo extra 3
+│  Produto: Crédito Rural             │  ← campo extra 4
+│  Vencimento: 15/03/2026             │  ← campo extra 5
 │  [G] Gustavo                        │  ← responsável
 └─────────────────────────────────────┘
 ```
 
-Como o usuário quer remover o título separado, a exibição ficará:
-```
-┌─────────────────────────────────────┐
-│  George Azevedo          ⠿          │  ← campo primário vira título
-│  CPF: 123.456.789-00                │  ← outros campos aparecem
-│  Valor: R$ 150.000,00               │
-│  [G] Gustavo                        │
-└─────────────────────────────────────┘
-```
-
-### `src/components/kanban/CardDetailSheet.tsx`
-
-1. **Ocultar campo "Nome / Título"** quando houver campo primário
-2. **Usar valor do campo primário como title** no `handleSave`:
-   ```typescript
-   const primaryField = fields.find(f => f.is_primary);
-   const effectiveTitle = primaryField 
-     ? (fieldValues[primaryField.id] || title) 
-     : title;
-   // Salvar effectiveTitle como title no kanban_cards
-   ```
-3. **Deduplicar teamMembers** por `id`:
-   ```typescript
-   const unique = [...new Map(members.map(m => [m.id, m])).values()];
-   ```
-
-### `src/pages/dashboard/KanbanBoard.tsx`
-
-Em `loadCards`: carregar valores de **todos** os campos (não só o primário) e incluir no card:
-
-```typescript
-// Buscar todos os campos, não só o primário
-const { data: cardData } = await supabase
-  .from('kanban_card_data')
-  .select('card_id, field_id, value')
-  .in('card_id', cardIds);
-
-// Mapear por card_id → array de { fieldId, value }
-const allFieldsMap: Record<string, Array<{fieldId: string, value: string}>> = {};
-(cardData || []).forEach(d => {
-  if (!allFieldsMap[d.card_id]) allFieldsMap[d.card_id] = [];
-  allFieldsMap[d.card_id].push({ fieldId: d.field_id, value: d.value || '' });
-});
-
-// Ao criar CardData, incluir fieldValues mapeados para os campos configurados
-fieldValues: (fields || []).map(f => ({
-  name: f.name,
-  value: allFieldsMap[card.id]?.find(d => d.fieldId === f.id)?.value || '',
-  isPrimary: f.is_primary,
-})).filter(fv => fv.value), // só campos com valor
-```
-
-Em `loadTeamMembers`: deduplicar por `id`:
-```typescript
-const unique = [...new Map(members.map(m => [m.id, m])).values()];
-setTeamMembers(unique);
-```
-
 ## Arquivos Modificados
 
-| Arquivo | Mudanças |
+| Arquivo | Mudança |
 |---|---|
-| `src/pages/dashboard/KanbanBoard.tsx` | `loadCards` busca todos os campos; `loadTeamMembers` deduplica |
-| `src/components/kanban/KanbanCardItem.tsx` | Adiciona `fieldValues` ao `CardData`; exibe campos extras no card |
-| `src/components/kanban/CardDetailSheet.tsx` | Remove input de título quando há campo primário; sincroniza título com campo primário no save; deduplica membros |
+| `src/components/kanban/EditBoardDialog.tsx` | Renomear label do toggle para "Título do card"; adicionar texto explicativo na aba Campos |
+| `src/components/kanban/KanbanCardItem.tsx` | Aumentar limite de campos extras de `.slice(0, 3)` para `.slice(0, 5)` |
 
-**Total: 3 arquivos modificados — nenhuma mudança de banco de dados necessária**
+**Total: 2 arquivos, mudanças mínimas — sem alteração de banco de dados**
+
+## O que NÃO muda
+
+- O comportamento de rádio (apenas um campo pode ser "Título" por vez) continua igual
+- Todos os campos continuam sendo exibidos no formulário de detalhe do card
+- A lógica de salvamento do CardDetailSheet permanece intacta
+- Nenhuma coluna nova no banco de dados
