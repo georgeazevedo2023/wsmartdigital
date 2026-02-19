@@ -1,76 +1,111 @@
 
-## Plan: Add Status Selector to the "+" Menu in the Helpdesk Chat
+# Melhorias para o Kanban CRM
 
-### Goal
-Add a "Status" option inside the `+` (Plus) popover menu in `ChatInput.tsx` that lets agents change the conversation status (Aberta, Pendente, Resolvida) directly from the chat input area, without needing to go to the header selector.
-
----
-
-### Current State
-
-The `+` menu in `ChatInput.tsx` currently contains:
-- Nota privada
-- Enviar imagem
-- Enviar documento
-- Etiquetas (with sub-list)
-- Enviar Emojis
-
-The status selector already exists in the `ChatPanel` header (top right), but the user wants it also accessible from the `+` menu for quicker access — especially useful on mobile/tablet where the header might be cramped.
+Baseado na análise completa do código (`KanbanBoard.tsx`, `KanbanCardItem.tsx`, `CardDetailSheet.tsx`, `KanbanColumn.tsx`, `BoardCard.tsx`) e na imagem enviada, identificamos oportunidades de melhoria organizadas por impacto.
 
 ---
 
-### What Will Change
+## 1. Criação de card inline (sem dialog)
 
-#### 1. `src/components/helpdesk/ChatInput.tsx`
+**Problema atual:** Ao clicar em "+ Adicionar card", abre um Dialog modal com apenas um campo de título. Isso quebra o fluxo e é lento.
 
-- Add an `onStatusChange` optional prop to `ChatInputProps` (type: `(status: string) => void`)
-- Add a `showStatus` state (`boolean`) to control the inline sub-menu expansion, similar to how `showLabels` works for Etiquetas
-- Import `CircleDot` (or `Activity`) icon from `lucide-react` for the Status menu item
-- Add a "Status" button inside the `+` popover menu that:
-  - When clicked, expands a sub-list inline (same UX pattern as Etiquetas)
-  - Shows three options: Aberta (green dot), Pendente (yellow dot), Resolvida (gray dot)
-  - Highlights the currently active status with a checkmark or highlighted background
-  - On option click: calls `supabase.from('conversations').update({ status })` directly (consistent with how labels are handled in `ChatInput`) and calls `onStatusChange?.(status)` to update local UI state
+**Melhoria:** Substituir o Dialog por um **campo de input inline** na base da coluna — igual ao Trello/Linear. O usuário digita direto na coluna, pressiona Enter e o card é criado.
 
-#### 2. `src/components/helpdesk/ChatPanel.tsx`
-
-- Pass `onStatusChange` prop to `<ChatInput>`:
-  ```typescript
-  onStatusChange={(status) => onUpdateConversation(conversation.id, { status })}
-  ```
-  This reuses the existing `onUpdateConversation` callback that already handles status changes in the header selector, keeping state in sync.
+**Impacto:** Reduz cliques de 3 para 1. Criação muito mais rápida.
 
 ---
 
-### Technical Details
+## 2. Filtro por Responsável no header do board
 
-**Status options and their visual indicators (matching existing header selector):**
+**Problema atual:** A busca (`search`) filtra por título, tag e nome do responsável via texto livre. Não existe um filtro dedicado por responsável.
 
-| Status | Dot color | Label |
-|--------|-----------|-------|
-| `aberta` | `bg-emerald-500` | Aberta |
-| `pendente` | `bg-yellow-500` | Pendente |
-| `resolvida` | `bg-muted-foreground/50` | Resolvida |
+**Melhoria:** Adicionar um **seletor de responsável** no header do board (ao lado do campo de busca) para filtrar os cards de um atendente específico com um clique. Isso é especialmente útil para gerentes que gerenciam times.
 
-**Sub-menu expansion pattern (same as Etiquetas):**
-```
-[Status button] ← toggles showStatus
-  └─ [• Aberta]     ← with active highlight if current status
-  └─ [• Pendente]
-  └─ [• Resolvida]
-```
-
-**Supabase update (directly in ChatInput, no new edge function needed):**
-```typescript
-await supabase.from('conversations').update({ status: newStatus }).eq('id', conversation.id);
-onStatusChange?.(newStatus);
-toast.success('Status atualizado');
-setMenuOpen(false);
-```
+**Impacto:** Visibilidade rápida da carteira de um atendente.
 
 ---
 
-### Files to Edit
+## 3. Contador de cards por responsável no header
 
-1. **`src/components/helpdesk/ChatInput.tsx`** — Add `onStatusChange` prop, `showStatus` state, and the Status submenu inside the `+` popover
-2. **`src/components/helpdesk/ChatPanel.tsx`** — Pass the `onStatusChange` callback to `ChatInput`
+**Problema atual:** O header mostra apenas o total de cards (ex: "1 card"). Não há informação sobre distribuição por responsável.
+
+**Melhoria:** Exibir **avatares dos responsáveis** com contagem de cards no header, como chips clicáveis que funcionam como filtro rápido.
+
+**Impacto:** Gestão visual de carga de trabalho da equipe.
+
+---
+
+## 4. Coluna vazia com drag-and-drop melhorado
+
+**Problema atual:** Colunas vazias mostram apenas "Sem cards aqui" e têm altura mínima de 120px. Em quadros com poucas colunas e muitas colunas vazias, a área de drop pode ser difícil de acertar.
+
+**Melhoria:** Aumentar a área mínima das colunas vazias para `min-h-[200px]` e adicionar um ícone visual de zona de drop ativa (borda tracejada animada ao arrastar sobre ela).
+
+**Impacto:** Drag-and-drop mais confiável em colunas vazias.
+
+---
+
+## 5. Histórico de movimentações no card (audit log)
+
+**Problema atual:** Não há registro de quando um card mudou de coluna, foi reatribuído ou teve campos alterados.
+
+**Melhoria:** Adicionar uma seção "Histórico" no `CardDetailSheet` mostrando as últimas ações (ex: "Gustavo moveu para Simulação há 2h"). Requer uma nova tabela `kanban_card_history` no banco.
+
+**Impacto:** Rastreabilidade do lead no funil.
+
+---
+
+## 6. Campo de notas/observações no card
+
+**Problema atual:** O `CardDetailSheet` tem campos dinâmicos e tags, mas não tem um campo livre de texto/notas para registrar observações sobre o lead.
+
+**Melhoria:** Adicionar um campo `Textarea` de "Notas internas" persistido na tabela `kanban_cards` (coluna `notes TEXT`). Simples de implementar, alto valor prático.
+
+**Impacto:** Substitui o uso de tags para comunicação interna entre atendentes.
+
+---
+
+## 7. Indicador visual de "cards sem responsável"
+
+**Problema atual:** Cards sem responsável não têm nenhuma indicação visual de alerta.
+
+**Melhoria:** Exibir um ícone de usuário com `?` ou cor diferente no rodapé do card quando não há responsável atribuído. Opcional: filtro para mostrar apenas cards sem responsável.
+
+**Impacto:** Evita leads "esquecidos" sem atendente.
+
+---
+
+## Plano de Implementação (prioridade alta)
+
+As três melhorias de maior impacto com menor esforço de implementação são:
+
+### Prioridade 1 - Criação inline de card
+- Remover o Dialog de `addCardOpen` do `KanbanBoard.tsx`
+- Adicionar estado `inlineAddColumn: string | null` 
+- Modificar `KanbanColumn.tsx` para receber `isAddingInline` e renderizar um `<Input>` + botões Confirm/Cancel no lugar do botão "+ Adicionar card"
+- Ao confirmar (Enter ou clique), chama `handleAddCard` com o título inline
+
+### Prioridade 2 - Filtro por responsável
+- Adicionar estado `filterAssignee: string | null` em `KanbanBoard.tsx`
+- Adicionar um `<Select>` de membros da equipe no header, ao lado do campo de busca
+- Aplicar o filtro em `filteredCards` com `.filter(c => !filterAssignee || c.assigned_to === filterAssignee)`
+
+### Prioridade 3 - Notas internas no card
+- Migração SQL: `ALTER TABLE kanban_cards ADD COLUMN notes TEXT;`
+- Adicionar `notes` no `CardData` e `CardDetailSheet`
+- Adicionar `<Textarea>` de "Notas" na sheet de detalhes
+- Salvar junto com o card no `handleSave`
+
+---
+
+## Arquivos que serão modificados
+
+| Arquivo | Mudanças |
+|---|---|
+| `src/pages/dashboard/KanbanBoard.tsx` | Remover Dialog, adicionar filtro por responsável, passar props de inline add |
+| `src/components/kanban/KanbanColumn.tsx` | Input inline de criação de card |
+| `src/components/kanban/CardDetailSheet.tsx` | Campo de notas + coluna `notes` |
+| `src/components/kanban/KanbanCardItem.tsx` | Indicador visual de sem responsável |
+| Nova migração SQL | `kanban_cards` + coluna `notes TEXT` |
+
+Qual dessas melhorias você quer implementar primeiro? Podemos fazer todas de uma vez ou priorizar as que fazem mais diferença para o seu uso atual.
