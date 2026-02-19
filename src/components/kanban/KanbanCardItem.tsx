@@ -98,7 +98,7 @@ export function KanbanCardItem({ card, onClick, isDragging }: KanbanCardItemProp
         <div className="flex flex-col gap-0.5">
           {card.fieldValues
             .filter(fv => !fv.isPrimary && fv.value)
-            .slice(0, 3)
+            .slice(0, 5)
             .map(fv => (
               <div key={fv.name} className="flex items-center gap-1">
                 <span className="text-[10px] text-muted-foreground shrink-0">{fv.name}:</span>
