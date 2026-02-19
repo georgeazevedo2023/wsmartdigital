@@ -1,128 +1,100 @@
 
-# Seleção de Campos a Exibir no Card do Kanban
+# Correção: campos "Exibir no card" não aparecem no card
 
-## Problema
+## Diagnóstico
 
-Atualmente, todos os campos com valor aparecem automaticamente no card (até 5). O usuário quer poder **escolher individualmente** quais campos aparecem no card, além do campo "Título".
+O problema está em `loadCards` na linha 135 de `KanbanBoard.tsx`:
+
+```typescript
+const currentFields = fields.length > 0 ? fields : [];
+```
+
+`loadCards` é chamada dentro de `loadAll()`, logo após `setFields(...)`. Porém, em React, `useState` é **assíncrono** — o estado `fields` dentro de `loadCards` ainda reflete o valor anterior (vazio), não o que acabou de ser definido. Por isso `show_on_card` nunca é passado corretamente para os cards.
+
+## Prova
+
+```typescript
+// loadAll():
+setFields(fieldRes.data);       // ← atualiza estado (async)
+await loadCards(boardData);      // ← ainda lê fields = [] !!!
+```
+
+O `allFieldsMap` é construído corretamente, mas `currentFields` é uma lista vazia, então `fieldValuesArr` também fica vazio → nenhum campo extra aparece.
 
 ## Solução
 
-Adicionar uma coluna `show_on_card` (boolean) na tabela `kanban_fields` e um novo toggle **"Exibir no card"** na aba Campos do EditBoardDialog. Apenas campos com `show_on_card = true` (ou `is_primary = true`) serão renderizados no KanbanCardItem.
+Passar `fieldRes.data` diretamente para `loadCards` como parâmetro, em vez de depender do estado `fields`. Assim a função sempre terá os dados corretos, independente do ciclo de render do React.
 
-## Mudanças Necessárias
+### Mudanças em `src/pages/dashboard/KanbanBoard.tsx`
 
-### 1. Banco de dados — nova coluna `show_on_card`
+**1. Alterar a assinatura de `loadCards`** para receber `fieldsData` como parâmetro:
 
-Migration SQL:
-```sql
-ALTER TABLE public.kanban_fields 
-ADD COLUMN show_on_card boolean NOT NULL DEFAULT false;
+```typescript
+// Antes:
+const loadCards = async (boardData: BoardData) => {
+  const currentFields = fields.length > 0 ? fields : [];
+  
+// Depois:
+const loadCards = async (boardData: BoardData, fieldsData: KanbanField[]) => {
+  const currentFields = fieldsData;
 ```
 
-- Campos novos terão `show_on_card = false` por padrão (comportamento conservador — nada aparece no card a menos que o usuário ative)
-- O campo primário (`is_primary = true`) sempre aparece como título, independentemente do `show_on_card`
+**2. Em `loadAll`, passar `fieldRes.data` ao chamar `loadCards`**:
 
-### 2. `src/components/kanban/EditBoardDialog.tsx` — novo toggle por campo
-
-Adicionar `show_on_card` à interface `KanbanField`:
 ```typescript
-interface KanbanField {
-  // ...campos existentes
-  show_on_card: boolean; // novo
+// Antes:
+await loadCards(boardData);
+
+// Depois:
+const parsedFields = (fieldRes.data || []).map(f => ({
+  ...f,
+  options: f.options ? (f.options as string[]) : null,
+})) as KanbanField[];
+setFields(parsedFields);
+await loadCards(boardData, parsedFields); // ← passa diretamente
+```
+
+**3. Remover a linha problemática de dentro de `loadCards`**:
+```typescript
+// Remover:
+const currentFields = fields.length > 0 ? fields : [];
+// Usar diretamente: currentFields → fieldsData (parâmetro)
+```
+
+**4. Também corrigir o `show_on_card` no mapeamento** — garantir que o campo seja lido corretamente do objeto:
+
+```typescript
+fieldValues: fieldsData
+  .map(f => ({
+    name: f.name,
+    value: cardFieldMap[f.id] || '',
+    isPrimary: f.is_primary,
+    showOnCard: f.show_on_card ?? false,  // ← sem cast (any)
+  }))
+  .filter(fv => fv.value),
+```
+
+## Tipo KanbanField
+
+Verificar se `KanbanField` já inclui `show_on_card`. Se não, adicionar:
+
+```typescript
+// Em src/components/kanban/DynamicFormField.tsx
+export interface KanbanField {
+  // ...
+  show_on_card: boolean; // adicionar se não existir
 }
 ```
-
-Na seção de cada campo, adicionar um terceiro toggle ao lado de "Título do card" e "Obrigatório":
-
-```
-[ Switch ] Título do card
-[ Switch ] Exibir no card      ← novo
-[ Switch ] Obrigatório
-```
-
-O campo primário (`is_primary = true`) não precisa do toggle "Exibir no card" — ele sempre aparece como título.
-
-Incluir `show_on_card` no payload de INSERT e UPDATE durante o `handleSave`.
-
-### 3. `src/components/kanban/KanbanCardItem.tsx` — filtrar por `show_on_card`
-
-Alterar o filtro de campos exibidos:
-
-**Antes:**
-```typescript
-card.fieldValues
-  .filter(fv => !fv.isPrimary && fv.value)
-  .slice(0, 5)
-```
-
-**Depois:**
-```typescript
-card.fieldValues
-  .filter(fv => !fv.isPrimary && fv.value && fv.showOnCard)
-  .slice(0, 5)
-```
-
-Adicionar `showOnCard` à interface `CardData.fieldValues`:
-```typescript
-fieldValues?: Array<{ 
-  name: string; 
-  value: string; 
-  isPrimary: boolean;
-  showOnCard: boolean; // novo
-}>
-```
-
-### 4. `src/pages/dashboard/KanbanBoard.tsx` — propagar `show_on_card`
-
-Em `loadCards`, ao mapear os `fieldValues` do card, incluir `showOnCard`:
-```typescript
-fieldValues: (fields || []).map(f => ({
-  name: f.name,
-  value: allFieldsMap[card.id]?.find(d => d.fieldId === f.id)?.value || '',
-  isPrimary: f.is_primary,
-  showOnCard: f.show_on_card, // novo
-})).filter(fv => fv.value),
-```
-
-## Resultado Visual na Aba Campos
-
-```text
-┌─────────────────────────────────────────────────┐
-│  ⠿  Nome do Cliente  [Texto ▾]  ↑ ↓  🗑         │
-│      ● Título do card                            │
-│      ○ Exibir no card  ← oculto (já é o título) │
-│      ○ Obrigatório                               │
-├─────────────────────────────────────────────────┤
-│  ⠿  CPF              [Texto ▾]  ↑ ↓  🗑         │
-│      ○ Título do card                            │
-│      ● Exibir no card  ← ATIVO → aparece no card│
-│      ○ Obrigatório                               │
-├─────────────────────────────────────────────────┤
-│  ⠿  Observações       [Texto ▾]  ↑ ↓  🗑        │
-│      ○ Título do card                            │
-│      ○ Exibir no card  ← inativo → só no detalhe│
-│      ○ Obrigatório                               │
-└─────────────────────────────────────────────────┘
-```
-
-## Resultado Visual no Card
-
-```text
-┌────────────────────────────────┐
-│  George Azevedo          ⠿     │  ← campo Título (is_primary)
-│  CPF: 123.456.789-00           │  ← show_on_card = true
-│  [G] Gustavo                   │  ← responsável
-└────────────────────────────────┘
-```
-(Observações não aparece porque `show_on_card = false`)
 
 ## Arquivos Modificados
 
 | Arquivo | Mudança |
 |---|---|
-| Migration SQL | Adiciona coluna `show_on_card boolean DEFAULT false` à `kanban_fields` |
-| `src/components/kanban/EditBoardDialog.tsx` | Interface + toggle "Exibir no card" por campo + payload de save |
-| `src/components/kanban/KanbanCardItem.tsx` | Interface `fieldValues` + filtro por `showOnCard` |
-| `src/pages/dashboard/KanbanBoard.tsx` | Propaga `show_on_card` ao mapear `fieldValues` |
+| `src/pages/dashboard/KanbanBoard.tsx` | Passar `fieldsData` como parâmetro para `loadCards`; usar diretamente em vez do estado `fields` |
+| `src/components/kanban/DynamicFormField.tsx` | Adicionar `show_on_card` ao tipo `KanbanField` (se ausente) |
 
-**Total: 1 migration + 3 arquivos**
+**Total: 1-2 arquivos — sem alteração de banco de dados**
+
+## Resultado Esperado
+
+Após a correção, ao marcar "Exibir no card" nos campos CPF e Whatsapp, eles aparecerão imediatamente no card ao recarregar ou ao voltar ao board.
