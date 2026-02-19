@@ -102,14 +102,14 @@ serve(async (req) => {
       );
     }
 
-    // Build text from all summaries
+    // Build text from all summaries (truncate each to 500 chars)
     const summariesText = conversations!
       .map((conv, idx) => {
         const s = conv.ai_summary as any;
-        return `--- Conversa ${idx + 1} (${conv.status}) ---
-Motivo: ${s.reason || "N/A"}
-Resumo: ${s.summary || "N/A"}
-Resolução: ${s.resolution || "N/A"}`;
+        const reason = (s.reason || "N/A").substring(0, 500);
+        const summary = (s.summary || "N/A").substring(0, 500);
+        const resolution = (s.resolution || "N/A").substring(0, 500);
+        return `--- Conversa ${idx + 1} (${conv.status}) ---\nMotivo: ${reason}\nResumo: ${summary}\nResolução: ${resolution}`;
       })
       .join("\n\n");
 
@@ -133,21 +133,56 @@ Regras:
 - sentiment deve sempre somar 100
 - Seja específico nos motivos, não genérico`;
 
-    const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash",
+    // Retry helper with backoff and fallback
+    async function callAIWithRetry(): Promise<Response> {
+      const models = ["google/gemini-2.5-flash"];
+      const fallback = "google/gemini-2.5-flash-lite";
+      const payload = {
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Resumos das conversas:\n\n${summariesText}` },
         ],
-        temperature: 0.2,
-      }),
-    });
+      };
+
+      // Try primary model up to 3 times
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[analyze-summaries] Attempt ${attempt}/3 with gemini-2.5-flash`);
+        const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ model: models[0], ...payload }),
+        });
+
+        if (resp.ok) return resp;
+
+        if (resp.status === 429 || resp.status === 402) return resp; // Don't retry these
+
+        const errBody = await resp.text();
+        console.error(`[analyze-summaries] Attempt ${attempt} failed: ${resp.status} ${errBody}`);
+
+        if (attempt < 3) {
+          const delay = attempt * 2000;
+          console.log(`[analyze-summaries] Waiting ${delay}ms before retry...`);
+          await new Promise(r => setTimeout(r, delay));
+        }
+      }
+
+      // Fallback to lighter model
+      console.log(`[analyze-summaries] Trying fallback model: ${fallback}`);
+      return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model: fallback, ...payload }),
+      });
+    }
+
+    const aiResponse = await callAIWithRetry();
 
     if (!aiResponse.ok) {
       if (aiResponse.status === 429) {
@@ -163,8 +198,8 @@ Regras:
         });
       }
       const errBody = await aiResponse.text();
-      console.error("[analyze-summaries] AI error:", aiResponse.status, errBody);
-      return new Response(JSON.stringify({ error: "Erro ao processar análise de IA" }), {
+      console.error("[analyze-summaries] All attempts failed:", aiResponse.status, errBody);
+      return new Response(JSON.stringify({ error: "Erro ao processar análise de IA após múltiplas tentativas" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
