@@ -168,6 +168,7 @@ const KanbanBoard = () => {
           name: f.name,
           value: cardFieldMap[f.id] || '',
           isPrimary: f.is_primary,
+          showOnCard: (f as any).show_on_card ?? false,
         }))
         .filter(fv => fv.value);
 

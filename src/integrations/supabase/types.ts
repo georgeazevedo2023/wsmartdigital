@@ -626,6 +626,7 @@ export type Database = {
           options: Json | null
           position: number
           required: boolean
+          show_on_card: boolean
         }
         Insert: {
           board_id: string
@@ -637,6 +638,7 @@ export type Database = {
           options?: Json | null
           position?: number
           required?: boolean
+          show_on_card?: boolean
         }
         Update: {
           board_id?: string
@@ -648,6 +650,7 @@ export type Database = {
           options?: Json | null
           position?: number
           required?: boolean
+          show_on_card?: boolean
         }
         Relationships: [
           {
