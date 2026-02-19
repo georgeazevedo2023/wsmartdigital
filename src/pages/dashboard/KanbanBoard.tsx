@@ -422,7 +422,7 @@ const KanbanBoard = () => {
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full bg-slate-50 dark:bg-background">
       {/* Header */}
       <div className="flex flex-col gap-2 px-4 py-3 border-b border-border bg-card/50 backdrop-blur-sm shrink-0">
         <div className="flex items-center gap-3">
@@ -432,9 +432,9 @@ const KanbanBoard = () => {
           <div className="flex items-center gap-2 min-w-0">
             <Kanban className="w-4 h-4 text-primary shrink-0" />
             <div className="min-w-0">
-              <h1 className="text-sm font-bold text-foreground truncate">{board.name}</h1>
+              <h1 className="text-lg font-bold text-foreground truncate">{board.name}</h1>
               {board.description && (
-                <p className="text-[10px] text-muted-foreground truncate hidden sm:block">{board.description}</p>
+                <p className="text-xs text-muted-foreground truncate hidden sm:block">{board.description}</p>
               )}
             </div>
           </div>
@@ -449,7 +449,7 @@ const KanbanBoard = () => {
               className="h-8 pl-8 w-48 text-sm"
             />
           </div>
-          <span className="text-xs text-muted-foreground shrink-0">
+          <span className="text-sm text-muted-foreground shrink-0">
             {filteredCards.length} card{filteredCards.length !== 1 ? 's' : ''}
           </span>
           {directMemberRole === 'viewer' && (
@@ -462,7 +462,7 @@ const KanbanBoard = () => {
         {/* Assignee filter chips */}
         {membersWithCards.length > 0 && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[10px] text-muted-foreground shrink-0">Filtrar:</span>
+            <span className="text-xs text-muted-foreground shrink-0">Filtrar:</span>
             {membersWithCards.map(m => {
               const name = m.full_name || m.email;
               const count = cards.filter(c => c.assigned_to === m.id).length;
@@ -472,7 +472,7 @@ const KanbanBoard = () => {
                   key={m.id}
                   onClick={() => setFilterAssignee(isActive ? null : m.id)}
                   className={cn(
-                    'flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full border text-[10px] font-medium transition-all',
+                    'flex items-center gap-1.5 pl-1 pr-2 py-0.5 rounded-full border text-xs font-medium transition-all',
                     isActive
                       ? 'bg-primary text-primary-foreground border-primary'
                       : 'bg-muted/50 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'
@@ -491,7 +491,7 @@ const KanbanBoard = () => {
             {filterAssignee && (
               <button
                 onClick={() => setFilterAssignee(null)}
-                className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
               >
                 <X className="w-3 h-3" />
                 Limpar
