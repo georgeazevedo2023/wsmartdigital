@@ -32,15 +32,15 @@ serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
     const token = authHeader.replace("Bearer ", "");
-    const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: { user }, error: userError } = await userSupabase.auth.getUser(token);
+    if (userError || !user) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = claimsData.claims.sub;
+    const userId = user.id;
 
     // Check if super admin
     const { data: roleData } = await serviceSupabase
@@ -140,7 +140,7 @@ Regras:
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: `Resumos das conversas:\n\n${summariesText}` },
@@ -162,7 +162,8 @@ Regras:
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      console.error("[analyze-summaries] AI error:", aiResponse.status);
+      const errBody = await aiResponse.text();
+      console.error("[analyze-summaries] AI error:", aiResponse.status, errBody);
       return new Response(JSON.stringify({ error: "Erro ao processar análise de IA" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
