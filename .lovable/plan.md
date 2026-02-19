@@ -1,64 +1,45 @@
 
 
-# Fix: Análise de Inteligência falhando com erro 500
+# Fix: Adicionar retry e fallback no analyze-summaries
 
-## Problema Identificado
+## Problema
 
-Os logs da edge function mostram:
-```
-[analyze-summaries] Analyzing 8 conversations with AI...
-[analyze-summaries] AI error: 500
-```
-
-O gateway de IA retornou erro 500. A causa principal e o que precisa ser corrigido:
-
-1. **Modelo instavel**: O modelo `google/gemini-3-flash-preview` e um preview que pode retornar 500 intermitentemente
-2. **Metodo de auth invalido**: `getClaims(token)` nao e um metodo padrao do Supabase JS client -- pode falhar silenciosamente em algumas versoes
-
----
+O gateway de IA retorna `500 internal_server_error` mesmo com o modelo `google/gemini-2.5-flash`. O erro nao tem detalhes, o que indica problema temporario do gateway ou payload muito grande (8 conversas concatenadas).
 
 ## Correcoes
 
-### 1. Trocar modelo de IA para um estavel
+### No arquivo `supabase/functions/analyze-summaries/index.ts`:
 
-No arquivo `supabase/functions/analyze-summaries/index.ts`, linha 144:
+**1. Adicionar funcao de retry com backoff**
 
-- **De**: `google/gemini-3-flash-preview`
-- **Para**: `google/gemini-2.5-flash`
+Criar uma funcao helper que tenta a chamada ate 3 vezes com delay crescente (1s, 2s, 4s). Se `gemini-2.5-flash` falhar todas as tentativas, tenta uma vez com `google/gemini-2.5-flash-lite` como fallback (modelo mais leve, menos chance de timeout).
 
-Este modelo e estavel, rapido e adequado para a tarefa de analise de texto.
+**2. Limitar o tamanho do payload**
 
-### 2. Corrigir autenticacao do usuario
+Truncar cada resumo a no maximo 500 caracteres para evitar que o payload total fique muito grande e cause timeout no gateway.
 
-Substituir `getClaims(token)` por `getUser(token)`, que e o metodo padrao:
+**3. Remover `temperature` do request**
 
-```typescript
-// De:
-const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token);
-const userId = claimsData.claims.sub;
+O parametro `temperature: 0.2` pode nao ser suportado por todos os modelos no gateway. Remover para usar o default.
 
-// Para:
-const { data: { user }, error: userError } = await userSupabase.auth.getUser(token);
-const userId = user.id;
+### Logica de retry (pseudocodigo):
+
 ```
+para tentativa de 1 ate 3:
+  chamar gateway com gemini-2.5-flash
+  se ok: retornar resultado
+  se 429/402: retornar erro ao usuario (sem retry)
+  se 500: esperar (tentativa * 1000ms) e tentar de novo
 
-### 3. Adicionar log do erro completo do AI gateway
-
-Para facilitar debug futuro, logar o body da resposta de erro:
-
-```typescript
-if (!aiResponse.ok) {
-  const errBody = await aiResponse.text();
-  console.error("[analyze-summaries] AI error:", aiResponse.status, errBody);
-  // ...resto do tratamento
-}
+se todas falharam:
+  tentar 1x com gemini-2.5-flash-lite
+  se ok: retornar resultado
+  se erro: retornar erro ao usuario
 ```
-
----
 
 ## Arquivo modificado
 
 | Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/analyze-summaries/index.ts` | Trocar modelo para `gemini-2.5-flash`, corrigir auth com `getUser`, melhorar log de erro |
+| `supabase/functions/analyze-summaries/index.ts` | Adicionar retry com backoff, fallback para flash-lite, truncar resumos, remover temperature |
 
