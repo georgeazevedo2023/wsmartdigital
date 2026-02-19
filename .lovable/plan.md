@@ -1,100 +1,76 @@
 
-# Correção: campos "Exibir no card" não aparecem no card
+## Plan: Add Status Selector to the "+" Menu in the Helpdesk Chat
 
-## Diagnóstico
+### Goal
+Add a "Status" option inside the `+` (Plus) popover menu in `ChatInput.tsx` that lets agents change the conversation status (Aberta, Pendente, Resolvida) directly from the chat input area, without needing to go to the header selector.
 
-O problema está em `loadCards` na linha 135 de `KanbanBoard.tsx`:
+---
 
-```typescript
-const currentFields = fields.length > 0 ? fields : [];
+### Current State
+
+The `+` menu in `ChatInput.tsx` currently contains:
+- Nota privada
+- Enviar imagem
+- Enviar documento
+- Etiquetas (with sub-list)
+- Enviar Emojis
+
+The status selector already exists in the `ChatPanel` header (top right), but the user wants it also accessible from the `+` menu for quicker access — especially useful on mobile/tablet where the header might be cramped.
+
+---
+
+### What Will Change
+
+#### 1. `src/components/helpdesk/ChatInput.tsx`
+
+- Add an `onStatusChange` optional prop to `ChatInputProps` (type: `(status: string) => void`)
+- Add a `showStatus` state (`boolean`) to control the inline sub-menu expansion, similar to how `showLabels` works for Etiquetas
+- Import `CircleDot` (or `Activity`) icon from `lucide-react` for the Status menu item
+- Add a "Status" button inside the `+` popover menu that:
+  - When clicked, expands a sub-list inline (same UX pattern as Etiquetas)
+  - Shows three options: Aberta (green dot), Pendente (yellow dot), Resolvida (gray dot)
+  - Highlights the currently active status with a checkmark or highlighted background
+  - On option click: calls `supabase.from('conversations').update({ status })` directly (consistent with how labels are handled in `ChatInput`) and calls `onStatusChange?.(status)` to update local UI state
+
+#### 2. `src/components/helpdesk/ChatPanel.tsx`
+
+- Pass `onStatusChange` prop to `<ChatInput>`:
+  ```typescript
+  onStatusChange={(status) => onUpdateConversation(conversation.id, { status })}
+  ```
+  This reuses the existing `onUpdateConversation` callback that already handles status changes in the header selector, keeping state in sync.
+
+---
+
+### Technical Details
+
+**Status options and their visual indicators (matching existing header selector):**
+
+| Status | Dot color | Label |
+|--------|-----------|-------|
+| `aberta` | `bg-emerald-500` | Aberta |
+| `pendente` | `bg-yellow-500` | Pendente |
+| `resolvida` | `bg-muted-foreground/50` | Resolvida |
+
+**Sub-menu expansion pattern (same as Etiquetas):**
+```
+[Status button] ← toggles showStatus
+  └─ [• Aberta]     ← with active highlight if current status
+  └─ [• Pendente]
+  └─ [• Resolvida]
 ```
 
-`loadCards` é chamada dentro de `loadAll()`, logo após `setFields(...)`. Porém, em React, `useState` é **assíncrono** — o estado `fields` dentro de `loadCards` ainda reflete o valor anterior (vazio), não o que acabou de ser definido. Por isso `show_on_card` nunca é passado corretamente para os cards.
-
-## Prova
-
+**Supabase update (directly in ChatInput, no new edge function needed):**
 ```typescript
-// loadAll():
-setFields(fieldRes.data);       // ← atualiza estado (async)
-await loadCards(boardData);      // ← ainda lê fields = [] !!!
+await supabase.from('conversations').update({ status: newStatus }).eq('id', conversation.id);
+onStatusChange?.(newStatus);
+toast.success('Status atualizado');
+setMenuOpen(false);
 ```
 
-O `allFieldsMap` é construído corretamente, mas `currentFields` é uma lista vazia, então `fieldValuesArr` também fica vazio → nenhum campo extra aparece.
+---
 
-## Solução
+### Files to Edit
 
-Passar `fieldRes.data` diretamente para `loadCards` como parâmetro, em vez de depender do estado `fields`. Assim a função sempre terá os dados corretos, independente do ciclo de render do React.
-
-### Mudanças em `src/pages/dashboard/KanbanBoard.tsx`
-
-**1. Alterar a assinatura de `loadCards`** para receber `fieldsData` como parâmetro:
-
-```typescript
-// Antes:
-const loadCards = async (boardData: BoardData) => {
-  const currentFields = fields.length > 0 ? fields : [];
-  
-// Depois:
-const loadCards = async (boardData: BoardData, fieldsData: KanbanField[]) => {
-  const currentFields = fieldsData;
-```
-
-**2. Em `loadAll`, passar `fieldRes.data` ao chamar `loadCards`**:
-
-```typescript
-// Antes:
-await loadCards(boardData);
-
-// Depois:
-const parsedFields = (fieldRes.data || []).map(f => ({
-  ...f,
-  options: f.options ? (f.options as string[]) : null,
-})) as KanbanField[];
-setFields(parsedFields);
-await loadCards(boardData, parsedFields); // ← passa diretamente
-```
-
-**3. Remover a linha problemática de dentro de `loadCards`**:
-```typescript
-// Remover:
-const currentFields = fields.length > 0 ? fields : [];
-// Usar diretamente: currentFields → fieldsData (parâmetro)
-```
-
-**4. Também corrigir o `show_on_card` no mapeamento** — garantir que o campo seja lido corretamente do objeto:
-
-```typescript
-fieldValues: fieldsData
-  .map(f => ({
-    name: f.name,
-    value: cardFieldMap[f.id] || '',
-    isPrimary: f.is_primary,
-    showOnCard: f.show_on_card ?? false,  // ← sem cast (any)
-  }))
-  .filter(fv => fv.value),
-```
-
-## Tipo KanbanField
-
-Verificar se `KanbanField` já inclui `show_on_card`. Se não, adicionar:
-
-```typescript
-// Em src/components/kanban/DynamicFormField.tsx
-export interface KanbanField {
-  // ...
-  show_on_card: boolean; // adicionar se não existir
-}
-```
-
-## Arquivos Modificados
-
-| Arquivo | Mudança |
-|---|---|
-| `src/pages/dashboard/KanbanBoard.tsx` | Passar `fieldsData` como parâmetro para `loadCards`; usar diretamente em vez do estado `fields` |
-| `src/components/kanban/DynamicFormField.tsx` | Adicionar `show_on_card` ao tipo `KanbanField` (se ausente) |
-
-**Total: 1-2 arquivos — sem alteração de banco de dados**
-
-## Resultado Esperado
-
-Após a correção, ao marcar "Exibir no card" nos campos CPF e Whatsapp, eles aparecerão imediatamente no card ao recarregar ou ao voltar ao board.
+1. **`src/components/helpdesk/ChatInput.tsx`** — Add `onStatusChange` prop, `showStatus` state, and the Status submenu inside the `+` popover
+2. **`src/components/helpdesk/ChatPanel.tsx`** — Pass the `onStatusChange` callback to `ChatInput`
