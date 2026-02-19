@@ -361,7 +361,7 @@ export const ChatPanel = ({ conversation, onUpdateConversation, onBack, onShowIn
       </div>
 
       {/* Input */}
-      <ChatInput conversation={conversation} onMessageSent={() => { fetchMessages(); setIaAtivada(false); }} onAgentAssigned={onAgentAssigned} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} />
+      <ChatInput conversation={conversation} onMessageSent={() => { fetchMessages(); setIaAtivada(false); }} onAgentAssigned={onAgentAssigned} inboxLabels={inboxLabels} assignedLabelIds={assignedLabelIds} onLabelsChanged={onLabelsChanged} onStatusChange={(status) => onUpdateConversation(conversation.id, { status })} />
 
       {/* Notes Panel */}
       <NotesPanel
