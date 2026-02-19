@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Send, StickyNote, Mic, X, Square, Paperclip, Loader2, Plus, ImageIcon, Smile, Tags } from 'lucide-react';
+import { Send, StickyNote, Mic, X, Paperclip, Loader2, Plus, ImageIcon, Smile, Tags, CircleDot, Check } from 'lucide-react';
 import { EmojiPicker, EmojiPickerContent } from '@/components/ui/emoji-picker';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Button } from '@/components/ui/button';
@@ -19,9 +19,10 @@ interface ChatInputProps {
   inboxLabels?: Label[];
   assignedLabelIds?: string[];
   onLabelsChanged?: () => void;
+  onStatusChange?: (status: string) => void;
 }
 
-export const ChatInput = ({ conversation, onMessageSent, onAgentAssigned, inboxLabels = [], assignedLabelIds = [], onLabelsChanged }: ChatInputProps) => {
+export const ChatInput = ({ conversation, onMessageSent, onAgentAssigned, inboxLabels = [], assignedLabelIds = [], onLabelsChanged, onStatusChange }: ChatInputProps) => {
   const { user } = useAuth();
 
   const autoAssignAgent = async () => {
@@ -101,7 +102,30 @@ export const ChatInput = ({ conversation, onMessageSent, onAgentAssigned, inboxL
   const [isNote, setIsNote] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
+  const [showStatus, setShowStatus] = useState(false);
   const [togglingLabel, setTogglingLabel] = useState<string | null>(null);
+
+  const statusOptions = [
+    { value: 'aberta', label: 'Aberta', dotClass: 'bg-emerald-500' },
+    { value: 'pendente', label: 'Pendente', dotClass: 'bg-yellow-500' },
+    { value: 'resolvida', label: 'Resolvida', dotClass: 'bg-muted-foreground/50' },
+  ];
+
+  const handleStatusChange = async (newStatus: string) => {
+    const { error } = await supabase
+      .from('conversations')
+      .update({ status: newStatus })
+      .eq('id', conversation.id);
+
+    if (!error) {
+      onStatusChange?.(newStatus);
+      toast.success('Status atualizado');
+      setMenuOpen(false);
+      setShowStatus(false);
+    } else {
+      toast.error('Erro ao atualizar status');
+    }
+  };
 
   // Audio recording state
   const [isRecording, setIsRecording] = useState(false);
@@ -738,6 +762,34 @@ export const ChatInput = ({ conversation, onMessageSent, onAgentAssigned, inboxL
                         </div>
                       )}
                     </>
+                  )}
+                  {/* Status submenu */}
+                  <button
+                    className="flex items-center gap-2 w-full px-3 py-2 text-sm rounded-md hover:bg-accent text-foreground"
+                    onClick={() => setShowStatus(!showStatus)}
+                  >
+                    <CircleDot className="w-4 h-4" />
+                    Status
+                  </button>
+                  {showStatus && (
+                    <div className="border-t border-border/50 pt-1 mt-1 space-y-0.5">
+                      {statusOptions.map(opt => {
+                        const isActive = conversation.status === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            className={`flex items-center gap-2 w-full px-3 py-1.5 rounded-md text-sm transition-colors ${
+                              isActive ? 'bg-accent font-medium' : 'hover:bg-secondary/50'
+                            }`}
+                            onClick={() => handleStatusChange(opt.value)}
+                          >
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${opt.dotClass}`} />
+                            <span className="flex-1 text-left">{opt.label}</span>
+                            {isActive && <Check className="w-3.5 h-3.5 text-primary" />}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
                   <Popover>
                     <PopoverTrigger asChild>
