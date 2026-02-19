@@ -97,10 +97,13 @@ const KanbanBoard = () => {
     const boardData = boardRes.data as BoardData;
     setBoard(boardData);
     setColumns((colRes.data || []) as ColumnData[]);
-    setFields((fieldRes.data || []).map(f => ({
+
+    const parsedFields = (fieldRes.data || []).map(f => ({
       ...f,
       options: f.options ? (f.options as string[]) : null,
-    })) as KanbanField[]);
+      show_on_card: f.show_on_card ?? false,
+    })) as KanbanField[];
+    setFields(parsedFields);
 
     // Set direct member role if user is a direct board member
     if (memberRes.data) {
@@ -109,12 +112,12 @@ const KanbanBoard = () => {
       setDirectMemberRole(null);
     }
 
-    await loadCards(boardData);
+    await loadCards(boardData, parsedFields);
     await loadTeamMembers(boardData);
     setLoading(false);
   };
 
-  const loadCards = async (boardData: BoardData) => {
+  const loadCards = async (boardData: BoardData, fieldsData: KanbanField[]) => {
     if (!user) return;
     let query = supabase
       .from('kanban_cards')
@@ -132,8 +135,7 @@ const KanbanBoard = () => {
 
     // Load ALL field values for all cards at once
     const cardIds = rawCards.map(c => c.id);
-    const currentFields = fields.length > 0 ? fields : [];
-    const primaryField = currentFields.find(f => f.is_primary);
+    const primaryField = fieldsData.find(f => f.is_primary);
 
     // Map: card_id → { field_id → value }
     const allFieldsMap: Record<string, Record<string, string>> = {};
@@ -163,12 +165,12 @@ const KanbanBoard = () => {
 
     setCards(rawCards.map(c => {
       const cardFieldMap = allFieldsMap[c.id] || {};
-      const fieldValuesArr = currentFields
+      const fieldValuesArr = fieldsData
         .map(f => ({
           name: f.name,
           value: cardFieldMap[f.id] || '',
           isPrimary: f.is_primary,
-          showOnCard: (f as any).show_on_card ?? false,
+          showOnCard: f.show_on_card ?? false,
         }))
         .filter(fv => fv.value);
 
