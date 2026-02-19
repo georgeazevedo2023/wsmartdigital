@@ -26,7 +26,6 @@ interface KanbanCardItemProps {
   onMoveCard?: (cardId: string, direction: 'prev' | 'next') => void;
   hasPrev?: boolean;
   hasNext?: boolean;
-  columnColor?: string;
 }
 
 const TAG_COLORS = [
@@ -47,7 +46,7 @@ const getInitials = (name: string) => {
   return name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2);
 };
 
-export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev, hasNext, columnColor }: KanbanCardItemProps) {
+export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev, hasNext }: KanbanCardItemProps) {
   const {
     attributes,
     listeners,
@@ -65,10 +64,9 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
   return (
     <div
       ref={setNodeRef}
-      style={{ ...style, ...(columnColor ? { borderLeftColor: columnColor } : {}) }}
+      style={style}
       className={cn(
-        'group relative flex flex-col gap-2 p-4 rounded-lg border bg-white dark:bg-card',
-        columnColor ? 'border-l-4 border-border' : 'border border-border',
+        'group relative flex flex-col gap-2 p-3 rounded-lg border border-border bg-card',
         'cursor-pointer hover:border-primary/30 hover:shadow-md transition-all duration-150',
         (isSortDragging || isDragging) && 'opacity-40 shadow-xl border-primary/50',
       )}
@@ -86,14 +84,14 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
 
       {/* Title — só exibe se não houver campo primário com valor */}
       {(!card.primaryFieldValue) && (
-        <p className="text-base font-semibold text-foreground leading-snug pr-6 line-clamp-2">
+        <p className="text-sm font-medium text-foreground leading-snug pr-6 line-clamp-2">
           {card.title}
         </p>
       )}
 
       {/* Primary field value — vira o "título" do card */}
       {card.primaryFieldValue && (
-        <p className="text-base font-semibold text-foreground leading-snug pr-6 line-clamp-2">
+        <p className="text-sm font-semibold text-foreground leading-snug pr-6 line-clamp-2">
           {card.primaryFieldValue}
         </p>
       )}
@@ -106,8 +104,8 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
             .slice(0, 5)
             .map(fv => (
               <div key={fv.name} className="flex items-center gap-1">
-                <span className="text-sm text-muted-foreground shrink-0">{fv.name}:</span>
-                <span className="text-sm font-medium text-foreground truncate">{fv.value}</span>
+                <span className="text-[10px] text-muted-foreground shrink-0">{fv.name}:</span>
+                <span className="text-[10px] font-medium text-foreground truncate">{fv.value}</span>
               </div>
             ))}
         </div>
@@ -119,13 +117,13 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
           {card.tags.slice(0, 3).map(tag => (
             <span
               key={tag}
-              className={cn('text-xs px-1.5 py-0.5 rounded-full border font-medium', getTagColor(tag))}
+              className={cn('text-[10px] px-1.5 py-0.5 rounded-full border font-medium', getTagColor(tag))}
             >
               {tag}
             </span>
           ))}
           {card.tags.length > 3 && (
-            <span className="text-xs text-muted-foreground">+{card.tags.length - 3}</span>
+            <span className="text-[10px] text-muted-foreground">+{card.tags.length - 3}</span>
           )}
         </div>
       )}
@@ -140,12 +138,12 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
                 {getInitials(card.assignedName)}
               </AvatarFallback>
             </Avatar>
-            <span className="text-sm text-muted-foreground truncate">{card.assignedName}</span>
+            <span className="text-[10px] text-muted-foreground truncate">{card.assignedName}</span>
           </div>
         ) : (
           <div className="flex items-center gap-1 opacity-60" title="Sem responsável atribuído">
             <UserX className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-sm text-muted-foreground">Sem responsável</span>
+            <span className="text-[10px] text-muted-foreground">Sem responsável</span>
           </div>
         )}
 

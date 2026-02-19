@@ -1,64 +1,111 @@
 
+# Melhorias para o Kanban CRM
 
-# Kanban: Texto maior + Fundo branco com cards coloridos
-
-## Objetivo
-Melhorar a legibilidade do Kanban com textos maiores e criar uma versao com fundo branco e cards coloridos (baseados na cor da coluna).
+Baseado na análise completa do código (`KanbanBoard.tsx`, `KanbanCardItem.tsx`, `CardDetailSheet.tsx`, `KanbanColumn.tsx`, `BoardCard.tsx`) e na imagem enviada, identificamos oportunidades de melhoria organizadas por impacto.
 
 ---
 
-## Mudancas
+## 1. Criação de card inline (sem dialog)
 
-### 1. `src/components/kanban/KanbanCardItem.tsx` - Textos maiores e card colorido
+**Problema atual:** Ao clicar em "+ Adicionar card", abre um Dialog modal com apenas um campo de título. Isso quebra o fluxo e é lento.
 
-**Textos maiores:**
-- Titulo do card: `text-sm` -> `text-base font-semibold` (16px)
-- Campos customizados: `text-[10px]` -> `text-sm` (14px)
-- Tags: `text-[10px]` -> `text-xs` (12px)
-- Nome do responsavel: `text-[10px]` -> `text-sm` (14px)
-- "Sem responsavel": `text-[10px]` -> `text-sm`
-- Padding do card: `p-3` -> `p-4`
+**Melhoria:** Substituir o Dialog por um **campo de input inline** na base da coluna — igual ao Trello/Linear. O usuário digita direto na coluna, pressiona Enter e o card é criado.
 
-**Card colorido:**
-- Receber prop `columnColor: string` no componente
-- Aplicar borda esquerda colorida: `border-l-4` com `borderLeftColor: columnColor`
-- Fundo do card: `bg-card` -> `bg-white dark:bg-card` (branco no light, mantém dark)
-
-### 2. `src/components/kanban/KanbanColumn.tsx` - Fundo branco e textos maiores
-
-- Fundo da coluna: `bg-muted/30` -> `bg-white dark:bg-muted/30`
-- Header: nome da coluna `text-sm` -> `text-base font-bold`
-- Contador: `text-xs` -> `text-sm`
-- "Sem cards aqui": `text-xs` -> `text-sm`
-- Botao "Adicionar card": `text-xs` -> `text-sm`
-- Passar `columnColor` para cada `KanbanCardItem`
-
-### 3. `src/pages/dashboard/KanbanBoard.tsx` - Header e fundo
-
-- Fundo do board: adicionar `bg-slate-50 dark:bg-background` no container principal
-- Header titulo: `text-sm` -> `text-lg`
-- Descricao: `text-[10px]` -> `text-xs`
-- Filtro chips: `text-[10px]` -> `text-xs`
-- Label "Filtrar": `text-[10px]` -> `text-xs`
-- Card count: `text-xs` -> `text-sm`
+**Impacto:** Reduz cliques de 3 para 1. Criação muito mais rápida.
 
 ---
 
-## Resultado visual esperado
+## 2. Filtro por Responsável no header do board
 
-- Fundo geral cinza claro (`bg-slate-50`) no modo claro
-- Colunas com fundo branco
-- Cards com fundo branco + borda esquerda colorida (cor da coluna/etapa)
-- Todos os textos visivelmente maiores e mais legíveis
-- No modo dark, mantém o visual atual (sem quebrar o tema existente)
+**Problema atual:** A busca (`search`) filtra por título, tag e nome do responsável via texto livre. Não existe um filtro dedicado por responsável.
+
+**Melhoria:** Adicionar um **seletor de responsável** no header do board (ao lado do campo de busca) para filtrar os cards de um atendente específico com um clique. Isso é especialmente útil para gerentes que gerenciam times.
+
+**Impacto:** Visibilidade rápida da carteira de um atendente.
 
 ---
 
-## Arquivos modificados
+## 3. Contador de cards por responsável no header
 
-| Arquivo | Mudanca |
+**Problema atual:** O header mostra apenas o total de cards (ex: "1 card"). Não há informação sobre distribuição por responsável.
+
+**Melhoria:** Exibir **avatares dos responsáveis** com contagem de cards no header, como chips clicáveis que funcionam como filtro rápido.
+
+**Impacto:** Gestão visual de carga de trabalho da equipe.
+
+---
+
+## 4. Coluna vazia com drag-and-drop melhorado
+
+**Problema atual:** Colunas vazias mostram apenas "Sem cards aqui" e têm altura mínima de 120px. Em quadros com poucas colunas e muitas colunas vazias, a área de drop pode ser difícil de acertar.
+
+**Melhoria:** Aumentar a área mínima das colunas vazias para `min-h-[200px]` e adicionar um ícone visual de zona de drop ativa (borda tracejada animada ao arrastar sobre ela).
+
+**Impacto:** Drag-and-drop mais confiável em colunas vazias.
+
+---
+
+## 5. Histórico de movimentações no card (audit log)
+
+**Problema atual:** Não há registro de quando um card mudou de coluna, foi reatribuído ou teve campos alterados.
+
+**Melhoria:** Adicionar uma seção "Histórico" no `CardDetailSheet` mostrando as últimas ações (ex: "Gustavo moveu para Simulação há 2h"). Requer uma nova tabela `kanban_card_history` no banco.
+
+**Impacto:** Rastreabilidade do lead no funil.
+
+---
+
+## 6. Campo de notas/observações no card
+
+**Problema atual:** O `CardDetailSheet` tem campos dinâmicos e tags, mas não tem um campo livre de texto/notas para registrar observações sobre o lead.
+
+**Melhoria:** Adicionar um campo `Textarea` de "Notas internas" persistido na tabela `kanban_cards` (coluna `notes TEXT`). Simples de implementar, alto valor prático.
+
+**Impacto:** Substitui o uso de tags para comunicação interna entre atendentes.
+
+---
+
+## 7. Indicador visual de "cards sem responsável"
+
+**Problema atual:** Cards sem responsável não têm nenhuma indicação visual de alerta.
+
+**Melhoria:** Exibir um ícone de usuário com `?` ou cor diferente no rodapé do card quando não há responsável atribuído. Opcional: filtro para mostrar apenas cards sem responsável.
+
+**Impacto:** Evita leads "esquecidos" sem atendente.
+
+---
+
+## Plano de Implementação (prioridade alta)
+
+As três melhorias de maior impacto com menor esforço de implementação são:
+
+### Prioridade 1 - Criação inline de card
+- Remover o Dialog de `addCardOpen` do `KanbanBoard.tsx`
+- Adicionar estado `inlineAddColumn: string | null` 
+- Modificar `KanbanColumn.tsx` para receber `isAddingInline` e renderizar um `<Input>` + botões Confirm/Cancel no lugar do botão "+ Adicionar card"
+- Ao confirmar (Enter ou clique), chama `handleAddCard` com o título inline
+
+### Prioridade 2 - Filtro por responsável
+- Adicionar estado `filterAssignee: string | null` em `KanbanBoard.tsx`
+- Adicionar um `<Select>` de membros da equipe no header, ao lado do campo de busca
+- Aplicar o filtro em `filteredCards` com `.filter(c => !filterAssignee || c.assigned_to === filterAssignee)`
+
+### Prioridade 3 - Notas internas no card
+- Migração SQL: `ALTER TABLE kanban_cards ADD COLUMN notes TEXT;`
+- Adicionar `notes` no `CardData` e `CardDetailSheet`
+- Adicionar `<Textarea>` de "Notas" na sheet de detalhes
+- Salvar junto com o card no `handleSave`
+
+---
+
+## Arquivos que serão modificados
+
+| Arquivo | Mudanças |
 |---|---|
-| `src/components/kanban/KanbanCardItem.tsx` | Textos maiores, prop `columnColor`, borda colorida, fundo branco |
-| `src/components/kanban/KanbanColumn.tsx` | Textos maiores, fundo branco, passar `columnColor` |
-| `src/pages/dashboard/KanbanBoard.tsx` | Textos maiores no header, fundo `bg-slate-50` |
+| `src/pages/dashboard/KanbanBoard.tsx` | Remover Dialog, adicionar filtro por responsável, passar props de inline add |
+| `src/components/kanban/KanbanColumn.tsx` | Input inline de criação de card |
+| `src/components/kanban/CardDetailSheet.tsx` | Campo de notas + coluna `notes` |
+| `src/components/kanban/KanbanCardItem.tsx` | Indicador visual de sem responsável |
+| Nova migração SQL | `kanban_cards` + coluna `notes TEXT` |
 
+Qual dessas melhorias você quer implementar primeiro? Podemos fazer todas de uma vez ou priorizar as que fazem mais diferença para o seu uso atual.
