@@ -1,130 +1,108 @@
 
-# Correção Crítica: Recursão Infinita no CRM Kanban
+# Correção: Dropdown "Responsável" mostrando apenas membros do quadro
 
-## Causa Raiz do Problema
+## Causa Raiz
 
-Há dois loops de recursão encadeados que impedem o carregamento de qualquer board:
+No arquivo `src/pages/dashboard/KanbanBoard.tsx`, a função `loadTeamMembers` tem essa lógica incorreta:
 
-**Loop 1 — Política SELECT de `kanban_boards`:**
-```
-kanban_boards (SELECT) →
-  EXISTS(kanban_cards) →
-    kanban_cards RLS → can_access_kanban_board() →
-      SELECT FROM kanban_boards → LOOP ∞
-```
-
-A política `"Usuários podem ver boards acessíveis"` tem uma cláusula `OR EXISTS (SELECT 1 FROM kanban_cards kc WHERE kc.board_id = kanban_boards.id ...)` que dispara a RLS de `kanban_cards`, que por sua vez chama `can_access_kanban_board()`, que faz `SELECT FROM kanban_boards` — recursão infinita.
-
-**Loop 2 — A função `can_access_kanban_board` consulta `kanban_boards`:**
-Mesmo como `SECURITY DEFINER`, a função executa `SELECT FROM public.kanban_boards`, que aciona a política SELECT da própria tabela que chamou a função.
-
-## Correção Técnica
-
-### 1. Reescrever `can_access_kanban_board` sem consultar `kanban_boards`
-
-A função precisa verificar as condições de acesso consultando **diretamente** as tabelas auxiliares (`inboxes`, `inbox_users`, `kanban_board_members`), recebendo os dados do board como parâmetros — não buscando em `kanban_boards`:
-
-```sql
-CREATE OR REPLACE FUNCTION public.can_access_kanban_board(
-  _user_id uuid,
-  _board_id uuid
-)
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$
-  SELECT (
-    is_super_admin(_user_id)
-    OR EXISTS (
-      SELECT 1 FROM public.kanban_boards b
-      WHERE b.id = _board_id AND b.created_by = _user_id
-    )
-    OR EXISTS (
-      SELECT 1 FROM public.kanban_boards b
-      JOIN public.inbox_users iu ON iu.inbox_id = b.inbox_id
-      WHERE b.id = _board_id
-        AND b.inbox_id IS NOT NULL
-        AND iu.user_id = _user_id
-    )
-    OR EXISTS (
-      SELECT 1 FROM public.kanban_board_members m
-      WHERE m.board_id = _board_id AND m.user_id = _user_id
-    )
-  )
-$$;
+```typescript
+const loadTeamMembers = async (boardData: BoardData) => {
+  if (boardData.inbox_id) {
+    // Busca membros da inbox ← correto
+  } else {
+    // Se não tem inbox, busca TODOS os usuários ← ERRADO
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('id, full_name, email')
+      .order('full_name');
+    setTeamMembers((data || []) as TeamMember[]);
+  }
+};
 ```
 
-**Problema:** ainda consulta `kanban_boards`. Como ela é `SECURITY DEFINER`, ela bypassa o RLS, logo não há recursão no acesso aos dados — mas o Postgres ainda pode detectar recursão na estrutura de políticas.
+Isso faz com que Arthur, Bruno, Casa do Agricultor, George Azevedo e Milena apareçam no dropdown — mesmo que apenas Gustavo tenha sido adicionado ao quadro como membro direto.
 
-**Solução real:** A função deve receber `created_by` e `inbox_id` diretamente como parâmetros, ou ser reescrita para usar apenas tabelas auxiliares (`kanban_board_members`, `inbox_users`), sem nunca tocar em `kanban_boards`.
+## Correção
 
-### Versão definitiva (sem consultar `kanban_boards`):
+A função precisa ser reescrita para tratar **três fontes de membros** em ordem de prioridade:
 
-```sql
-CREATE OR REPLACE FUNCTION public.can_access_kanban_board(
-  _user_id  uuid,
-  _board_id uuid
-)
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public
-AS $$
-  SELECT (
-    -- Super admin tem acesso total
-    is_super_admin(_user_id)
-    -- Membro direto do quadro (nova tabela kanban_board_members)
-    OR EXISTS (
-      SELECT 1 FROM public.kanban_board_members m
-      WHERE m.board_id = _board_id AND m.user_id = _user_id
-    )
-    -- Membro de inbox vinculada ao quadro
-    OR EXISTS (
-      SELECT 1 FROM public.inbox_users iu
-      INNER JOIN public.kanban_boards b ON b.inbox_id = iu.inbox_id
-      WHERE b.id = _board_id
-        AND iu.user_id = _user_id
-    )
-  )
-$$;
+1. **Com inbox**: buscar membros da `inbox_users` via join com `user_profiles` (já funciona)
+2. **Sem inbox, com membros diretos**: buscar apenas usuários de `kanban_board_members` para o board atual
+3. **Sem inbox, sem membros diretos**: lista vazia (ou apenas o super admin)
+
+### Nova lógica de `loadTeamMembers`
+
+```typescript
+const loadTeamMembers = async (boardData: BoardData) => {
+  if (boardData.inbox_id) {
+    // Manter lógica existente: membros da inbox
+    const { data } = await supabase
+      .from('inbox_users')
+      .select('user_profiles(id, full_name, email)')
+      .eq('inbox_id', boardData.inbox_id);
+    const members = (data || [])
+      .map((d: any) => d.user_profiles)
+      .filter(Boolean) as TeamMember[];
+    setTeamMembers(members);
+  } else {
+    // Sem inbox: apenas membros diretos do quadro via kanban_board_members
+    const { data } = await supabase
+      .from('kanban_board_members')
+      .select('user_id, user_profiles(id, full_name, email)')
+      .eq('board_id', boardData.id);
+    const members = (data || [])
+      .map((d: any) => d.user_profiles)
+      .filter(Boolean) as TeamMember[];
+    setTeamMembers(members);
+  }
+};
 ```
 
-Nota: `created_by` sai da função — o criador verifica acesso via policy direta na RLS da tabela, não via função auxiliar.
+Para isso funcionar, o Supabase precisa conseguir fazer join de `kanban_board_members` com `user_profiles`. Como `kanban_board_members.user_id` não tem foreign key explícita para `user_profiles.id`, o join via `.select('user_profiles(...)` pode não funcionar automaticamente.
 
-### 2. Simplificar a política SELECT de `kanban_boards` (remover o EXISTS de kanban_cards)
+**Alternativa mais segura** (buscar os IDs dos membros e depois buscar os perfis):
 
-```sql
-DROP POLICY IF EXISTS "Usuários podem ver boards acessíveis" ON public.kanban_boards;
-
-CREATE POLICY "Usuários podem ver boards acessíveis"
-  ON public.kanban_boards FOR SELECT
-  USING (
-    is_super_admin(auth.uid())
-    OR created_by = auth.uid()
-    OR (inbox_id IS NOT NULL AND has_inbox_access(auth.uid(), inbox_id))
-    OR EXISTS (
-      SELECT 1 FROM public.kanban_board_members m
-      WHERE m.board_id = kanban_boards.id AND m.user_id = auth.uid()
-    )
-  );
+```typescript
+const loadTeamMembers = async (boardData: BoardData) => {
+  if (boardData.inbox_id) {
+    // Membros da inbox (lógica existente)
+    ...
+  } else {
+    // 1. Buscar IDs dos membros diretos do quadro
+    const { data: memberRows } = await supabase
+      .from('kanban_board_members')
+      .select('user_id')
+      .eq('board_id', boardData.id);
+    
+    const memberIds = (memberRows || []).map(r => r.user_id);
+    
+    if (memberIds.length === 0) {
+      setTeamMembers([]);
+      return;
+    }
+    
+    // 2. Buscar perfis apenas desses usuários
+    const { data: profiles } = await supabase
+      .from('user_profiles')
+      .select('id, full_name, email')
+      .in('id', memberIds)
+      .order('full_name');
+    
+    setTeamMembers((profiles || []) as TeamMember[]);
+  }
+};
 ```
 
-A cláusula `OR EXISTS (SELECT 1 FROM kanban_cards...)` é **removida** pois causa a recursão. O acesso de atendentes a boards onde têm cards atribuídos passa a ser controlado exclusivamente via `kanban_board_members` (o Super Admin adiciona o atendente explicitamente).
-
-### 3. Atualizar política de SELECT em `kanban_cards` (remover chamada à função recursiva)
-
-A política atual de SELECT em `kanban_cards` chama `can_access_kanban_board` dentro do EXISTS em `kanban_boards`. Após a correção, a função será segura (`SECURITY DEFINER` sem tocar `kanban_boards` diretamente via RLS), mas vale garantir que não há outros pontos de recursão.
-
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Mudança |
 |---|---|
-| Nova migração SQL | Reescrever `can_access_kanban_board` sem consultar `kanban_boards` via RLS; remover cláusula de `kanban_cards` da política SELECT |
-| `src/pages/dashboard/KanbanBoard.tsx` | Ajustar verificação de papel do usuário — `created_by` não mais verifica acesso via função, mas a RLS cobre isso corretamente |
+| `src/pages/dashboard/KanbanBoard.tsx` | Corrigir `loadTeamMembers` para usar membros diretos (`kanban_board_members`) quando não há inbox vinculada ao quadro |
 
-**Total: 1 migração corretiva**
+**Total: 1 arquivo, ~15 linhas alteradas**
 
-## O que muda para o usuário
+## Resultado Esperado
 
-- Quadros criados pelo Super Admin aparecem imediatamente na tela CRM
-- A aba "Acesso" no EditBoardDialog funciona para adicionar membros
-- Membros adicionados via `kanban_board_members` passam a ver o quadro
-- Atendentes assignados a cards continuam vendo os cards (a RLS de cards é independente)
-- **Nenhuma funcionalidade existente é perdida** — apenas o loop é quebrado
+- Quadro **sem inbox**: dropdown "Responsável" mostra **apenas** os usuários adicionados na aba "Acesso" do EditBoardDialog (ex: somente Gustavo)
+- Quadro **com inbox**: dropdown "Responsável" continua mostrando os membros da caixa de entrada (comportamento existente e correto)
+- **Sem regressão**: nenhuma outra funcionalidade é afetada
