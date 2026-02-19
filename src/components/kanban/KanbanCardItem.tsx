@@ -16,6 +16,7 @@ export interface CardData {
   assignedName?: string;
   primaryFieldValue?: string;
   primaryFieldName?: string;
+  fieldValues?: Array<{ name: string; value: string; isPrimary: boolean }>;
 }
 
 interface KanbanCardItemProps {
@@ -78,16 +79,32 @@ export function KanbanCardItem({ card, onClick, isDragging }: KanbanCardItemProp
         <GripVertical className="w-3.5 h-3.5" />
       </div>
 
-      {/* Title */}
-      <p className="text-sm font-medium text-foreground leading-snug pr-6 line-clamp-2">
-        {card.title}
-      </p>
+      {/* Title — só exibe se não houver campo primário com valor */}
+      {(!card.primaryFieldValue) && (
+        <p className="text-sm font-medium text-foreground leading-snug pr-6 line-clamp-2">
+          {card.title}
+        </p>
+      )}
 
-      {/* Primary field value */}
+      {/* Primary field value — vira o "título" do card */}
       {card.primaryFieldValue && (
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-muted-foreground">{card.primaryFieldName}:</span>
-          <span className="text-xs font-medium text-foreground">{card.primaryFieldValue}</span>
+        <p className="text-sm font-semibold text-foreground leading-snug pr-6 line-clamp-2">
+          {card.primaryFieldValue}
+        </p>
+      )}
+
+      {/* Outros campos (exceto o primário), até 3 */}
+      {card.fieldValues && card.fieldValues.filter(fv => !fv.isPrimary && fv.value).length > 0 && (
+        <div className="flex flex-col gap-0.5">
+          {card.fieldValues
+            .filter(fv => !fv.isPrimary && fv.value)
+            .slice(0, 3)
+            .map(fv => (
+              <div key={fv.name} className="flex items-center gap-1">
+                <span className="text-[10px] text-muted-foreground shrink-0">{fv.name}:</span>
+                <span className="text-[10px] font-medium text-foreground truncate">{fv.value}</span>
+              </div>
+            ))}
         </div>
       )}
 
