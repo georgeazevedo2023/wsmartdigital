@@ -7,8 +7,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
-import { Trash2, X, Plus, Save } from 'lucide-react';
+import { Trash2, X, Plus, Save, StickyNote } from 'lucide-react';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { DynamicFormField, KanbanField } from './DynamicFormField';
 import type { CardData } from './KanbanCardItem';
@@ -48,6 +49,7 @@ export function CardDetailSheet({
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState('');
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -56,6 +58,7 @@ export function CardDetailSheet({
     setColumnId(card.column_id);
     setAssignedTo(card.assigned_to || 'none');
     setTags(card.tags || []);
+    setNotes(card.notes || '');
     setTagInput('');
     loadCardData();
   }, [card, open]);
@@ -108,7 +111,8 @@ export function CardDetailSheet({
         column_id: columnId,
         assigned_to: assignedTo !== 'none' ? assignedTo : null,
         tags,
-      })
+        notes: notes || null,
+      } as any)
       .eq('id', card.id);
 
     if (cardErr) {
@@ -275,6 +279,20 @@ export function CardDetailSheet({
                 ))}
               </div>
             )}
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <StickyNote className="w-3 h-3" />
+              Notas internas
+            </Label>
+            <Textarea
+              value={notes}
+              onChange={e => setNotes(e.target.value)}
+              placeholder="Observações sobre este lead (visível apenas internamente)..."
+              className="min-h-[80px] text-sm resize-none"
+            />
           </div>
 
           {/* Dynamic fields */}

@@ -1,7 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { GripVertical, ChevronLeft, ChevronRight } from 'lucide-react';
+import { GripVertical, ChevronLeft, ChevronRight, UserX } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface CardData {
@@ -12,6 +12,7 @@ export interface CardData {
   assigned_to: string | null;
   tags: string[];
   position: number;
+  notes?: string | null;
   assignedName?: string;
   primaryFieldValue?: string;
   primaryFieldName?: string;
@@ -140,7 +141,10 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
             <span className="text-[10px] text-muted-foreground truncate">{card.assignedName}</span>
           </div>
         ) : (
-          <span />
+          <div className="flex items-center gap-1 opacity-60" title="Sem responsável atribuído">
+            <UserX className="w-3.5 h-3.5 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground">Sem responsável</span>
+          </div>
         )}
 
         {/* Botões < > mover entre colunas */}
