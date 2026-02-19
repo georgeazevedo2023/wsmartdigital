@@ -563,7 +563,12 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                         checked={field.is_primary}
                         onCheckedChange={v => updateField(field.id, { is_primary: v })}
                       />
-                      <Label htmlFor={`primary_${field.id}`} className="text-xs">Campo principal (exibe no card)</Label>
+                      <div>
+                        <Label htmlFor={`primary_${field.id}`} className="text-xs font-medium">Título do card</Label>
+                        {field.is_primary && (
+                          <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">Os demais campos aparecem automaticamente no card (até 5)</p>
+                        )}
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Switch
