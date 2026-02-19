@@ -146,34 +146,34 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
         {/* Botões < > mover entre colunas */}
         {onMoveCard && (
           <div
-            className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
             onClick={e => e.stopPropagation()}
           >
             <button
               disabled={!hasPrev}
               onClick={() => onMoveCard(card.id, 'prev')}
               className={cn(
-                'flex items-center justify-center w-5 h-5 rounded border transition-colors',
+                'flex items-center justify-center w-7 h-7 rounded-md border transition-colors',
                 hasPrev
                   ? 'border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5'
                   : 'border-border/30 text-muted-foreground/30 cursor-not-allowed'
               )}
               title="Mover para coluna anterior"
             >
-              <ChevronLeft className="w-3 h-3" />
+              <ChevronLeft className="w-4 h-4" />
             </button>
             <button
               disabled={!hasNext}
               onClick={() => onMoveCard(card.id, 'next')}
               className={cn(
-                'flex items-center justify-center w-5 h-5 rounded border transition-colors',
+                'flex items-center justify-center w-7 h-7 rounded-md border transition-colors',
                 hasNext
                   ? 'border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5'
                   : 'border-border/30 text-muted-foreground/30 cursor-not-allowed'
               )}
               title="Mover para próxima coluna"
             >
-              <ChevronRight className="w-3 h-3" />
+              <ChevronRight className="w-4 h-4" />
             </button>
           </div>
         )}
