@@ -1,8 +1,7 @@
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, ChevronLeft, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 export interface CardData {
@@ -23,6 +22,9 @@ interface KanbanCardItemProps {
   card: CardData;
   onClick: () => void;
   isDragging?: boolean;
+  onMoveCard?: (cardId: string, direction: 'prev' | 'next') => void;
+  hasPrev?: boolean;
+  hasNext?: boolean;
 }
 
 const TAG_COLORS = [
@@ -43,7 +45,7 @@ const getInitials = (name: string) => {
   return name.split(' ').map(p => p[0]).join('').toUpperCase().slice(0, 2);
 };
 
-export function KanbanCardItem({ card, onClick, isDragging }: KanbanCardItemProps) {
+export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev, hasNext }: KanbanCardItemProps) {
   const {
     attributes,
     listeners,
@@ -93,7 +95,7 @@ export function KanbanCardItem({ card, onClick, isDragging }: KanbanCardItemProp
         </p>
       )}
 
-      {/* Outros campos (exceto o primário), até 3 */}
+      {/* Outros campos (exceto o primário), até 5 */}
       {card.fieldValues && card.fieldValues.filter(fv => !fv.isPrimary && fv.value && fv.showOnCard).length > 0 && (
         <div className="flex flex-col gap-0.5">
           {card.fieldValues
@@ -125,17 +127,57 @@ export function KanbanCardItem({ card, onClick, isDragging }: KanbanCardItemProp
         </div>
       )}
 
-      {/* Assignee */}
-      {card.assignedName && (
-        <div className="flex items-center gap-1.5 mt-0.5">
-          <Avatar className="w-5 h-5">
-            <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
-              {getInitials(card.assignedName)}
-            </AvatarFallback>
-          </Avatar>
-          <span className="text-[10px] text-muted-foreground truncate">{card.assignedName}</span>
-        </div>
-      )}
+      {/* Footer: assignee + botões mover coluna */}
+      <div className="flex items-center justify-between gap-1 mt-0.5">
+        {/* Assignee */}
+        {card.assignedName ? (
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Avatar className="w-5 h-5 shrink-0">
+              <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+                {getInitials(card.assignedName)}
+              </AvatarFallback>
+            </Avatar>
+            <span className="text-[10px] text-muted-foreground truncate">{card.assignedName}</span>
+          </div>
+        ) : (
+          <span />
+        )}
+
+        {/* Botões < > mover entre colunas */}
+        {onMoveCard && (
+          <div
+            className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              disabled={!hasPrev}
+              onClick={() => onMoveCard(card.id, 'prev')}
+              className={cn(
+                'flex items-center justify-center w-5 h-5 rounded border transition-colors',
+                hasPrev
+                  ? 'border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5'
+                  : 'border-border/30 text-muted-foreground/30 cursor-not-allowed'
+              )}
+              title="Mover para coluna anterior"
+            >
+              <ChevronLeft className="w-3 h-3" />
+            </button>
+            <button
+              disabled={!hasNext}
+              onClick={() => onMoveCard(card.id, 'next')}
+              className={cn(
+                'flex items-center justify-center w-5 h-5 rounded border transition-colors',
+                hasNext
+                  ? 'border-border text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5'
+                  : 'border-border/30 text-muted-foreground/30 cursor-not-allowed'
+              )}
+              title="Mover para próxima coluna"
+            >
+              <ChevronRight className="w-3 h-3" />
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

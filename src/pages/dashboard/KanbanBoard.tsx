@@ -372,6 +372,32 @@ const KanbanBoard = () => {
     setSheetOpen(true);
   };
 
+  const handleMoveCard = async (cardId: string, direction: 'prev' | 'next') => {
+    const card = cards.find(c => c.id === cardId);
+    if (!card) return;
+
+    const sortedCols = [...columns].sort((a, b) => a.position - b.position);
+    const currentIdx = sortedCols.findIndex(c => c.id === card.column_id);
+    const targetIdx = direction === 'next' ? currentIdx + 1 : currentIdx - 1;
+    if (targetIdx < 0 || targetIdx >= sortedCols.length) return;
+
+    const targetCol = sortedCols[targetIdx];
+    const targetColCards = cards.filter(c => c.column_id === targetCol.id);
+
+    setCards(prev => prev.map(c =>
+      c.id === cardId ? { ...c, column_id: targetCol.id, position: targetColCards.length } : c
+    ));
+
+    await supabase.from('kanban_cards').update({
+      column_id: targetCol.id,
+      position: targetColCards.length,
+    }).eq('id', cardId);
+
+    if (targetCol.automation_enabled && targetCol.automation_message && board?.instance_id) {
+      toast.info(`Automação ativa: coluna "${targetCol.name}"`);
+    }
+  };
+
   // ── Filter ───────────────────────────────────────────────
   const filteredCards = search
     ? cards.filter(c =>
@@ -458,7 +484,7 @@ const KanbanBoard = () => {
           onDragEnd={handleDragEnd}
         >
           <div className="flex gap-4 p-4 h-full min-h-[calc(100vh-10rem)]">
-            {columns.map(col => (
+            {columns.map((col, colIdx) => (
               <KanbanColumn
                 key={col.id}
                 column={col}
@@ -466,6 +492,9 @@ const KanbanBoard = () => {
                 onCardClick={handleCardClick}
                 onAddCard={openAddCard}
                 canAddCard={canAddCard}
+                onMoveCard={handleMoveCard}
+                hasPrev={colIdx > 0}
+                hasNext={colIdx < columns.length - 1}
               />
             ))}
 

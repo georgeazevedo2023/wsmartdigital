@@ -20,9 +20,12 @@ interface KanbanColumnProps {
   onCardClick: (card: CardData) => void;
   onAddCard: (columnId: string) => void;
   canAddCard?: boolean;
+  onMoveCard: (cardId: string, direction: 'prev' | 'next') => void;
+  hasPrev: boolean;
+  hasNext: boolean;
 }
 
-export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard = false }: KanbanColumnProps) {
+export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard = false, onMoveCard, hasPrev, hasNext }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id });
 
   return (
@@ -63,6 +66,9 @@ export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard
               key={card.id}
               card={card}
               onClick={() => onCardClick(card)}
+              onMoveCard={onMoveCard}
+              hasPrev={hasPrev}
+              hasNext={hasNext}
             />
           ))}
 
