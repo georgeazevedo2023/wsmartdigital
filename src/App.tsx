@@ -1,4 +1,4 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, Component, type ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -33,6 +33,21 @@ const KanbanBoard = lazy(() => import("./pages/dashboard/KanbanBoard"));
 const queryClient = new QueryClient();
 
 // Page loading fallback
+// Error boundary for lazy-loaded modules (handles stale HMR cache)
+class LazyErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: any) {
+    if (error?.message?.includes('dynamically imported module') || error?.message?.includes('Failed to fetch')) {
+      window.location.reload();
+    }
+  }
+  render() {
+    if (this.state.hasError) return <PageLoader />;
+    return this.props.children;
+  }
+}
+
 const PageLoader = () => (
   <div className="flex items-center justify-center min-h-[50vh]">
     <div className="w-8 h-8 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -146,13 +161,13 @@ const AppRoutes = () => {
         <Route path="users" element={<AdminRoute><Suspense fallback={<PageLoader />}><UsersManagement /></Suspense></AdminRoute>} />
         <Route path="settings" element={<AdminRoute><Suspense fallback={<PageLoader />}><Settings /></Suspense></AdminRoute>} />
         <Route path="scheduled" element={<AdminRoute><Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense></AdminRoute>} />
-        <Route path="helpdesk" element={<Suspense fallback={<PageLoader />}><HelpDesk /></Suspense>} />
-        <Route path="inboxes" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxManagement /></Suspense></AdminRoute>} />
-        <Route path="inbox-users" element={<AdminRoute><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></AdminRoute>} />
-        <Route path="admin" element={<AdminRoute><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></AdminRoute>} />
-        <Route path="intelligence" element={<AdminRoute><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></AdminRoute>} />
-        <Route path="crm" element={<CrmRoute><Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense></CrmRoute>} />
-        <Route path="crm/:boardId" element={<CrmRoute><Suspense fallback={<PageLoader />}><KanbanBoard /></Suspense></CrmRoute>} />
+        <Route path="helpdesk" element={<LazyErrorBoundary><Suspense fallback={<PageLoader />}><HelpDesk /></Suspense></LazyErrorBoundary>} />
+        <Route path="inboxes" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><InboxManagement /></Suspense></LazyErrorBoundary></AdminRoute>} />
+        <Route path="inbox-users" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></LazyErrorBoundary></AdminRoute>} />
+        <Route path="admin" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></LazyErrorBoundary></AdminRoute>} />
+        <Route path="intelligence" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></LazyErrorBoundary></AdminRoute>} />
+        <Route path="crm" element={<CrmRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense></LazyErrorBoundary></CrmRoute>} />
+        <Route path="crm/:boardId" element={<CrmRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><KanbanBoard /></Suspense></LazyErrorBoundary></CrmRoute>} />
         {/* Redirect legacy/bookmarked URLs */}
         <Route path="leads-broadcast" element={<Navigate to="/dashboard/broadcast/leads" replace />} />
         <Route path="users" element={<Navigate to="/dashboard/admin" replace />} />
