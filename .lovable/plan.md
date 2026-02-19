@@ -1,111 +1,64 @@
 
-# Melhorias para o Kanban CRM
 
-Baseado na análise completa do código (`KanbanBoard.tsx`, `KanbanCardItem.tsx`, `CardDetailSheet.tsx`, `KanbanColumn.tsx`, `BoardCard.tsx`) e na imagem enviada, identificamos oportunidades de melhoria organizadas por impacto.
+# Fix: Análise de Inteligência falhando com erro 500
 
----
+## Problema Identificado
 
-## 1. Criação de card inline (sem dialog)
+Os logs da edge function mostram:
+```
+[analyze-summaries] Analyzing 8 conversations with AI...
+[analyze-summaries] AI error: 500
+```
 
-**Problema atual:** Ao clicar em "+ Adicionar card", abre um Dialog modal com apenas um campo de título. Isso quebra o fluxo e é lento.
+O gateway de IA retornou erro 500. A causa principal e o que precisa ser corrigido:
 
-**Melhoria:** Substituir o Dialog por um **campo de input inline** na base da coluna — igual ao Trello/Linear. O usuário digita direto na coluna, pressiona Enter e o card é criado.
-
-**Impacto:** Reduz cliques de 3 para 1. Criação muito mais rápida.
-
----
-
-## 2. Filtro por Responsável no header do board
-
-**Problema atual:** A busca (`search`) filtra por título, tag e nome do responsável via texto livre. Não existe um filtro dedicado por responsável.
-
-**Melhoria:** Adicionar um **seletor de responsável** no header do board (ao lado do campo de busca) para filtrar os cards de um atendente específico com um clique. Isso é especialmente útil para gerentes que gerenciam times.
-
-**Impacto:** Visibilidade rápida da carteira de um atendente.
+1. **Modelo instavel**: O modelo `google/gemini-3-flash-preview` e um preview que pode retornar 500 intermitentemente
+2. **Metodo de auth invalido**: `getClaims(token)` nao e um metodo padrao do Supabase JS client -- pode falhar silenciosamente em algumas versoes
 
 ---
 
-## 3. Contador de cards por responsável no header
+## Correcoes
 
-**Problema atual:** O header mostra apenas o total de cards (ex: "1 card"). Não há informação sobre distribuição por responsável.
+### 1. Trocar modelo de IA para um estavel
 
-**Melhoria:** Exibir **avatares dos responsáveis** com contagem de cards no header, como chips clicáveis que funcionam como filtro rápido.
+No arquivo `supabase/functions/analyze-summaries/index.ts`, linha 144:
 
-**Impacto:** Gestão visual de carga de trabalho da equipe.
+- **De**: `google/gemini-3-flash-preview`
+- **Para**: `google/gemini-2.5-flash`
 
----
+Este modelo e estavel, rapido e adequado para a tarefa de analise de texto.
 
-## 4. Coluna vazia com drag-and-drop melhorado
+### 2. Corrigir autenticacao do usuario
 
-**Problema atual:** Colunas vazias mostram apenas "Sem cards aqui" e têm altura mínima de 120px. Em quadros com poucas colunas e muitas colunas vazias, a área de drop pode ser difícil de acertar.
+Substituir `getClaims(token)` por `getUser(token)`, que e o metodo padrao:
 
-**Melhoria:** Aumentar a área mínima das colunas vazias para `min-h-[200px]` e adicionar um ícone visual de zona de drop ativa (borda tracejada animada ao arrastar sobre ela).
+```typescript
+// De:
+const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token);
+const userId = claimsData.claims.sub;
 
-**Impacto:** Drag-and-drop mais confiável em colunas vazias.
+// Para:
+const { data: { user }, error: userError } = await userSupabase.auth.getUser(token);
+const userId = user.id;
+```
 
----
+### 3. Adicionar log do erro completo do AI gateway
 
-## 5. Histórico de movimentações no card (audit log)
+Para facilitar debug futuro, logar o body da resposta de erro:
 
-**Problema atual:** Não há registro de quando um card mudou de coluna, foi reatribuído ou teve campos alterados.
-
-**Melhoria:** Adicionar uma seção "Histórico" no `CardDetailSheet` mostrando as últimas ações (ex: "Gustavo moveu para Simulação há 2h"). Requer uma nova tabela `kanban_card_history` no banco.
-
-**Impacto:** Rastreabilidade do lead no funil.
-
----
-
-## 6. Campo de notas/observações no card
-
-**Problema atual:** O `CardDetailSheet` tem campos dinâmicos e tags, mas não tem um campo livre de texto/notas para registrar observações sobre o lead.
-
-**Melhoria:** Adicionar um campo `Textarea` de "Notas internas" persistido na tabela `kanban_cards` (coluna `notes TEXT`). Simples de implementar, alto valor prático.
-
-**Impacto:** Substitui o uso de tags para comunicação interna entre atendentes.
-
----
-
-## 7. Indicador visual de "cards sem responsável"
-
-**Problema atual:** Cards sem responsável não têm nenhuma indicação visual de alerta.
-
-**Melhoria:** Exibir um ícone de usuário com `?` ou cor diferente no rodapé do card quando não há responsável atribuído. Opcional: filtro para mostrar apenas cards sem responsável.
-
-**Impacto:** Evita leads "esquecidos" sem atendente.
+```typescript
+if (!aiResponse.ok) {
+  const errBody = await aiResponse.text();
+  console.error("[analyze-summaries] AI error:", aiResponse.status, errBody);
+  // ...resto do tratamento
+}
+```
 
 ---
 
-## Plano de Implementação (prioridade alta)
+## Arquivo modificado
 
-As três melhorias de maior impacto com menor esforço de implementação são:
-
-### Prioridade 1 - Criação inline de card
-- Remover o Dialog de `addCardOpen` do `KanbanBoard.tsx`
-- Adicionar estado `inlineAddColumn: string | null` 
-- Modificar `KanbanColumn.tsx` para receber `isAddingInline` e renderizar um `<Input>` + botões Confirm/Cancel no lugar do botão "+ Adicionar card"
-- Ao confirmar (Enter ou clique), chama `handleAddCard` com o título inline
-
-### Prioridade 2 - Filtro por responsável
-- Adicionar estado `filterAssignee: string | null` em `KanbanBoard.tsx`
-- Adicionar um `<Select>` de membros da equipe no header, ao lado do campo de busca
-- Aplicar o filtro em `filteredCards` com `.filter(c => !filterAssignee || c.assigned_to === filterAssignee)`
-
-### Prioridade 3 - Notas internas no card
-- Migração SQL: `ALTER TABLE kanban_cards ADD COLUMN notes TEXT;`
-- Adicionar `notes` no `CardData` e `CardDetailSheet`
-- Adicionar `<Textarea>` de "Notas" na sheet de detalhes
-- Salvar junto com o card no `handleSave`
-
----
-
-## Arquivos que serão modificados
-
-| Arquivo | Mudanças |
+| Arquivo | Mudanca |
 |---|---|
-| `src/pages/dashboard/KanbanBoard.tsx` | Remover Dialog, adicionar filtro por responsável, passar props de inline add |
-| `src/components/kanban/KanbanColumn.tsx` | Input inline de criação de card |
-| `src/components/kanban/CardDetailSheet.tsx` | Campo de notas + coluna `notes` |
-| `src/components/kanban/KanbanCardItem.tsx` | Indicador visual de sem responsável |
-| Nova migração SQL | `kanban_cards` + coluna `notes TEXT` |
+| `supabase/functions/analyze-summaries/index.ts` | Trocar modelo para `gemini-2.5-flash`, corrigir auth com `getUser`, melhorar log de erro |
 
-Qual dessas melhorias você quer implementar primeiro? Podemos fazer todas de uma vez ou priorizar as que fazem mais diferença para o seu uso atual.
