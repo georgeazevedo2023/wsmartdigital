@@ -308,11 +308,16 @@ const KanbanBoard = () => {
     setAddingCard(true);
 
     const colCards = cards.filter(c => c.column_id === addCardColumn);
+
+    // Em quadros privados sem inbox, auto-atribuir ao usuário logado
+    const autoAssign = board?.visibility === 'private' ? user.id : null;
+
     const { error } = await supabase.from('kanban_cards').insert({
       board_id: boardId,
       column_id: addCardColumn,
       title: newCardTitle.trim(),
       created_by: user.id,
+      assigned_to: autoAssign,
       position: colCards.length,
       tags: [],
     });
