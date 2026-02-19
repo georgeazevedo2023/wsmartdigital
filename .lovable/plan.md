@@ -1,73 +1,128 @@
 
-# Simplificação da Configuração de Campos do Kanban
+# Seleção de Campos a Exibir no Card do Kanban
 
-## Problema Atual
+## Problema
 
-O toggle **"Campo principal (exibe no card)"** na aba Campos causa confusão porque o usuário entende que precisa marcar individualmente quais campos aparecerão no card. Na prática, o sistema já funciona assim:
+Atualmente, todos os campos com valor aparecem automaticamente no card (até 5). O usuário quer poder **escolher individualmente** quais campos aparecem no card, além do campo "Título".
 
-- **1 campo marcado como principal** → vira o título do card (destaque)
-- **Todos os demais campos** → já são exibidos no card automaticamente (até 3, pelo código atual)
+## Solução
 
-Mas o label enganoso faz o usuário achar que precisa fazer algo especial para que os outros campos apareçam, quando na verdade o problema pode estar apenas no limite (3 campos extras, não 5).
+Adicionar uma coluna `show_on_card` (boolean) na tabela `kanban_fields` e um novo toggle **"Exibir no card"** na aba Campos do EditBoardDialog. Apenas campos com `show_on_card = true` (ou `is_primary = true`) serão renderizados no KanbanCardItem.
 
-## Mudanças Planejadas
+## Mudanças Necessárias
 
-### 1. `src/components/kanban/EditBoardDialog.tsx` — Clarificar o label do toggle
+### 1. Banco de dados — nova coluna `show_on_card`
+
+Migration SQL:
+```sql
+ALTER TABLE public.kanban_fields 
+ADD COLUMN show_on_card boolean NOT NULL DEFAULT false;
+```
+
+- Campos novos terão `show_on_card = false` por padrão (comportamento conservador — nada aparece no card a menos que o usuário ative)
+- O campo primário (`is_primary = true`) sempre aparece como título, independentemente do `show_on_card`
+
+### 2. `src/components/kanban/EditBoardDialog.tsx` — novo toggle por campo
+
+Adicionar `show_on_card` à interface `KanbanField`:
+```typescript
+interface KanbanField {
+  // ...campos existentes
+  show_on_card: boolean; // novo
+}
+```
+
+Na seção de cada campo, adicionar um terceiro toggle ao lado de "Título do card" e "Obrigatório":
+
+```
+[ Switch ] Título do card
+[ Switch ] Exibir no card      ← novo
+[ Switch ] Obrigatório
+```
+
+O campo primário (`is_primary = true`) não precisa do toggle "Exibir no card" — ele sempre aparece como título.
+
+Incluir `show_on_card` no payload de INSERT e UPDATE durante o `handleSave`.
+
+### 3. `src/components/kanban/KanbanCardItem.tsx` — filtrar por `show_on_card`
+
+Alterar o filtro de campos exibidos:
 
 **Antes:**
-```
-Switch: "Campo principal (exibe no card)"
+```typescript
+card.fieldValues
+  .filter(fv => !fv.isPrimary && fv.value)
+  .slice(0, 5)
 ```
 
 **Depois:**
-```
-Switch: "Título do card"
-         ↳ texto de ajuda: "Os demais campos aparecem automaticamente no card (até 5)"
-```
-
-Manter o comportamento de rádio (apenas um pode ser marcado por vez) — já funciona corretamente via `updateField`.
-
-Adicionar também um texto explicativo no topo da aba Campos:
-> "O campo marcado como **Título** aparece em destaque no card. Os demais campos com valor são exibidos automaticamente abaixo, até 5 campos."
-
-### 2. `src/components/kanban/KanbanCardItem.tsx` — Aumentar limite de campos extras de 3 para 5
-
-Linha 101 atual:
 ```typescript
-.slice(0, 3)
+card.fieldValues
+  .filter(fv => !fv.isPrimary && fv.value && fv.showOnCard)
+  .slice(0, 5)
 ```
 
-Muda para:
+Adicionar `showOnCard` à interface `CardData.fieldValues`:
 ```typescript
-.slice(0, 5)
+fieldValues?: Array<{ 
+  name: string; 
+  value: string; 
+  isPrimary: boolean;
+  showOnCard: boolean; // novo
+}>
 ```
 
-### Resultado Visual Esperado
+### 4. `src/pages/dashboard/KanbanBoard.tsx` — propagar `show_on_card`
+
+Em `loadCards`, ao mapear os `fieldValues` do card, incluir `showOnCard`:
+```typescript
+fieldValues: (fields || []).map(f => ({
+  name: f.name,
+  value: allFieldsMap[card.id]?.find(d => d.fieldId === f.id)?.value || '',
+  isPrimary: f.is_primary,
+  showOnCard: f.show_on_card, // novo
+})).filter(fv => fv.value),
+```
+
+## Resultado Visual na Aba Campos
 
 ```text
-┌─────────────────────────────────────┐
-│  George Azevedo              ⠿       │  ← campo Título (is_primary)
-│  CPF: 123.456.789-00                │  ← campo extra 1
-│  Origem: Indicação                  │  ← campo extra 2
-│  Valor: R$ 150.000,00               │  ← campo extra 3
-│  Produto: Crédito Rural             │  ← campo extra 4
-│  Vencimento: 15/03/2026             │  ← campo extra 5
-│  [G] Gustavo                        │  ← responsável
-└─────────────────────────────────────┘
+┌─────────────────────────────────────────────────┐
+│  ⠿  Nome do Cliente  [Texto ▾]  ↑ ↓  🗑         │
+│      ● Título do card                            │
+│      ○ Exibir no card  ← oculto (já é o título) │
+│      ○ Obrigatório                               │
+├─────────────────────────────────────────────────┤
+│  ⠿  CPF              [Texto ▾]  ↑ ↓  🗑         │
+│      ○ Título do card                            │
+│      ● Exibir no card  ← ATIVO → aparece no card│
+│      ○ Obrigatório                               │
+├─────────────────────────────────────────────────┤
+│  ⠿  Observações       [Texto ▾]  ↑ ↓  🗑        │
+│      ○ Título do card                            │
+│      ○ Exibir no card  ← inativo → só no detalhe│
+│      ○ Obrigatório                               │
+└─────────────────────────────────────────────────┘
 ```
+
+## Resultado Visual no Card
+
+```text
+┌────────────────────────────────┐
+│  George Azevedo          ⠿     │  ← campo Título (is_primary)
+│  CPF: 123.456.789-00           │  ← show_on_card = true
+│  [G] Gustavo                   │  ← responsável
+└────────────────────────────────┘
+```
+(Observações não aparece porque `show_on_card = false`)
 
 ## Arquivos Modificados
 
 | Arquivo | Mudança |
 |---|---|
-| `src/components/kanban/EditBoardDialog.tsx` | Renomear label do toggle para "Título do card"; adicionar texto explicativo na aba Campos |
-| `src/components/kanban/KanbanCardItem.tsx` | Aumentar limite de campos extras de `.slice(0, 3)` para `.slice(0, 5)` |
+| Migration SQL | Adiciona coluna `show_on_card boolean DEFAULT false` à `kanban_fields` |
+| `src/components/kanban/EditBoardDialog.tsx` | Interface + toggle "Exibir no card" por campo + payload de save |
+| `src/components/kanban/KanbanCardItem.tsx` | Interface `fieldValues` + filtro por `showOnCard` |
+| `src/pages/dashboard/KanbanBoard.tsx` | Propaga `show_on_card` ao mapear `fieldValues` |
 
-**Total: 2 arquivos, mudanças mínimas — sem alteração de banco de dados**
-
-## O que NÃO muda
-
-- O comportamento de rádio (apenas um campo pode ser "Título" por vez) continua igual
-- Todos os campos continuam sendo exibidos no formulário de detalhe do card
-- A lógica de salvamento do CardDetailSheet permanece intacta
-- Nenhuma coluna nova no banco de dados
+**Total: 1 migration + 3 arquivos**
