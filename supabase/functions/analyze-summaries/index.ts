@@ -67,7 +67,7 @@ serve(async (req) => {
     // Fetch conversations with ai_summary within the period
     let query = serviceSupabase
       .from("conversations")
-      .select("id, ai_summary, status, created_at, inbox_id")
+      .select("id, ai_summary, status, created_at, inbox_id, contact_id")
       .not("ai_summary", "is", null)
       .gte("created_at", sinceDate.toISOString())
       .limit(100);
@@ -97,10 +97,21 @@ serve(async (req) => {
           top_objections: [],
           sentiment: { positive: 0, neutral: 0, negative: 0 },
           key_insights: "",
+          conversations_detail: [],
         }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    // Fetch contact data for all conversations
+    const contactIds = [...new Set(conversations!.map(c => c.contact_id))];
+    const { data: contacts } = await serviceSupabase
+      .from("contacts")
+      .select("id, name, phone")
+      .in("id", contactIds);
+
+    const contactMap = new Map<string, { name: string | null; phone: string }>();
+    (contacts || []).forEach(c => contactMap.set(c.id, { name: c.name, phone: c.phone }));
 
     // Build text from all summaries (truncate each to 500 chars)
     const summariesText = conversations!
@@ -119,10 +130,10 @@ serve(async (req) => {
 Analise os resumos de ${totalConversations} conversas e retorne APENAS um JSON válido, sem markdown, sem blocos de código, sem texto extra.
 
 O JSON deve ter EXATAMENTE estas chaves:
-- "top_reasons": array de até 5 objetos {reason: string, count: number} com os motivos de contato mais frequentes, ordenado por count decrescente
-- "top_products": array de até 5 objetos {product: string, count: number} com produtos/serviços mais mencionados, ordenado por count decrescente
-- "top_objections": array de até 5 objetos {objection: string, count: number} com as principais objeções/dificuldades dos clientes, ordenado por count decrescente
-- "sentiment": objeto com {positive: number, neutral: number, negative: number} onde cada valor é uma PORCENTAGEM inteira que some 100
+- "top_reasons": array de até 5 objetos {reason: string, count: number, conversation_indices: number[]} com os motivos de contato mais frequentes, ordenado por count decrescente. conversation_indices são os números das conversas (1-indexed) que se encaixam neste motivo.
+- "top_products": array de até 5 objetos {product: string, count: number, conversation_indices: number[]} com produtos/serviços mais mencionados, ordenado por count decrescente. conversation_indices são os números das conversas que mencionam este produto.
+- "top_objections": array de até 5 objetos {objection: string, count: number, conversation_indices: number[]} com as principais objeções/dificuldades dos clientes, ordenado por count decrescente. conversation_indices são os números das conversas com esta objeção.
+- "sentiment": objeto com {positive: number, neutral: number, negative: number, positive_indices: number[], neutral_indices: number[], negative_indices: number[]} onde cada valor numérico é uma PORCENTAGEM inteira que some 100. Os arrays *_indices contêm os números das conversas classificadas naquele sentimento.
 - "key_insights": string com 2-3 frases dos insights mais estratégicos para o negócio
 - "total_analyzed": número inteiro de conversas analisadas
 
@@ -131,7 +142,8 @@ Regras:
 - Se não houver objeções claras, retorne top_objections como array vazio []
 - Sempre retorne top_reasons com pelo menos 1 item se houver dados
 - sentiment deve sempre somar 100
-- Seja específico nos motivos, não genérico`;
+- Seja específico nos motivos, não genérico
+- conversation_indices devem ser números de 1 a ${totalConversations} referentes à posição da conversa na lista`;
 
     // Retry helper with backoff and fallback
     async function callAIWithRetry(): Promise<Response> {
@@ -144,7 +156,6 @@ Regras:
         ],
       };
 
-      // Try primary model up to 3 times
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[analyze-summaries] Attempt ${attempt}/3 with gemini-2.5-flash`);
         const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -157,8 +168,7 @@ Regras:
         });
 
         if (resp.ok) return resp;
-
-        if (resp.status === 429 || resp.status === 402) return resp; // Don't retry these
+        if (resp.status === 429 || resp.status === 402) return resp;
 
         const errBody = await resp.text();
         console.error(`[analyze-summaries] Attempt ${attempt} failed: ${resp.status} ${errBody}`);
@@ -170,7 +180,6 @@ Regras:
         }
       }
 
-      // Fallback to lighter model
       console.log(`[analyze-summaries] Trying fallback model: ${fallback}`);
       return await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
@@ -225,6 +234,60 @@ Regras:
 
     // Ensure total_analyzed is accurate
     analysis.total_analyzed = totalConversations;
+
+    // Helper to map indices to conversation IDs
+    function indicesToIds(indices: number[]): string[] {
+      if (!Array.isArray(indices)) return [];
+      return indices
+        .filter(i => i >= 1 && i <= totalConversations)
+        .map(i => conversations![i - 1].id);
+    }
+
+    // Enrich top_reasons with conversation_ids
+    if (Array.isArray(analysis.top_reasons)) {
+      analysis.top_reasons = analysis.top_reasons.map((r: any) => ({
+        ...r,
+        conversation_ids: indicesToIds(r.conversation_indices || []),
+      }));
+    }
+
+    // Enrich top_products with conversation_ids
+    if (Array.isArray(analysis.top_products)) {
+      analysis.top_products = analysis.top_products.map((p: any) => ({
+        ...p,
+        conversation_ids: indicesToIds(p.conversation_indices || []),
+      }));
+    }
+
+    // Enrich top_objections with conversation_ids
+    if (Array.isArray(analysis.top_objections)) {
+      analysis.top_objections = analysis.top_objections.map((o: any) => ({
+        ...o,
+        conversation_ids: indicesToIds(o.conversation_indices || []),
+      }));
+    }
+
+    // Enrich sentiment with conversation_ids
+    if (analysis.sentiment) {
+      analysis.sentiment.positive_ids = indicesToIds(analysis.sentiment.positive_indices || []);
+      analysis.sentiment.neutral_ids = indicesToIds(analysis.sentiment.neutral_indices || []);
+      analysis.sentiment.negative_ids = indicesToIds(analysis.sentiment.negative_indices || []);
+    }
+
+    // Build conversations_detail array
+    const conversationsDetail = conversations!.map(conv => {
+      const contact = contactMap.get(conv.contact_id);
+      const s = conv.ai_summary as any;
+      return {
+        id: conv.id,
+        contact_name: contact?.name || null,
+        contact_phone: contact?.phone || null,
+        created_at: conv.created_at,
+        summary: s?.summary || s?.reason || "Sem resumo disponível",
+      };
+    });
+
+    analysis.conversations_detail = conversationsDetail;
 
     console.log(`[analyze-summaries] Analysis complete for ${totalConversations} conversations`);
 

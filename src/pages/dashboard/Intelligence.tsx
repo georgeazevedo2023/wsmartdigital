@@ -7,6 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import {
   BrainCircuit,
   Sparkles,
   MessageCircle,
@@ -18,6 +26,9 @@ import {
   RefreshCw,
   TrendingUp,
   Inbox,
+  ExternalLink,
+  User,
+  Clock,
 } from "lucide-react";
 import {
   BarChart,
@@ -33,14 +44,32 @@ import {
   Legend,
 } from "recharts";
 import { toast } from "sonner";
+import { format } from "date-fns";
+import { ptBR } from "date-fns/locale";
+
+interface ConversationDetail {
+  id: string;
+  contact_name: string | null;
+  contact_phone: string | null;
+  created_at: string;
+  summary: string;
+}
 
 interface AnalysisResult {
   total_analyzed: number;
-  top_reasons: { reason: string; count: number }[];
-  top_products: { product: string; count: number }[];
-  top_objections: { objection: string; count: number }[];
-  sentiment: { positive: number; neutral: number; negative: number };
+  top_reasons: { reason: string; count: number; conversation_ids?: string[] }[];
+  top_products: { product: string; count: number; conversation_ids?: string[] }[];
+  top_objections: { objection: string; count: number; conversation_ids?: string[] }[];
+  sentiment: {
+    positive: number;
+    neutral: number;
+    negative: number;
+    positive_ids?: string[];
+    neutral_ids?: string[];
+    negative_ids?: string[];
+  };
   key_insights: string;
+  conversations_detail?: ConversationDetail[];
 }
 
 const SENTIMENT_COLORS = {
@@ -52,6 +81,8 @@ const SENTIMENT_COLORS = {
 const BAR_COLOR = "hsl(142, 70%, 45%)";
 
 const PERIOD_OPTIONS = [
+  { value: "1", label: "Últimas 24 horas" },
+  { value: "2", label: "Últimas 48 horas" },
   { value: "7", label: "Últimos 7 dias" },
   { value: "30", label: "Últimos 30 dias" },
   { value: "90", label: "Últimos 90 dias" },
@@ -69,13 +100,92 @@ const CustomBarTooltip = ({ active, payload, label }: any) => {
   return null;
 };
 
+function ConversationDetailDialog({
+  open,
+  onOpenChange,
+  title,
+  conversationIds,
+  allDetails,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  title: string;
+  conversationIds: string[];
+  allDetails: ConversationDetail[];
+}) {
+  const filtered = allDetails.filter(d => conversationIds.includes(d.id));
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg max-h-[80vh]">
+        <DialogHeader>
+          <DialogTitle className="text-base">{title}</DialogTitle>
+        </DialogHeader>
+        <ScrollArea className="max-h-[60vh] pr-2">
+          {filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">Nenhuma conversa encontrada</p>
+          ) : (
+            <div className="flex flex-col">
+              {filtered.map((conv, idx) => {
+                const phone = conv.contact_phone?.replace(/\D/g, "") || "";
+                const waLink = phone ? `https://wa.me/${phone}` : null;
+                const displayName = conv.contact_name || phone || "Desconhecido";
+                let formattedDate = "";
+                try {
+                  formattedDate = format(new Date(conv.created_at), "dd/MM/yyyy 'às' HH:mm", { locale: ptBR });
+                } catch {
+                  formattedDate = conv.created_at;
+                }
+
+                return (
+                  <div key={conv.id}>
+                    {idx > 0 && <Separator className="my-3" />}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <User className="w-4 h-4 text-muted-foreground shrink-0" />
+                          <span className="text-sm font-medium text-foreground truncate">{displayName}</span>
+                        </div>
+                        {waLink && (
+                          <a
+                            href={waLink}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-xs text-primary hover:underline shrink-0"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                            WhatsApp
+                          </a>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock className="w-3 h-3" />
+                        {formattedDate}
+                      </div>
+                      <p className="text-sm text-foreground/80 leading-relaxed mt-0.5">{conv.summary}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Intelligence() {
   const [periodDays, setPeriodDays] = useState("30");
   const [selectedInbox, setSelectedInbox] = useState("all");
   const [analysis, setAnalysis] = useState<AnalysisResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [detailDialog, setDetailDialog] = useState<{ open: boolean; title: string; ids: string[] }>({
+    open: false,
+    title: "",
+    ids: [],
+  });
 
-  // Fetch available inboxes for the filter
   const { data: inboxes } = useQuery({
     queryKey: ["inboxes-for-intelligence"],
     queryFn: async () => {
@@ -85,7 +195,6 @@ export default function Intelligence() {
     },
   });
 
-  // Count available summaries for the selected filter
   const { data: summaryCount } = useQuery({
     queryKey: ["summary-count", selectedInbox, periodDays],
     queryFn: async () => {
@@ -158,6 +267,12 @@ export default function Intelligence() {
     }
   }, [selectedInbox, periodDays]);
 
+  const openDetail = (title: string, ids: string[]) => {
+    if (ids.length > 0) {
+      setDetailDialog({ open: true, title, ids });
+    }
+  };
+
   const sentimentData = analysis
     ? [
         { name: "Positivo", value: analysis.sentiment.positive, color: SENTIMENT_COLORS.positive },
@@ -177,6 +292,15 @@ export default function Intelligence() {
 
   return (
     <div className="flex flex-col gap-6 p-6 max-w-7xl mx-auto">
+      {/* Detail Dialog */}
+      <ConversationDetailDialog
+        open={detailDialog.open}
+        onOpenChange={(open) => setDetailDialog(prev => ({ ...prev, open }))}
+        title={detailDialog.title}
+        conversationIds={detailDialog.ids}
+        allDetails={analysis?.conversations_detail || []}
+      />
+
       {/* Header */}
       <div className="flex items-start gap-4">
         <div className="w-12 h-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
@@ -338,7 +462,7 @@ export default function Intelligence() {
                   <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                     <MessageCircle className="w-4 h-4 text-primary" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
                       Principal motivo
                     </p>
@@ -347,9 +471,24 @@ export default function Intelligence() {
                         <p className="text-sm font-semibold text-foreground leading-snug line-clamp-3">
                           {analysis.top_reasons[0].reason}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {analysis.top_reasons[0].count} ocorrência{analysis.top_reasons[0].count !== 1 ? "s" : ""}
-                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-xs text-muted-foreground">
+                            {analysis.top_reasons[0].count} ocorrência{analysis.top_reasons[0].count !== 1 ? "s" : ""}
+                          </p>
+                          {(analysis.top_reasons[0].conversation_ids?.length || 0) > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-primary hover:text-primary"
+                              onClick={() => openDetail(
+                                `Principal motivo: ${analysis.top_reasons[0].reason}`,
+                                analysis.top_reasons[0].conversation_ids || []
+                              )}
+                            >
+                              Abrir
+                            </Button>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <p className="text-sm text-muted-foreground">Nenhum dado</p>
@@ -366,7 +505,7 @@ export default function Intelligence() {
                   <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center shrink-0">
                     <Package className="w-4 h-4 text-blue-400" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
                       Produto mais citado
                     </p>
@@ -375,9 +514,24 @@ export default function Intelligence() {
                         <p className="text-sm font-semibold text-foreground leading-snug line-clamp-3">
                           {analysis.top_products[0].product}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {analysis.top_products[0].count} menção{analysis.top_products[0].count !== 1 ? "ões" : ""}
-                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-xs text-muted-foreground">
+                            {analysis.top_products[0].count} menção{analysis.top_products[0].count !== 1 ? "ões" : ""}
+                          </p>
+                          {(analysis.top_products[0].conversation_ids?.length || 0) > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-primary hover:text-primary"
+                              onClick={() => openDetail(
+                                `Produto: ${analysis.top_products[0].product}`,
+                                analysis.top_products[0].conversation_ids || []
+                              )}
+                            >
+                              Abrir
+                            </Button>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <p className="text-sm text-muted-foreground">Nenhum produto identificado</p>
@@ -394,7 +548,7 @@ export default function Intelligence() {
                   <div className="w-9 h-9 rounded-lg bg-warning/10 flex items-center justify-center shrink-0">
                     <AlertCircle className="w-4 h-4 text-warning" />
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
                       Principal objeção
                     </p>
@@ -403,9 +557,24 @@ export default function Intelligence() {
                         <p className="text-sm font-semibold text-foreground leading-snug line-clamp-3">
                           {analysis.top_objections[0].objection}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {analysis.top_objections[0].count} ocorrência{analysis.top_objections[0].count !== 1 ? "s" : ""}
-                        </p>
+                        <div className="flex items-center justify-between mt-1">
+                          <p className="text-xs text-muted-foreground">
+                            {analysis.top_objections[0].count} ocorrência{analysis.top_objections[0].count !== 1 ? "s" : ""}
+                          </p>
+                          {(analysis.top_objections[0].conversation_ids?.length || 0) > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-primary hover:text-primary"
+                              onClick={() => openDetail(
+                                `Objeção: ${analysis.top_objections[0].objection}`,
+                                analysis.top_objections[0].conversation_ids || []
+                              )}
+                            >
+                              Abrir
+                            </Button>
+                          )}
+                        </div>
                       </>
                     ) : (
                       <p className="text-sm text-muted-foreground">Nenhuma objeção identificada</p>
@@ -438,7 +607,7 @@ export default function Intelligence() {
                       <Meh className="w-4 h-4 text-muted-foreground" />
                     )}
                   </div>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider mb-1">
                       Sentimento geral
                     </p>
@@ -449,9 +618,36 @@ export default function Intelligence() {
                         ? `${analysis.sentiment.negative}% Negativo`
                         : `${analysis.sentiment.neutral}% Neutro`}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {analysis.total_analyzed} conversa{analysis.total_analyzed !== 1 ? "s" : ""} analisada{analysis.total_analyzed !== 1 ? "s" : ""}
-                    </p>
+                    <div className="flex items-center justify-between mt-1">
+                      <p className="text-xs text-muted-foreground">
+                        {analysis.total_analyzed} conversa{analysis.total_analyzed !== 1 ? "s" : ""} analisada{analysis.total_analyzed !== 1 ? "s" : ""}
+                      </p>
+                      {(() => {
+                        const sentIds = dominantSentiment === "positive"
+                          ? analysis.sentiment.positive_ids
+                          : dominantSentiment === "negative"
+                          ? analysis.sentiment.negative_ids
+                          : analysis.sentiment.neutral_ids;
+                        const sentLabel = dominantSentiment === "positive"
+                          ? "Positivo"
+                          : dominantSentiment === "negative"
+                          ? "Negativo"
+                          : "Neutro";
+                        return (sentIds?.length || 0) > 0 ? (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-2 text-xs text-primary hover:text-primary"
+                            onClick={() => openDetail(
+                              `Sentimento ${sentLabel}`,
+                              sentIds || []
+                            )}
+                          >
+                            Abrir
+                          </Button>
+                        ) : null;
+                      })()}
+                    </div>
                   </div>
                 </div>
               </CardContent>
