@@ -618,10 +618,75 @@ export type Database = {
           },
         ]
       }
+      kanban_entities: {
+        Row: {
+          board_id: string
+          created_at: string
+          id: string
+          name: string
+          position: number
+        }
+        Insert: {
+          board_id: string
+          created_at?: string
+          id?: string
+          name: string
+          position?: number
+        }
+        Update: {
+          board_id?: string
+          created_at?: string
+          id?: string
+          name?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_entities_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      kanban_entity_values: {
+        Row: {
+          created_at: string
+          entity_id: string
+          id: string
+          label: string
+          position: number
+        }
+        Insert: {
+          created_at?: string
+          entity_id: string
+          id?: string
+          label: string
+          position?: number
+        }
+        Update: {
+          created_at?: string
+          entity_id?: string
+          id?: string
+          label?: string
+          position?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "kanban_entity_values_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_entities"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       kanban_fields: {
         Row: {
           board_id: string
           created_at: string
+          entity_id: string | null
           field_type: Database["public"]["Enums"]["kanban_field_type"]
           id: string
           is_primary: boolean
@@ -634,6 +699,7 @@ export type Database = {
         Insert: {
           board_id: string
           created_at?: string
+          entity_id?: string | null
           field_type?: Database["public"]["Enums"]["kanban_field_type"]
           id?: string
           is_primary?: boolean
@@ -646,6 +712,7 @@ export type Database = {
         Update: {
           board_id?: string
           created_at?: string
+          entity_id?: string | null
           field_type?: Database["public"]["Enums"]["kanban_field_type"]
           id?: string
           is_primary?: boolean
@@ -661,6 +728,13 @@ export type Database = {
             columns: ["board_id"]
             isOneToOne: false
             referencedRelation: "kanban_boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "kanban_fields_entity_id_fkey"
+            columns: ["entity_id"]
+            isOneToOne: false
+            referencedRelation: "kanban_entities"
             referencedColumns: ["id"]
           },
         ]
@@ -1157,7 +1231,12 @@ export type Database = {
     Enums: {
       app_role: "super_admin" | "user" | "gerente"
       inbox_role: "admin" | "gestor" | "agente"
-      kanban_field_type: "text" | "currency" | "date" | "select"
+      kanban_field_type:
+        | "text"
+        | "currency"
+        | "date"
+        | "select"
+        | "entity_select"
       kanban_visibility: "shared" | "private"
     }
     CompositeTypes: {
@@ -1288,7 +1367,13 @@ export const Constants = {
     Enums: {
       app_role: ["super_admin", "user", "gerente"],
       inbox_role: ["admin", "gestor", "agente"],
-      kanban_field_type: ["text", "currency", "date", "select"],
+      kanban_field_type: [
+        "text",
+        "currency",
+        "date",
+        "select",
+        "entity_select",
+      ],
       kanban_visibility: ["shared", "private"],
     },
   },
