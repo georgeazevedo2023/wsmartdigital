@@ -42,6 +42,12 @@ interface TeamMember {
   email: string;
 }
 
+interface EntityValueOption {
+  id: string;
+  label: string;
+}
+
+
 const KanbanBoard = () => {
   const { boardId } = useParams<{ boardId: string }>();
   const navigate = useNavigate();
@@ -51,6 +57,8 @@ const KanbanBoard = () => {
   const [columns, setColumns] = useState<ColumnData[]>([]);
   const [cards, setCards] = useState<CardData[]>([]);
   const [fields, setFields] = useState<KanbanField[]>([]);
+  const [entityValuesMap, setEntityValuesMap] = useState<Record<string, EntityValueOption[]>>({});
+  const [entityValueLabels, setEntityValueLabels] = useState<Record<string, string>>({});
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -107,6 +115,7 @@ const KanbanBoard = () => {
       ...f,
       options: f.options ? (f.options as string[]) : null,
       show_on_card: f.show_on_card ?? false,
+      entity_id: (f as any).entity_id ?? null,
     })) as KanbanField[];
     setFields(parsedFields);
 
@@ -117,13 +126,50 @@ const KanbanBoard = () => {
       setDirectMemberRole(null);
     }
 
-    await loadCards(boardData, parsedFields);
+    // Load entity values for entity_select fields
+    const evLabels = await loadEntityValues(boardData.id);
+
+    await loadCards(boardData, parsedFields, evLabels);
     await loadTeamMembers(boardData);
     setLoading(false);
   };
 
-  const loadCards = async (boardData: BoardData, fieldsData: KanbanField[]) => {
+  const loadEntityValues = async (bId: string): Promise<Record<string, string>> => {
+    const { data: entitiesData } = await supabase
+      .from('kanban_entities')
+      .select('id')
+      .eq('board_id', bId);
+
+    if (!entitiesData || entitiesData.length === 0) {
+      setEntityValuesMap({});
+      setEntityValueLabels({});
+      return {};
+    }
+
+    const entityIds = entitiesData.map(e => e.id);
+    const { data: valuesData } = await supabase
+      .from('kanban_entity_values')
+      .select('id, entity_id, label')
+      .in('entity_id', entityIds)
+      .order('position');
+
+    const map: Record<string, EntityValueOption[]> = {};
+    const labels: Record<string, string> = {};
+    (valuesData || []).forEach(v => {
+      if (!map[v.entity_id]) map[v.entity_id] = [];
+      map[v.entity_id].push({ id: v.id, label: v.label });
+      labels[v.id] = v.label;
+    });
+
+    setEntityValuesMap(map);
+    setEntityValueLabels(labels);
+    return labels;
+  };
+
+  const loadCards = async (boardData: BoardData, fieldsData: KanbanField[], evLabels?: Record<string, string>) => {
     if (!user) return;
+    const labels = evLabels || entityValueLabels;
+
     let query = supabase
       .from('kanban_cards')
       .select('*')
@@ -168,16 +214,27 @@ const KanbanBoard = () => {
       });
     }
 
+    // Helper: resolve value for display (entity_select → label)
+    const resolveDisplayValue = (field: KanbanField, rawValue: string): string => {
+      if (field.field_type === 'entity_select' && rawValue) {
+        return labels[rawValue] || rawValue;
+      }
+      return rawValue;
+    };
+
     setCards(rawCards.map(c => {
       const cardFieldMap = allFieldsMap[c.id] || {};
       const fieldValuesArr = fieldsData
         .map(f => ({
           name: f.name,
-          value: cardFieldMap[f.id] || '',
+          value: resolveDisplayValue(f, cardFieldMap[f.id] || ''),
           isPrimary: f.is_primary,
           showOnCard: f.show_on_card ?? false,
         }))
         .filter(fv => fv.value);
+
+      const primaryRawValue = primaryField ? (cardFieldMap[primaryField.id] || '') : '';
+      const primaryDisplayValue = primaryField ? resolveDisplayValue(primaryField, primaryRawValue) : undefined;
 
       return {
         id: c.id,
@@ -188,7 +245,7 @@ const KanbanBoard = () => {
         tags: c.tags || [],
         position: c.position,
         assignedName: c.assigned_to ? nameMap[c.assigned_to] : undefined,
-        primaryFieldValue: primaryField ? (cardFieldMap[primaryField.id] || undefined) : undefined,
+        primaryFieldValue: primaryDisplayValue || undefined,
         primaryFieldName: primaryField?.name,
         fieldValues: fieldValuesArr,
       };
@@ -583,6 +640,7 @@ const KanbanBoard = () => {
         columns={columns}
         fields={fields}
         teamMembers={teamMembers}
+        entityValuesMap={entityValuesMap}
         onSaved={loadAll}
         onDeleted={loadAll}
       />

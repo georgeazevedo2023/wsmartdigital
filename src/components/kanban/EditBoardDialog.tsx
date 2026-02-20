@@ -12,7 +12,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from 'sonner';
-import { Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Users, Lock, UserPlus, Pencil, Eye, MessageSquare, Search, X } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, GripVertical, Users, Lock, UserPlus, Pencil, Eye, MessageSquare, Search, X, Database } from 'lucide-react';
 
 interface KanbanBoard {
   id: string;
@@ -35,12 +35,13 @@ interface KanbanColumn {
 interface KanbanField {
   id: string;
   name: string;
-  field_type: 'text' | 'currency' | 'date' | 'select';
+  field_type: 'text' | 'currency' | 'date' | 'select' | 'entity_select';
   options: string[] | null;
   position: number;
   is_primary: boolean;
   required: boolean;
   show_on_card: boolean;
+  entity_id?: string | null;
 }
 
 interface Inbox {
@@ -63,6 +64,19 @@ interface UserProfile {
   email: string;
 }
 
+interface KanbanEntity {
+  id: string;
+  name: string;
+  position: number;
+  values: KanbanEntityValue[];
+}
+
+interface KanbanEntityValue {
+  id: string;
+  label: string;
+  position: number;
+}
+
 interface EditBoardDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -82,6 +96,7 @@ const FIELD_TYPES = [
   { value: 'currency', label: 'Moeda (R$)' },
   { value: 'date', label: 'Data' },
   { value: 'select', label: 'Seleção' },
+  { value: 'entity_select', label: 'Entidade' },
 ];
 
 export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }: EditBoardDialogProps) {
@@ -92,6 +107,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
   const [inboxId, setInboxId] = useState<string>(board.inbox_id || 'none');
   const [columns, setColumns] = useState<KanbanColumn[]>([]);
   const [fields, setFields] = useState<KanbanField[]>([]);
+  const [entities, setEntities] = useState<KanbanEntity[]>([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -123,12 +139,46 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
         ...f,
         options: f.options ? (f.options as string[]) : null,
         show_on_card: (f as any).show_on_card ?? false,
+        entity_id: (f as any).entity_id ?? null,
       })) as KanbanField[]);
     }
 
-    // Load access data
-    await Promise.all([loadMembers(), loadAllUsers(), loadInboxInfo()]);
+    // Load access data + entities
+    await Promise.all([loadMembers(), loadAllUsers(), loadInboxInfo(), loadEntities()]);
     setLoading(false);
+  };
+
+  const loadEntities = async () => {
+    const { data: entitiesData } = await supabase
+      .from('kanban_entities')
+      .select('*')
+      .eq('board_id', board.id)
+      .order('position');
+
+    if (!entitiesData || entitiesData.length === 0) {
+      setEntities([]);
+      return;
+    }
+
+    const entityIds = entitiesData.map(e => e.id);
+    const { data: valuesData } = await supabase
+      .from('kanban_entity_values')
+      .select('*')
+      .in('entity_id', entityIds)
+      .order('position');
+
+    const valuesMap: Record<string, KanbanEntityValue[]> = {};
+    (valuesData || []).forEach(v => {
+      if (!valuesMap[v.entity_id]) valuesMap[v.entity_id] = [];
+      valuesMap[v.entity_id].push({ id: v.id, label: v.label, position: v.position });
+    });
+
+    setEntities(entitiesData.map(e => ({
+      id: e.id,
+      name: e.name,
+      position: e.position,
+      values: valuesMap[e.id] || [],
+    })));
   };
 
   const loadMembers = async () => {
@@ -219,6 +269,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       is_primary: fields.length === 0,
       required: false,
       show_on_card: false,
+      entity_id: null,
     };
     setFields(prev => [...prev, newField]);
   };
@@ -245,6 +296,53 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
       return next;
     });
+  };
+
+  // ── Entities ─────────────────────────────────────────────
+  const addEntity = () => {
+    setEntities(prev => [...prev, {
+      id: `new_${Date.now()}`,
+      name: 'Nova Entidade',
+      position: prev.length,
+      values: [],
+    }]);
+  };
+
+  const updateEntity = (id: string, name: string) => {
+    setEntities(prev => prev.map(e => e.id === id ? { ...e, name } : e));
+  };
+
+  const removeEntity = (id: string) => {
+    setEntities(prev => prev.filter(e => e.id !== id));
+    // Clear entity_id from fields referencing this entity
+    setFields(prev => prev.map(f => f.entity_id === id ? { ...f, entity_id: null, field_type: 'text' as const } : f));
+  };
+
+  const addEntityValue = (entityId: string) => {
+    setEntities(prev => prev.map(e => {
+      if (e.id !== entityId) return e;
+      return {
+        ...e,
+        values: [...e.values, { id: `new_${Date.now()}`, label: '', position: e.values.length }],
+      };
+    }));
+  };
+
+  const updateEntityValue = (entityId: string, valueId: string, label: string) => {
+    setEntities(prev => prev.map(e => {
+      if (e.id !== entityId) return e;
+      return {
+        ...e,
+        values: e.values.map(v => v.id === valueId ? { ...v, label } : v),
+      };
+    }));
+  };
+
+  const removeEntityValue = (entityId: string, valueId: string) => {
+    setEntities(prev => prev.map(e => {
+      if (e.id !== entityId) return e;
+      return { ...e, values: e.values.filter(v => v.id !== valueId) };
+    }));
   };
 
   // ── Members ──────────────────────────────────────────────
@@ -331,7 +429,10 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       }
     }
 
-    // Sync fields
+    // Sync entities
+    await saveEntities();
+
+    // Sync fields (after entities so we have real IDs)
     const existingFieldIds = fields.filter(f => !f.id.startsWith('new_')).map(f => f.id);
     const { data: dbFields } = await supabase.from('kanban_fields').select('id').eq('board_id', board.id);
     const dbFieldIds = (dbFields || []).map((f: any) => f.id);
@@ -341,7 +442,17 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       const isNew = field.id.startsWith('new_');
-      const payload = { board_id: board.id, name: field.name, field_type: field.field_type, options: field.options as any, position: i, is_primary: field.is_primary, required: field.required, show_on_card: field.show_on_card };
+      const payload: any = {
+        board_id: board.id,
+        name: field.name,
+        field_type: field.field_type,
+        options: field.field_type === 'select' ? field.options : null,
+        position: i,
+        is_primary: field.is_primary,
+        required: field.required,
+        show_on_card: field.show_on_card,
+        entity_id: field.field_type === 'entity_select' ? (field.entity_id || null) : null,
+      };
       if (isNew) {
         await supabase.from('kanban_fields').insert(payload);
       } else {
@@ -353,6 +464,70 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
     toast.success('Quadro salvo com sucesso!');
     onSaved();
     onOpenChange(false);
+  };
+
+  const saveEntities = async () => {
+    // Get existing entity IDs from DB
+    const { data: dbEntities } = await supabase.from('kanban_entities').select('id').eq('board_id', board.id);
+    const dbEntityIds = (dbEntities || []).map((e: any) => e.id);
+    const currentEntityIds = entities.filter(e => !e.id.startsWith('new_')).map(e => e.id);
+    const entitiesToDelete = dbEntityIds.filter((id: string) => !currentEntityIds.includes(id));
+    if (entitiesToDelete.length > 0) {
+      await supabase.from('kanban_entity_values').delete().in('entity_id', entitiesToDelete);
+      await supabase.from('kanban_entities').delete().in('id', entitiesToDelete);
+    }
+
+    // Map old temp IDs to real IDs for entity_id references in fields
+    const entityIdMap: Record<string, string> = {};
+
+    for (let i = 0; i < entities.length; i++) {
+      const entity = entities[i];
+      const isNew = entity.id.startsWith('new_');
+      let realEntityId = entity.id;
+
+      if (isNew) {
+        const { data: inserted } = await supabase.from('kanban_entities').insert({
+          board_id: board.id,
+          name: entity.name,
+          position: i,
+        }).select('id').single();
+        if (inserted) {
+          realEntityId = inserted.id;
+          entityIdMap[entity.id] = realEntityId;
+        }
+      } else {
+        await supabase.from('kanban_entities').update({ name: entity.name, position: i }).eq('id', entity.id);
+      }
+
+      // Sync values
+      const { data: dbValues } = await supabase.from('kanban_entity_values').select('id').eq('entity_id', realEntityId);
+      const dbValueIds = (dbValues || []).map((v: any) => v.id);
+      const currentValueIds = entity.values.filter(v => !v.id.startsWith('new_')).map(v => v.id);
+      const valuesToDelete = dbValueIds.filter((id: string) => !currentValueIds.includes(id));
+      if (valuesToDelete.length > 0) await supabase.from('kanban_entity_values').delete().in('id', valuesToDelete);
+
+      for (let j = 0; j < entity.values.length; j++) {
+        const val = entity.values[j];
+        if (!val.label.trim()) continue;
+        if (val.id.startsWith('new_')) {
+          await supabase.from('kanban_entity_values').insert({
+            entity_id: realEntityId,
+            label: val.label.trim(),
+            position: j,
+          });
+        } else {
+          await supabase.from('kanban_entity_values').update({ label: val.label.trim(), position: j }).eq('id', val.id);
+        }
+      }
+    }
+
+    // Update fields that reference temp entity IDs
+    setFields(prev => prev.map(f => {
+      if (f.entity_id && entityIdMap[f.entity_id]) {
+        return { ...f, entity_id: entityIdMap[f.entity_id] };
+      }
+      return f;
+    }));
   };
 
   const getInitials = (name: string | null, email: string) => {
@@ -368,10 +543,11 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
         </DialogHeader>
 
         <Tabs defaultValue="geral" className="flex-1 flex flex-col min-h-0">
-          <TabsList className="w-full grid grid-cols-4">
+          <TabsList className="w-full grid grid-cols-5">
             <TabsTrigger value="geral">Geral</TabsTrigger>
             <TabsTrigger value="colunas">Colunas</TabsTrigger>
             <TabsTrigger value="campos">Campos</TabsTrigger>
+            <TabsTrigger value="entidades">Entidades</TabsTrigger>
             <TabsTrigger value="acesso">Acesso</TabsTrigger>
           </TabsList>
 
@@ -526,7 +702,12 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                       placeholder="Nome do campo"
                       className="h-8 text-sm flex-1"
                     />
-                    <Select value={field.field_type} onValueChange={v => updateField(field.id, { field_type: v as any })}>
+                    <Select value={field.field_type} onValueChange={v => {
+                      const patch: Partial<KanbanField> = { field_type: v as any };
+                      if (v !== 'entity_select') patch.entity_id = null;
+                      if (v !== 'select') patch.options = null;
+                      updateField(field.id, patch);
+                    }}>
                       <SelectTrigger className="h-8 w-36 text-xs">
                         <SelectValue />
                       </SelectTrigger>
@@ -559,6 +740,31 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                       <p className="text-[10px] text-muted-foreground mt-1">Separe as opções por vírgula</p>
                     </div>
                   )}
+                  {field.field_type === 'entity_select' && (
+                    <div className="pl-6">
+                      <Select
+                        value={field.entity_id || 'none'}
+                        onValueChange={v => updateField(field.id, { entity_id: v === 'none' ? null : v })}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue placeholder="Selecionar entidade..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none" className="text-xs">— Selecionar entidade —</SelectItem>
+                          {entities.map(e => (
+                            <SelectItem key={e.id} value={e.id} className="text-xs">
+                              {e.name} ({e.values.length} valores)
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {entities.length === 0 && (
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          Crie entidades na aba <strong>Entidades</strong> antes de usar este tipo.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center gap-4 pl-6">
                     <div className="flex items-center gap-2">
                       <Switch
@@ -586,6 +792,80 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
                       />
                       <Label htmlFor={`required_${field.id}`} className="text-xs">Obrigatório</Label>
                     </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+
+          {/* ── Aba Entidades ── */}
+          <TabsContent value="entidades" className="flex flex-col flex-1 min-h-0 mt-4">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm text-muted-foreground">Tabelas de valores reutilizáveis (ex: Planos, Bancos, Pizzas)</p>
+              <Button size="sm" variant="outline" onClick={addEntity} className="gap-1">
+                <Plus className="w-3.5 h-3.5" /> Adicionar
+              </Button>
+            </div>
+            <div className="space-y-3 overflow-y-auto flex-1 pr-1">
+              {loading && <p className="text-sm text-muted-foreground py-4 text-center">Carregando...</p>}
+              {!loading && entities.length === 0 && (
+                <div className="text-center py-8 space-y-2">
+                  <Database className="w-8 h-8 text-muted-foreground mx-auto opacity-40" />
+                  <p className="text-sm text-muted-foreground">Nenhuma entidade criada.</p>
+                  <p className="text-xs text-muted-foreground">
+                    Crie entidades como "Planos", "Bancos" ou "Produtos" para usar em campos do tipo <strong>Entidade</strong>.
+                  </p>
+                </div>
+              )}
+              {entities.map(entity => (
+                <div key={entity.id} className="p-3 rounded-lg border border-border bg-card space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Database className="w-4 h-4 text-primary shrink-0" />
+                    <Input
+                      value={entity.name}
+                      onChange={e => updateEntity(entity.id, e.target.value)}
+                      placeholder="Nome da entidade (ex: Planos)"
+                      className="h-8 text-sm flex-1 font-medium"
+                    />
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7 text-destructive hover:text-destructive shrink-0"
+                      onClick={() => removeEntity(entity.id)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+
+                  {/* Values list */}
+                  <div className="pl-6 space-y-1.5">
+                    <p className="text-xs text-muted-foreground font-medium">Valores:</p>
+                    {entity.values.map(val => (
+                      <div key={val.id} className="flex items-center gap-2">
+                        <Input
+                          value={val.label}
+                          onChange={e => updateEntityValue(entity.id, val.id, e.target.value)}
+                          placeholder="Ex: Ouro, Calabresa..."
+                          className="h-7 text-xs flex-1"
+                        />
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 text-destructive hover:text-destructive shrink-0"
+                          onClick={() => removeEntityValue(entity.id, val.id)}
+                        >
+                          <X className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    ))}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs gap-1 text-primary"
+                      onClick={() => addEntityValue(entity.id)}
+                    >
+                      <Plus className="w-3 h-3" /> Adicionar valor
+                    </Button>
                   </div>
                 </div>
               ))}

@@ -15,6 +15,11 @@ import { DynamicFormField, KanbanField } from './DynamicFormField';
 import type { CardData } from './KanbanCardItem';
 import type { ColumnData } from './KanbanColumn';
 
+interface EntityValueOption {
+  id: string;
+  label: string;
+}
+
 interface TeamMember {
   id: string;
   full_name: string | null;
@@ -28,6 +33,7 @@ interface CardDetailSheetProps {
   columns: ColumnData[];
   fields: KanbanField[];
   teamMembers: TeamMember[];
+  entityValuesMap?: Record<string, EntityValueOption[]>;
   onSaved: () => void;
   onDeleted: () => void;
 }
@@ -39,6 +45,7 @@ export function CardDetailSheet({
   columns,
   fields,
   teamMembers,
+  entityValuesMap,
   onSaved,
   onDeleted,
 }: CardDetailSheetProps) {
@@ -305,6 +312,7 @@ export function CardDetailSheet({
                   field={field}
                   value={fieldValues[field.id] ?? ''}
                   onChange={v => setFieldValues(prev => ({ ...prev, [field.id]: v }))}
+                  entityValuesMap={entityValuesMap}
                 />
               ))}
             </div>
