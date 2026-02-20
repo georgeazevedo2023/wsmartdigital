@@ -84,14 +84,14 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
 
       {/* Title — só exibe se não houver campo primário com valor */}
       {(!card.primaryFieldValue) && (
-        <p className="text-sm font-medium text-foreground leading-snug pr-6 line-clamp-2">
+        <p className="text-base font-medium text-foreground leading-snug pr-6 line-clamp-2">
           {card.title}
         </p>
       )}
 
       {/* Primary field value — vira o "título" do card */}
       {card.primaryFieldValue && (
-        <p className="text-sm font-semibold text-foreground leading-snug pr-6 line-clamp-2">
+        <p className="text-base font-semibold text-foreground leading-snug pr-6 line-clamp-2">
           {card.primaryFieldValue}
         </p>
       )}
@@ -104,8 +104,8 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
             .slice(0, 5)
             .map(fv => (
               <div key={fv.name} className="flex items-center gap-1">
-                <span className="text-[10px] text-muted-foreground shrink-0">{fv.name}:</span>
-                <span className="text-[10px] font-medium text-foreground truncate">{fv.value}</span>
+                <span className="text-sm text-muted-foreground shrink-0">{fv.name}:</span>
+                <span className="text-sm font-medium text-foreground truncate">{fv.value}</span>
               </div>
             ))}
         </div>
@@ -117,13 +117,13 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
           {card.tags.slice(0, 3).map(tag => (
             <span
               key={tag}
-              className={cn('text-[10px] px-1.5 py-0.5 rounded-full border font-medium', getTagColor(tag))}
+              className={cn('text-xs px-1.5 py-0.5 rounded-full border font-medium', getTagColor(tag))}
             >
               {tag}
             </span>
           ))}
           {card.tags.length > 3 && (
-            <span className="text-[10px] text-muted-foreground">+{card.tags.length - 3}</span>
+            <span className="text-xs text-muted-foreground">+{card.tags.length - 3}</span>
           )}
         </div>
       )}
@@ -133,17 +133,17 @@ export function KanbanCardItem({ card, onClick, isDragging, onMoveCard, hasPrev,
         {/* Assignee */}
         {card.assignedName ? (
           <div className="flex items-center gap-1.5 min-w-0">
-            <Avatar className="w-5 h-5 shrink-0">
-              <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
+            <Avatar className="w-6 h-6 shrink-0">
+              <AvatarFallback className="text-xs bg-primary/10 text-primary">
                 {getInitials(card.assignedName)}
               </AvatarFallback>
             </Avatar>
-            <span className="text-[10px] text-muted-foreground truncate">{card.assignedName}</span>
+            <span className="text-sm text-muted-foreground truncate">{card.assignedName}</span>
           </div>
         ) : (
           <div className="flex items-center gap-1 opacity-60" title="Sem responsável atribuído">
             <UserX className="w-3.5 h-3.5 text-muted-foreground" />
-            <span className="text-[10px] text-muted-foreground">Sem responsável</span>
+            <span className="text-sm text-muted-foreground">Sem responsável</span>
           </div>
         )}
 

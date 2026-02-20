@@ -62,7 +62,7 @@ export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard
   return (
     <div
       className={cn(
-        'flex flex-col rounded-xl border bg-muted/30 transition-colors duration-150 min-w-[280px] max-w-[280px]',
+        'flex flex-col rounded-xl border bg-muted/30 transition-colors duration-150 min-w-[300px] max-w-[300px]',
         isOver ? 'border-primary/50 bg-primary/5' : 'border-border'
       )}
     >
@@ -73,8 +73,8 @@ export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard
             className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{ backgroundColor: column.color }}
           />
-          <span className="text-sm font-semibold text-foreground">{column.name}</span>
-          <span className="text-xs text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
+          <span className="text-base font-semibold text-foreground">{column.name}</span>
+          <span className="text-sm text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full">
             {cards.length}
           </span>
         </div>
@@ -118,7 +118,7 @@ export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard
                 isOver ? 'border-primary/40 bg-primary/5' : 'border-border/40'
               )}
             >
-              <p className="text-xs text-muted-foreground">Sem cards aqui</p>
+              <p className="text-sm text-muted-foreground">Sem cards aqui</p>
             </div>
           )}
         </div>
@@ -141,7 +141,7 @@ export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard
               <div className="flex gap-1.5">
                 <Button
                   size="sm"
-                  className="flex-1 h-7 gap-1 text-xs"
+                  className="flex-1 h-7 gap-1 text-sm"
                   onClick={handleConfirm}
                   disabled={!newTitle.trim() || saving}
                 >
@@ -163,7 +163,7 @@ export function KanbanColumn({ column, cards, onCardClick, onAddCard, canAddCard
             <Button
               variant="ghost"
               size="sm"
-              className="w-full gap-1.5 text-muted-foreground hover:text-foreground h-8 text-xs"
+              className="w-full gap-1.5 text-muted-foreground hover:text-foreground h-8 text-sm"
               onClick={() => setIsAdding(true)}
             >
               <Plus className="w-3.5 h-3.5" />
