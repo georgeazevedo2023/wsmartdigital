@@ -429,10 +429,10 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       }
     }
 
-    // Sync entities
-    await saveEntities();
+    // Sync entities — get map of temp IDs to real UUIDs
+    const entityIdMap = await saveEntities();
 
-    // Sync fields (after entities so we have real IDs)
+    // Sync fields (after entities so we can resolve IDs)
     const existingFieldIds = fields.filter(f => !f.id.startsWith('new_')).map(f => f.id);
     const { data: dbFields } = await supabase.from('kanban_fields').select('id').eq('board_id', board.id);
     const dbFieldIds = (dbFields || []).map((f: any) => f.id);
@@ -442,6 +442,10 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
     for (let i = 0; i < fields.length; i++) {
       const field = fields[i];
       const isNew = field.id.startsWith('new_');
+      // Resolve entity_id using the map (handles temp IDs created in same session)
+      const resolvedEntityId = field.field_type === 'entity_select' && field.entity_id
+        ? (entityIdMap[field.entity_id] || field.entity_id)
+        : null;
       const payload: any = {
         board_id: board.id,
         name: field.name,
@@ -451,7 +455,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
         is_primary: field.is_primary,
         required: field.required,
         show_on_card: field.show_on_card,
-        entity_id: field.field_type === 'entity_select' ? (field.entity_id || null) : null,
+        entity_id: resolvedEntityId,
       };
       if (isNew) {
         await supabase.from('kanban_fields').insert(payload);
@@ -466,7 +470,7 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
     onOpenChange(false);
   };
 
-  const saveEntities = async () => {
+  const saveEntities = async (): Promise<Record<string, string>> => {
     // Get existing entity IDs from DB
     const { data: dbEntities } = await supabase.from('kanban_entities').select('id').eq('board_id', board.id);
     const dbEntityIds = (dbEntities || []).map((e: any) => e.id);
@@ -521,13 +525,15 @@ export function EditBoardDialog({ open, onOpenChange, board, inboxes, onSaved }:
       }
     }
 
-    // Update fields that reference temp entity IDs
+    // Update fields UI state (async, not relied upon for save logic)
     setFields(prev => prev.map(f => {
       if (f.entity_id && entityIdMap[f.entity_id]) {
         return { ...f, entity_id: entityIdMap[f.entity_id] };
       }
       return f;
     }));
+
+    return entityIdMap;
   };
 
   const getInitials = (name: string | null, email: string) => {
