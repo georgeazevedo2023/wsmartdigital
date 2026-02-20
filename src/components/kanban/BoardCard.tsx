@@ -100,6 +100,50 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
       );
     }
 
+    // Duplicate entities and build ID mapping
+    const entityIdMap: Record<string, string> = {};
+    const { data: srcEntities } = await supabase
+      .from('kanban_entities')
+      .select('*')
+      .eq('board_id', board.id)
+      .order('position');
+
+    if (srcEntities && srcEntities.length > 0) {
+      for (const entity of srcEntities) {
+        const { data: newEntity } = await supabase
+          .from('kanban_entities')
+          .insert({
+            board_id: newBoard.id,
+            name: entity.name,
+            position: entity.position,
+          })
+          .select('id')
+          .single();
+
+        if (newEntity) {
+          entityIdMap[entity.id] = newEntity.id;
+
+          // Duplicate entity values
+          const { data: srcValues } = await supabase
+            .from('kanban_entity_values')
+            .select('*')
+            .eq('entity_id', entity.id)
+            .order('position');
+
+          if (srcValues && srcValues.length > 0) {
+            await supabase.from('kanban_entity_values').insert(
+              srcValues.map(v => ({
+                entity_id: newEntity.id,
+                label: v.label,
+                position: v.position,
+              }))
+            );
+          }
+        }
+      }
+    }
+
+    // Duplicate fields with remapped entity_id
     const { data: srcFields } = await supabase
       .from('kanban_fields')
       .select('*')
@@ -116,6 +160,8 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
           position: f.position,
           is_primary: f.is_primary,
           required: f.required,
+          show_on_card: f.show_on_card,
+          entity_id: f.entity_id ? (entityIdMap[f.entity_id] || null) : null,
         }))
       );
     }

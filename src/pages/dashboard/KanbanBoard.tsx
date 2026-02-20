@@ -244,6 +244,7 @@ const KanbanBoard = () => {
         assigned_to: c.assigned_to,
         tags: c.tags || [],
         position: c.position,
+        notes: c.notes || null,
         assignedName: c.assigned_to ? nameMap[c.assigned_to] : undefined,
         primaryFieldValue: primaryDisplayValue || undefined,
         primaryFieldName: primaryField?.name,
