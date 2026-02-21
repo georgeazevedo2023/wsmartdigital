@@ -1,42 +1,88 @@
 
-# Corrigir Entidades Dinamicas no Detalhe do Card
 
-## Problema Encontrado
+# Corrigir Recebimento de Mensagens do Agente IA via n8n
 
-Ha um bug de **sincronizacao de estado** no `EditBoardDialog`. Quando o usuario cria uma entidade nova (ex: "Bancos") e um campo `entity_select` vinculado a ela na mesma operacao de salvar:
+## Problema
 
-1. `saveEntities()` insere a entidade no banco e obtem o UUID real
-2. `saveEntities()` chama `setFields(...)` para atualizar o `entity_id` temporario para o UUID real
-3. **Porem**, `setFields` e uma atualizacao de estado React (assincrona) --- o valor de `fields` no loop seguinte (linha 442) ainda contem o ID temporario `new_*`
-4. Resultado: o campo e salvo com `entity_id = null`, pois o ID temporario nao e reconhecido
+O no "AI Agent" do n8n so tem o campo `output` (texto da IA). O payload atual referencia `$json.fromMe`, `$json.owner`, `$json.messageid` etc. que vem do AI Agent e sao todos **undefined**.
+
+No webhook:
+1. A deteccao de "raw message" (linha 89) exige `fromMe !== undefined` -- falha porque e undefined
+2. Cai no bloco `status_ia` porque `"status_ia": "ligada"` esta presente no payload
+3. O bloco `status_ia` tenta achar a instancia via `owner` (tambem undefined) -- retorna `status_ia_instance_not_found`
 
 ## Solucao
 
-Alterar `saveEntities()` para **retornar** o mapa de IDs temporarios para reais (`entityIdMap`), e usa-lo diretamente no loop de salvamento dos campos, sem depender do `setFields` assincrono.
+### Parte 1: Ajuste no webhook (codigo)
 
-## Mudancas
+**Arquivo:** `supabase/functions/whatsapp-webhook/index.ts`
 
-### Arquivo: `src/components/kanban/EditBoardDialog.tsx`
+**Mudanca na linha 89** - Tornar a deteccao de raw message mais flexivel:
 
-**1. `saveEntities()` retorna o `entityIdMap`**
-- Alterar a assinatura para `async (): Promise<Record<string, string>>`
-- Retornar `entityIdMap` no final da funcao
-- Manter o `setFields` para atualizar a UI, mas nao depender dele para a logica de salvamento
+Antes:
+```
+const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.messageid) && payload.fromMe !== undefined
+```
 
-**2. `handleSave()` usa o mapa retornado**
-- Capturar: `const entityIdMap = await saveEntities();`
-- No loop de campos, antes de montar o payload, resolver o `entity_id`:
-  ```text
-  const resolvedEntityId = field.entity_id
-    ? (entityIdMap[field.entity_id] || field.entity_id)
-    : null;
-  ```
-- Usar `resolvedEntityId` no payload em vez de `field.entity_id`
+Depois:
+```
+const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.content)
+```
+
+Isso detecta como raw message se tiver `chatid` OU `content` (o texto do agente), mesmo sem `fromMe`.
+
+**Adicionar default para `fromMe`** dentro do bloco `isRawMessage`:
+```typescript
+if (isRawMessage) {
+  if (payload.fromMe === undefined && payload.content?.text) {
+    payload.fromMe = true  // Resposta do agente = outgoing
+  }
+  payload = {
+    EventType: 'messages',
+    instanceName: payload.owner || '',
+    message: payload,
+    chat: null,
+  }
+}
+```
+
+### Parte 2: Ajuste no n8n (voce faz manualmente)
+
+No no "Envia dados para o Lovable3", troque o `jsonBody` por:
+
+```
+=[{
+  "chatid": {{ $('Webhook').item.json.body.message.chatid || $('Webhook').item.json.body.chat.wa_chatid }},
+  "content": {
+    "text": {{ $json.output || "" }},
+    "contextInfo": {}
+  },
+  "fromMe": true,
+  "messageType": "text",
+  "messageid": {{ "agent_" + Date.now() }},
+  "owner": {{ $('Webhook').item.json.body.message.owner }},
+  "sender": {{ $('Webhook').item.json.body.message.sender }},
+  "senderName": "Assistente IA",
+  "status_ia": "ligada"
+}]
+```
+
+Mudancas importantes:
+- **Removido `{{ }}` duplo** - usar apenas `=[ ... ]` (o `=` no inicio ja ativa expressoes n8n)
+- **`fromMe: true`** - fixo, pois e resposta do agente (outgoing)
+- **`owner`** - pega do Webhook original (`$('Webhook').item.json.body.message.owner`), nao do AI Agent
+- **`messageid`** - gera um ID unico em vez de pegar undefined do AI Agent
+- **Removidos campos desnecessarios** que vinham undefined: `id`, `isGroup`, `messageTimestamp`, `source`, `status`, `text`, `convertOptions`, `edited`, `quoted`, `reaction`, `track_id`, `track_source`
+
+## Arquivos Modificados
 
 | Arquivo | Mudanca |
 |---|---|
-| `src/components/kanban/EditBoardDialog.tsx` | `saveEntities` retorna `entityIdMap`; `handleSave` usa o mapa para resolver `entity_id` dos campos antes de salvar |
+| `supabase/functions/whatsapp-webhook/index.ts` | Linha 89: deteccao de raw message mais robusta; default `fromMe=true` para payloads de agente |
 
-## Resultado
+## Resumo do que voce precisa fazer no n8n
 
-Ao criar entidade + campo `entity_select` e salvar, o campo sera corretamente vinculado ao UUID real da entidade, e o dropdown aparecera no detalhe do card.
+1. Abra o no "Envia dados para o Lovable3"
+2. Substitua o jsonBody pelo payload corrigido acima
+3. Os campos criticos sao: `owner` vindo do Webhook original, `fromMe: true` fixo, e `messageid` gerado
+
