@@ -1,88 +1,84 @@
 
-
-# Corrigir Recebimento de Mensagens do Agente IA via n8n
+# Corrigir Fluxo "Ativar IA" (n8n + webhook)
 
 ## Problema
 
-O no "AI Agent" do n8n so tem o campo `output` (texto da IA). O payload atual referencia `$json.fromMe`, `$json.owner`, `$json.messageid` etc. que vem do AI Agent e sao todos **undefined**.
+Quando voce clica em "Ativar IA" no helpdesk, o Lovable envia os dados para o n8n via webhook. O n8n processa e envia de volta para o `whatsapp-webhook` com o payload contendo `status_ia: "ligada"`. Porem:
 
-No webhook:
-1. A deteccao de "raw message" (linha 89) exige `fromMe !== undefined` -- falha porque e undefined
-2. Cai no bloco `status_ia` porque `"status_ia": "ligada"` esta presente no payload
-3. O bloco `status_ia` tenta achar a instancia via `owner` (tambem undefined) -- retorna `status_ia_instance_not_found`
+1. O payload tem `chatid` + `content`, entao o webhook pensa que e uma **mensagem** (raw message) em vez de um comando de status_ia
+2. Ao tratar como mensagem, tenta achar a instancia via campo `owner` (que nao existe no payload) e retorna **"No instance identifier"**
+
+O payload ja tem `instance_name`, `instance_id`, `inbox_id` e `remotejid` corretos vindos do Set1, mas o webhook ignora esses campos porque entra no caminho errado.
 
 ## Solucao
 
-### Parte 1: Ajuste no webhook (codigo)
+### Parte 1: Ajuste no webhook (codigo Lovable)
 
 **Arquivo:** `supabase/functions/whatsapp-webhook/index.ts`
 
-**Mudanca na linha 89** - Tornar a deteccao de raw message mais flexivel:
+Mudar a prioridade de deteccao: verificar `status_ia` **ANTES** de `isRawMessage`, pois payloads com `status_ia` nunca devem ser tratados como mensagens.
 
-Antes:
+**Antes (linha 89-102, depois 104-106):**
 ```
-const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.messageid) && payload.fromMe !== undefined
+const isRawMessage = ...
+if (isRawMessage) { ... }
+
+// Handle status_ia-only payloads
+if (!payload.EventType && !payload.eventType && statusIaPayload && !isRawMessage) {
 ```
 
-Depois:
+**Depois:**
 ```
-const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.content)
+// 1. Check status_ia FIRST (antes de isRawMessage)
+const statusIaPayload = payload.status_ia || unwrapped?.status_ia || inner?.status_ia
+if (!payload.EventType && !payload.eventType && statusIaPayload) {
+  // handle status_ia... (usar inbox_id diretamente se disponivel)
+}
+
+// 2. Only then check isRawMessage
+const isRawMessage = ...
 ```
 
-Isso detecta como raw message se tiver `chatid` OU `content` (o texto do agente), mesmo sem `fromMe`.
+Alem disso, no bloco `status_ia`, usar `inbox_id` diretamente quando disponivel no payload (em vez de buscar instancia primeiro e depois inbox):
 
-**Adicionar default para `fromMe`** dentro do bloco `isRawMessage`:
-```typescript
-if (isRawMessage) {
-  if (payload.fromMe === undefined && payload.content?.text) {
-    payload.fromMe = true  // Resposta do agente = outgoing
-  }
-  payload = {
-    EventType: 'messages',
-    instanceName: payload.owner || '',
-    message: payload,
-    chat: null,
-  }
+```
+const directInboxId = payload.inbox_id || unwrapped?.inbox_id || inner?.inbox_id
+if (directInboxId) {
+  // Pular busca de instancia, usar inbox_id direto
 }
 ```
 
 ### Parte 2: Ajuste no n8n (voce faz manualmente)
 
-No no "Envia dados para o Lovable3", troque o `jsonBody` por:
+O payload do no **"Envia dados para o Lovable2"** esta quase correto, mas tem um problema menor: as expressoes usam `{{ }}` (template literals do n8n) dentro de um JSON com `=` no inicio. Isso pode funcionar, mas o ideal e simplificar.
 
+**Payload corrigido para o jsonBody:**
 ```
-=[{
-  "chatid": {{ $('Webhook').item.json.body.message.chatid || $('Webhook').item.json.body.chat.wa_chatid }},
-  "content": {
-    "text": {{ $json.output || "" }},
-    "contextInfo": {}
-  },
-  "fromMe": true,
-  "messageType": "text",
-  "messageid": {{ "agent_" + Date.now() }},
-  "owner": {{ $('Webhook').item.json.body.message.owner }},
-  "sender": {{ $('Webhook').item.json.body.message.sender }},
-  "senderName": "Assistente IA",
-  "status_ia": "ligada"
-}]
+=[
+  {
+    "chatid": {{ $('Set1').item.json.cliente.remoteJid }},
+    "status_ia": "ligada",
+    "instance_name": {{ $('Set1').item.json.instancia.instance_name }},
+    "instance_id": {{ $('Set1').item.json.instancia.instance_id }},
+    "inbox_name": {{ $('Set1').item.json.instancia.inbox_name }},
+    "inbox_id": {{ $('Set1').item.json.instancia.inbox_id }},
+    "remotejid": {{ $('Set1').item.json.instancia.remotejid }}
+  }
+]
 ```
 
-Mudancas importantes:
-- **Removido `{{ }}` duplo** - usar apenas `=[ ... ]` (o `=` no inicio ja ativa expressoes n8n)
-- **`fromMe: true`** - fixo, pois e resposta do agente (outgoing)
-- **`owner`** - pega do Webhook original (`$('Webhook').item.json.body.message.owner`), nao do AI Agent
-- **`messageid`** - gera um ID unico em vez de pegar undefined do AI Agent
-- **Removidos campos desnecessarios** que vinham undefined: `id`, `isGroup`, `messageTimestamp`, `source`, `status`, `text`, `convertOptions`, `edited`, `quoted`, `reaction`, `track_id`, `track_source`
+Mudancas:
+- **Removido `content`** e `sender` - nao sao necessarios para ativar IA (e `content` e o que confundia o webhook achando que era uma mensagem)
+- **Removido `track_id` e `track_source`** vazios - desnecessarios
 
 ## Arquivos Modificados
 
 | Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/whatsapp-webhook/index.ts` | Linha 89: deteccao de raw message mais robusta; default `fromMe=true` para payloads de agente |
+| `supabase/functions/whatsapp-webhook/index.ts` | Mover verificacao de `status_ia` para ANTES de `isRawMessage`; usar `inbox_id` direto do payload quando disponivel |
 
 ## Resumo do que voce precisa fazer no n8n
 
-1. Abra o no "Envia dados para o Lovable3"
-2. Substitua o jsonBody pelo payload corrigido acima
-3. Os campos criticos sao: `owner` vindo do Webhook original, `fromMe: true` fixo, e `messageid` gerado
-
+1. Abra o no **"Envia dados para o Lovable2"**
+2. Substitua o jsonBody pelo payload simplificado acima (sem `content`, sem `sender`)
+3. Os campos criticos sao: `status_ia`, `inbox_id`, `chatid/remotejid` e `instance_name`
