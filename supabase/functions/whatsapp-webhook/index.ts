@@ -181,9 +181,17 @@ Deno.serve(async (req) => {
         )
       )
 
-      return new Response(JSON.stringify({ ok: true, status_ia: statusIaPayload, conversation_id: iaConv.id }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      // Check if payload ALSO contains a message to save (e.g. agent IA response)
+      const hasMessageContent = payload.content?.text || unwrapped?.content?.text
+      if (!hasMessageContent) {
+        // Pure status_ia update - return early
+        return new Response(JSON.stringify({ ok: true, status_ia: statusIaPayload, conversation_id: iaConv.id }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Has message content alongside status_ia - fall through to isRawMessage processing
+      console.log('status_ia updated, continuing to process message content:', hasMessageContent.substring(0, 80))
     }
 
     // 2. Detect raw UAZAPI message format (e.g. from n8n agent output)
