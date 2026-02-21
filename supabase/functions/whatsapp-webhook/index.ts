@@ -86,9 +86,13 @@ Deno.serve(async (req) => {
 
     // Detect raw UAZAPI message format (e.g. from n8n agent output)
     // Has chatid/fromMe but no EventType — it's a message object itself, not wrapped
-    const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.messageid) && payload.fromMe !== undefined
+    const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.content)
     if (isRawMessage) {
       console.log('Detected raw UAZAPI message format (agent output), synthesizing payload')
+      // Default fromMe to true for agent responses that don't specify it
+      if (payload.fromMe === undefined && payload.content?.text) {
+        payload.fromMe = true
+      }
       payload = {
         EventType: 'messages',
         instanceName: payload.owner || '',
