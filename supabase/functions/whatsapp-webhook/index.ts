@@ -84,27 +84,10 @@ Deno.serve(async (req) => {
     let payload = (inner?.EventType || inner?.eventType) ? inner : unwrapped
     console.log('Webhook unwrapped EventType:', payload.EventType || payload.eventType || 'none')
 
-    // Detect raw UAZAPI message format (e.g. from n8n agent output)
-    // Has chatid/fromMe but no EventType — it's a message object itself, not wrapped
-    const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.content)
-    if (isRawMessage) {
-      console.log('Detected raw UAZAPI message format (agent output), synthesizing payload')
-      // Default fromMe to true for agent responses that don't specify it
-      if (payload.fromMe === undefined && payload.content?.text) {
-        payload.fromMe = true
-      }
-      payload = {
-        EventType: 'messages',
-        instanceName: payload.owner || '',
-        message: payload,
-        chat: null,
-      }
-    }
-
-    // Handle status_ia-only payloads (no EventType, no message — just a status update)
+    // 1. Check status_ia FIRST (before isRawMessage) — status_ia payloads must never be treated as messages
     const statusIaPayload = payload.status_ia || unwrapped?.status_ia || inner?.status_ia
-    if (!payload.EventType && !payload.eventType && statusIaPayload && !isRawMessage) {
-      console.log('Detected status_ia-only payload:', statusIaPayload)
+    if (!payload.EventType && !payload.eventType && statusIaPayload) {
+      console.log('Detected status_ia payload:', statusIaPayload)
 
       const chatid = payload.chatid || payload.sender || payload.remotejid ||
         unwrapped?.chatid || unwrapped?.sender || unwrapped?.remotejid ||
@@ -115,39 +98,44 @@ Deno.serve(async (req) => {
         })
       }
 
-      // Find instance
-      const iaInstanceName = payload.instanceName || payload.instance || payload.instance_name ||
-        unwrapped?.instanceName || unwrapped?.instance || unwrapped?.instance_name || ''
-      const iaInstanceId = payload.instance_id || unwrapped?.instance_id || ''
-      let iaInstanceQuery = supabase.from('instances').select('id, name, token')
-      if (iaInstanceId) {
-        iaInstanceQuery = iaInstanceQuery.eq('id', iaInstanceId)
-      } else if (iaInstanceName) {
-        const iaOwnerJid = `${iaInstanceName}@s.whatsapp.net`
-        iaInstanceQuery = iaInstanceQuery.or(`id.eq.${iaInstanceName},name.eq.${iaInstanceName},owner_jid.eq.${iaOwnerJid}`)
-      } else {
-        // Try owner field
-        const ownerField = payload.owner || unwrapped?.owner || ''
-        if (ownerField) {
-          const ownerJidVal = ownerField.includes('@') ? ownerField : `${ownerField}@s.whatsapp.net`
-          iaInstanceQuery = iaInstanceQuery.eq('owner_jid', ownerJidVal)
-        }
-      }
-      const { data: iaInstance } = await iaInstanceQuery.maybeSingle()
-      if (!iaInstance) {
-        console.log('status_ia: instance not found')
-        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_instance_not_found' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
+      // Use inbox_id directly if provided (skips instance lookup)
+      const directInboxId = payload.inbox_id || unwrapped?.inbox_id || inner?.inbox_id || ''
+      let resolvedInboxId = directInboxId
 
-      // Find inbox
-      const { data: iaInbox } = await supabase.from('inboxes').select('id').eq('instance_id', iaInstance.id).maybeSingle()
-      if (!iaInbox) {
-        console.log('status_ia: no inbox for instance', iaInstance.id)
-        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_no_inbox' }), {
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+      if (!resolvedInboxId) {
+        // Fallback: find instance then inbox
+        const iaInstanceName = payload.instanceName || payload.instance || payload.instance_name ||
+          unwrapped?.instanceName || unwrapped?.instance || unwrapped?.instance_name || ''
+        const iaInstanceId = payload.instance_id || unwrapped?.instance_id || ''
+        let iaInstanceQuery = supabase.from('instances').select('id, name, token')
+        if (iaInstanceId) {
+          iaInstanceQuery = iaInstanceQuery.eq('id', iaInstanceId)
+        } else if (iaInstanceName) {
+          const iaOwnerJid = `${iaInstanceName}@s.whatsapp.net`
+          iaInstanceQuery = iaInstanceQuery.or(`id.eq.${iaInstanceName},name.eq.${iaInstanceName},owner_jid.eq.${iaOwnerJid}`)
+        } else {
+          const ownerField = payload.owner || unwrapped?.owner || ''
+          if (ownerField) {
+            const ownerJidVal = ownerField.includes('@') ? ownerField : `${ownerField}@s.whatsapp.net`
+            iaInstanceQuery = iaInstanceQuery.eq('owner_jid', ownerJidVal)
+          }
+        }
+        const { data: iaInstance } = await iaInstanceQuery.maybeSingle()
+        if (!iaInstance) {
+          console.log('status_ia: instance not found')
+          return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_instance_not_found' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+
+        const { data: iaInbox } = await supabase.from('inboxes').select('id').eq('instance_id', iaInstance.id).maybeSingle()
+        if (!iaInbox) {
+          console.log('status_ia: no inbox for instance', iaInstance.id)
+          return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'status_ia_no_inbox' }), {
+            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+          })
+        }
+        resolvedInboxId = iaInbox.id
       }
 
       // Find contact by JID
@@ -163,7 +151,7 @@ Deno.serve(async (req) => {
       const { data: iaConv } = await supabase
         .from('conversations')
         .select('id')
-        .eq('inbox_id', iaInbox.id)
+        .eq('inbox_id', resolvedInboxId)
         .eq('contact_id', iaContact.id)
         .in('status', ['aberta', 'pendente'])
         .order('created_at', { ascending: false })
@@ -196,6 +184,21 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true, status_ia: statusIaPayload, conversation_id: iaConv.id }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // 2. Detect raw UAZAPI message format (e.g. from n8n agent output)
+    const isRawMessage = !payload.EventType && !payload.eventType && (payload.chatid || payload.content)
+    if (isRawMessage) {
+      console.log('Detected raw UAZAPI message format (agent output), synthesizing payload')
+      if (payload.fromMe === undefined && payload.content?.text) {
+        payload.fromMe = true
+      }
+      payload = {
+        EventType: 'messages',
+        instanceName: payload.owner || '',
+        message: payload,
+        chat: null,
+      }
     }
 
     // UAZAPI sends EventType field
