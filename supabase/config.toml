@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.database-backup]
 verify_jwt = false
+
+[functions.migrate-to-external]
+verify_jwt = false

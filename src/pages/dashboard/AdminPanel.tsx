@@ -80,6 +80,7 @@ import ManageInboxUsersDialog from '@/components/dashboard/ManageInboxUsersDialo
 import ManageUserInstancesDialog from '@/components/dashboard/ManageUserInstancesDialog';
 import CreateInboxUserDialog from '@/components/dashboard/CreateInboxUserDialog';
 import BackupModule from '@/components/dashboard/BackupModule';
+import MigrationWizard from '@/components/dashboard/MigrationWizard';
 import type { Database } from '@/integrations/supabase/types';
 
 type InboxRole = Database['public']['Enums']['inbox_role'];
@@ -604,6 +605,10 @@ const AdminPanel = () => {
             <Briefcase className="w-4 h-4" />
             <span>Backup</span>
           </TabsTrigger>
+          <TabsTrigger value="migration" className="gap-2">
+            <MonitorSmartphone className="w-4 h-4" />
+            <span>Migração</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -1004,6 +1009,13 @@ const AdminPanel = () => {
         {/* ══════════════════════════════════════════════════════════════════ */}
         <TabsContent value="backup" className="mt-6">
           <BackupModule />
+        </TabsContent>
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* TAB: Migração                                                      */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="migration" className="mt-6">
+          <MigrationWizard />
         </TabsContent>
       </Tabs>
 
