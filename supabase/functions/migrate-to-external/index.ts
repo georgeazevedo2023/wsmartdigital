@@ -21,16 +21,25 @@ async function execOnExternal(pgClient: PgClient, sql: string): Promise<{ succes
   }
 }
 
-async function execMultiOnExternal(pgClient: PgClient, statements: string[]): Promise<{ success: number; failed: number; errors: string[] }> {
+async function execMultiOnExternal(pgClient: PgClient, statements: string[], detailLabels?: string[]): Promise<{ success: number; failed: number; errors: string[]; details: string[] }> {
   let success = 0, failed = 0
   const errors: string[] = []
-  for (const stmt of statements) {
+  const details: string[] = []
+  for (let i = 0; i < statements.length; i++) {
+    const stmt = statements[i]
     if (!stmt.trim()) continue
     const r = await execOnExternal(pgClient, stmt)
-    if (r.success) success++
-    else { failed++; errors.push(r.error || 'Unknown error') }
+    const label = detailLabels?.[i] || `Statement ${i + 1}`
+    if (r.success) {
+      success++
+      details.push(`✓ ${label}`)
+    } else {
+      failed++
+      errors.push(r.error || 'Unknown error')
+      details.push(`✗ ${label}: ${r.error}`)
+    }
   }
-  return { success, failed, errors }
+  return { success, failed, errors, details }
 }
 
 Deno.serve(async (req) => {
@@ -48,7 +57,6 @@ Deno.serve(async (req) => {
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
 
-    // Verify super_admin
     const userClient = createClient(supabaseUrl, anonKey, {
       global: { headers: { Authorization: authHeader } },
     })
@@ -77,9 +85,10 @@ Deno.serve(async (req) => {
       const pgClient = new PgClient(external_db_url)
       try {
         await pgClient.connect()
-        const result = await pgClient.queryArray('SELECT 1 as ok')
+        const result = await pgClient.queryArray('SELECT current_database() as db, version() as version')
+        const dbInfo = result.rows?.[0]
         await pgClient.end()
-        return new Response(JSON.stringify({ data: { connected: true } }), {
+        return new Response(JSON.stringify({ data: { connected: true, database: dbInfo?.[0], version: String(dbInfo?.[1]).substring(0, 60) } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       } catch (e: any) {
@@ -106,6 +115,7 @@ Deno.serve(async (req) => {
       // ─── Migrate Schema ────────────────────────────────────────────────
       if (action === 'migrate-schema') {
         const statements: string[] = []
+        const labels: string[] = []
 
         // 1. ENUMs
         const enums = await localQuery(`
@@ -117,6 +127,7 @@ Deno.serve(async (req) => {
         for (const en of enums as any[]) {
           const vals = (en.values as string).split(', ').map((v: string) => `'${v}'`).join(', ')
           statements.push(`DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = '${en.enum_name}') THEN CREATE TYPE public.${en.enum_name} AS ENUM (${vals}); END IF; END $$;`)
+          labels.push(`ENUM ${en.enum_name} criado`)
         }
 
         // 2. Tables
@@ -164,6 +175,7 @@ Deno.serve(async (req) => {
           if (pk) sql += `,\n  PRIMARY KEY (${pk})`
           sql += `\n);`
           statements.push(sql)
+          labels.push(`Tabela ${t.table_name} criada`)
         }
 
         // 3. Foreign Keys
@@ -178,7 +190,9 @@ Deno.serve(async (req) => {
         `)
         for (const fk of fks as any[]) {
           statements.push(`ALTER TABLE public.${fk.table_name} DROP CONSTRAINT IF EXISTS ${fk.constraint_name};`)
+          labels.push(`FK ${fk.constraint_name} removida (idempotência)`)
           statements.push(`ALTER TABLE public.${fk.table_name} ADD CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.column_name}) REFERENCES public.${fk.foreign_table_name}(${fk.foreign_column_name});`)
+          labels.push(`FK ${fk.constraint_name} criada (${fk.table_name} → ${fk.foreign_table_name})`)
         }
 
         // 4. Indexes (simple ones only)
@@ -193,14 +207,15 @@ Deno.serve(async (req) => {
         for (const idx of indexes as any[]) {
           const def = (idx.indexdef as string)
           const dependsOnFunc = funcNames.some((fn: string) => def.includes(fn + '('))
-          if (dependsOnFunc) continue // will be added in migrate-functions step
+          if (dependsOnFunc) continue
           const idxDef = def
             .replace(/^CREATE INDEX /i, 'CREATE INDEX IF NOT EXISTS ')
             .replace(/^CREATE UNIQUE INDEX /i, 'CREATE UNIQUE INDEX IF NOT EXISTS ')
           statements.push(idxDef + ';')
+          labels.push(`Index ${idx.indexname} em ${idx.tablename}`)
         }
 
-        const result = await execMultiOnExternal(pgClient, statements)
+        const result = await execMultiOnExternal(pgClient, statements, labels)
         return new Response(JSON.stringify({ data: { ...result, step: 'schema' } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
@@ -209,6 +224,7 @@ Deno.serve(async (req) => {
       // ─── Migrate Functions ─────────────────────────────────────────────
       if (action === 'migrate-functions') {
         const statements: string[] = []
+        const labels: string[] = []
 
         const functions = await localQuery(`
           SELECT p.proname as function_name, pg_get_functiondef(p.oid) as definition
@@ -217,6 +233,7 @@ Deno.serve(async (req) => {
         `)
         for (const fn of functions as any[]) {
           statements.push((fn.definition as string) + ';')
+          labels.push(`Função ${fn.function_name}`)
         }
 
         // Function-dependent indexes
@@ -232,9 +249,10 @@ Deno.serve(async (req) => {
             .replace(/^CREATE INDEX /i, 'CREATE INDEX IF NOT EXISTS ')
             .replace(/^CREATE UNIQUE INDEX /i, 'CREATE UNIQUE INDEX IF NOT EXISTS ')
           statements.push(idxDef + ';')
+          labels.push(`Index ${idx.indexname} (depende de função)`)
         }
 
-        const result = await execMultiOnExternal(pgClient, statements)
+        const result = await execMultiOnExternal(pgClient, statements, labels)
         return new Response(JSON.stringify({ data: { ...result, step: 'functions' } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
@@ -243,8 +261,8 @@ Deno.serve(async (req) => {
       // ─── Migrate RLS ──────────────────────────────────────────────────
       if (action === 'migrate-rls') {
         const statements: string[] = []
+        const labels: string[] = []
 
-        // Enable RLS
         const rlsStatus = await localQuery(`
           SELECT relname as table_name, relrowsecurity as rls_enabled
           FROM pg_class WHERE relnamespace = 'public'::regnamespace AND relkind = 'r' ORDER BY relname
@@ -252,17 +270,17 @@ Deno.serve(async (req) => {
         for (const t of rlsStatus as any[]) {
           if (t.rls_enabled) {
             statements.push(`ALTER TABLE public.${t.table_name} ENABLE ROW LEVEL SECURITY;`)
+            labels.push(`RLS habilitado em ${t.table_name}`)
           }
         }
 
-        // Policies
         const policies = await localQuery(`
           SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check
           FROM pg_policies WHERE schemaname = 'public' ORDER BY tablename, policyname
         `)
         for (const p of policies as any[]) {
-          const policyName = (p.policyname as string).replace(/'/g, "''")
           statements.push(`DROP POLICY IF EXISTS "${p.policyname}" ON public.${p.tablename};`)
+          labels.push(`Policy "${p.policyname}" removida (idempotência)`)
 
           let sql = `CREATE POLICY "${p.policyname}" ON public.${p.tablename}`
           sql += ` AS ${p.permissive === 'true' ? 'PERMISSIVE' : 'RESTRICTIVE'}`
@@ -272,9 +290,10 @@ Deno.serve(async (req) => {
           if (p.with_check) sql += ` WITH CHECK (${p.with_check})`
           sql += ';'
           statements.push(sql)
+          labels.push(`Policy "${p.policyname}" em ${p.tablename}`)
         }
 
-        const result = await execMultiOnExternal(pgClient, statements)
+        const result = await execMultiOnExternal(pgClient, statements, labels)
         return new Response(JSON.stringify({ data: { ...result, step: 'rls' } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
@@ -283,28 +302,29 @@ Deno.serve(async (req) => {
       // ─── Migrate Triggers ─────────────────────────────────────────────
       if (action === 'migrate-triggers') {
         const statements: string[] = []
+        const labels: string[] = []
         const triggers = await localQuery(`
           SELECT trigger_name, event_manipulation, event_object_table, action_timing, action_statement
           FROM information_schema.triggers WHERE trigger_schema = 'public' ORDER BY event_object_table, trigger_name
         `)
-        // Group by trigger_name + table to handle multi-event triggers
         const seen = new Set<string>()
         for (const tr of triggers as any[]) {
           const key = `${tr.trigger_name}__${tr.event_object_table}`
           if (seen.has(key)) continue
           seen.add(key)
-          // Get all events for this trigger
           const events = (triggers as any[]).filter(
             (t: any) => t.trigger_name === tr.trigger_name && t.event_object_table === tr.event_object_table
           ).map((t: any) => t.event_manipulation)
           
           statements.push(`DROP TRIGGER IF EXISTS ${tr.trigger_name} ON public.${tr.event_object_table};`)
+          labels.push(`Trigger ${tr.trigger_name} removido (idempotência)`)
           statements.push(
             `CREATE TRIGGER ${tr.trigger_name} ${tr.action_timing} ${events.join(' OR ')} ON public.${tr.event_object_table} FOR EACH ROW ${tr.action_statement};`
           )
+          labels.push(`Trigger ${tr.trigger_name} em ${tr.event_object_table}`)
         }
 
-        const result = await execMultiOnExternal(pgClient, statements)
+        const result = await execMultiOnExternal(pgClient, statements, labels)
         return new Response(JSON.stringify({ data: { ...result, step: 'triggers' } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
@@ -317,13 +337,13 @@ Deno.serve(async (req) => {
         }
         const extClient = createClient(external_url, external_service_role_key)
 
-        // Get local buckets
         const buckets = await localQuery(`
           SELECT id, name, public, file_size_limit, allowed_mime_types FROM storage.buckets ORDER BY name
         `)
         
         let success = 0, failed = 0
         const errors: string[] = []
+        const details: string[] = []
         for (const b of buckets as any[]) {
           try {
             const { error } = await extClient.storage.createBucket(b.name, {
@@ -333,11 +353,14 @@ Deno.serve(async (req) => {
             })
             if (error && !error.message?.includes('already exists')) {
               failed++; errors.push(`Bucket ${b.name}: ${error.message}`)
+              details.push(`✗ Bucket ${b.name}: ${error.message}`)
             } else {
               success++
+              details.push(`✓ Bucket ${b.name} criado (public: ${b.public})`)
             }
           } catch (e: any) {
             failed++; errors.push(`Bucket ${b.name}: ${e.message}`)
+            details.push(`✗ Bucket ${b.name}: ${e.message}`)
           }
         }
 
@@ -356,13 +379,18 @@ Deno.serve(async (req) => {
           if (p.with_check) createSql += ` WITH CHECK (${p.with_check})`
           createSql += ';'
           
-          const r1 = await execOnExternal(pgClient, dropSql)
+          await execOnExternal(pgClient, dropSql)
           const r2 = await execOnExternal(pgClient, createSql)
-          if (r2.success) success++
-          else { failed++; errors.push(`Storage policy ${p.policyname}: ${r2.error}`) }
+          if (r2.success) {
+            success++
+            details.push(`✓ Storage policy "${p.policyname}" em ${p.tablename}`)
+          } else {
+            failed++; errors.push(`Storage policy ${p.policyname}: ${r2.error}`)
+            details.push(`✗ Storage policy "${p.policyname}": ${r2.error}`)
+          }
         }
 
-        return new Response(JSON.stringify({ data: { success, failed, errors, step: 'storage' } }), {
+        return new Response(JSON.stringify({ data: { success, failed, errors, details, step: 'storage' } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
@@ -379,17 +407,20 @@ Deno.serve(async (req) => {
 
         let totalSuccess = 0, totalFailed = 0
         const errors: string[] = []
+        const details: string[] = []
         const tableResults: { table: string; rows: number }[] = []
 
         for (const tableName of dataTables) {
           try {
             const rows = await localQuery(`SELECT * FROM public."${tableName}" LIMIT 10000`)
-            if (!rows || (rows as any[]).length === 0) continue
+            if (!rows || (rows as any[]).length === 0) {
+              details.push(`⊘ ${tableName}: sem dados`)
+              continue
+            }
 
             const rowsArr = rows as any[]
             const columns = Object.keys(rowsArr[0])
             
-            // Build batch INSERT with ON CONFLICT DO NOTHING
             const values = rowsArr.map((row: any) => {
               const vals = columns.map(col => {
                 const v = row[col]
@@ -403,24 +434,26 @@ Deno.serve(async (req) => {
               return `(${vals.join(', ')})`
             })
 
-            // Split into batches of 100 rows
             const batchSize = 100
             let tableRows = 0
+            let tableFailed = false
             for (let i = 0; i < values.length; i += batchSize) {
               const batch = values.slice(i, i + batchSize)
               const sql = `INSERT INTO public."${tableName}" (${columns.map(c => `"${c}"`).join(', ')}) VALUES\n${batch.join(',\n')}\nON CONFLICT DO NOTHING;`
               const r = await execOnExternal(pgClient, sql)
               if (r.success) { tableRows += batch.length; totalSuccess++ }
-              else { totalFailed++; errors.push(`${tableName}: ${r.error}`) }
+              else { totalFailed++; errors.push(`${tableName}: ${r.error}`); tableFailed = true }
             }
             tableResults.push({ table: tableName, rows: tableRows })
+            details.push(`${tableFailed ? '⚠' : '✓'} ${tableName}: ${rowsArr.length} registros${tableFailed ? ' (com erros)' : ''}`)
           } catch (e: any) {
             totalFailed++
             errors.push(`${tableName}: ${e.message}`)
+            details.push(`✗ ${tableName}: ${e.message}`)
           }
         }
 
-        return new Response(JSON.stringify({ data: { success: totalSuccess, failed: totalFailed, errors, tableResults, step: 'data' } }), {
+        return new Response(JSON.stringify({ data: { success: totalSuccess, failed: totalFailed, errors, details, tableResults, step: 'data' } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
@@ -436,7 +469,50 @@ Deno.serve(async (req) => {
           last_sign_in_at: u.last_sign_in_at,
           user_metadata: u.user_metadata,
         }))
-        return new Response(JSON.stringify({ data: result }), {
+        return new Response(JSON.stringify({ data: result, details: result.map(u => `✓ ${u.email} (${u.id.substring(0,8)}...)`) }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // ─── Verify Migration ─────────────────────────────────────────────
+      if (action === 'verify-migration') {
+        // Source counts
+        const srcTables = await localQuery(`SELECT count(*) as c FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`)
+        const srcFunctions = await localQuery(`SELECT count(*) as c FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = 'public' AND p.prokind = 'f'`)
+        const srcPolicies = await localQuery(`SELECT count(*) as c FROM pg_policies WHERE schemaname = 'public'`)
+        const srcTriggers = await localQuery(`SELECT count(DISTINCT trigger_name || event_object_table) as c FROM information_schema.triggers WHERE trigger_schema = 'public'`)
+        const srcBuckets = await localQuery(`SELECT count(*) as c FROM storage.buckets`)
+
+        // Target counts
+        const tgtTablesR = await pgClient.queryArray(`SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`)
+        const tgtFunctionsR = await pgClient.queryArray(`SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE n.nspname = 'public' AND p.prokind = 'f'`)
+        const tgtPoliciesR = await pgClient.queryArray(`SELECT count(*) FROM pg_policies WHERE schemaname = 'public'`)
+        const tgtTriggersR = await pgClient.queryArray(`SELECT count(DISTINCT trigger_name || event_object_table) FROM information_schema.triggers WHERE trigger_schema = 'public'`)
+
+        const source = {
+          tables: Number((srcTables as any[])[0]?.c || 0),
+          functions: Number((srcFunctions as any[])[0]?.c || 0),
+          policies: Number((srcPolicies as any[])[0]?.c || 0),
+          triggers: Number((srcTriggers as any[])[0]?.c || 0),
+          buckets: Number((srcBuckets as any[])[0]?.c || 0),
+        }
+        const target = {
+          tables: Number(tgtTablesR.rows?.[0]?.[0] || 0),
+          functions: Number(tgtFunctionsR.rows?.[0]?.[0] || 0),
+          policies: Number(tgtPoliciesR.rows?.[0]?.[0] || 0),
+          triggers: Number(tgtTriggersR.rows?.[0]?.[0] || 0),
+          buckets: 0, // can't query storage.buckets on external easily
+        }
+
+        const details: string[] = []
+        const items = ['tables', 'functions', 'policies', 'triggers'] as const
+        for (const key of items) {
+          const s = source[key], t = target[key]
+          const match = t >= s
+          details.push(`${match ? '✓' : '⚠'} ${key}: origem=${s}, destino=${t}`)
+        }
+
+        return new Response(JSON.stringify({ data: { source, target, details, match: details.every(d => d.startsWith('✓')) } }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
       }
