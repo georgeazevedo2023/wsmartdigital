@@ -271,9 +271,26 @@ const BackupModule = () => {
         lines.push('');
       }
 
+      // Split indexes: some depend on functions (e.g. normalize_external_id)
+      const simpleIndexes: any[] = [];
+      const functionDependentIndexes: any[] = [];
       if (indexes?.length) {
-        lines.push('-- INDEXES');
+        // Get function names to detect dependencies
+        const funcNames = (functionsResult?.[0] || []).map((f: any) => f.function_name as string);
         for (const idx of indexes) {
+          const def = idx.indexdef as string;
+          const dependsOnFunc = funcNames.some((fn: string) => def.includes(fn + '('));
+          if (dependsOnFunc) {
+            functionDependentIndexes.push(idx);
+          } else {
+            simpleIndexes.push(idx);
+          }
+        }
+      }
+
+      if (simpleIndexes.length) {
+        lines.push('-- INDEXES');
+        for (const idx of simpleIndexes) {
           const idxDef = (idx.indexdef as string)
             .replace(/^CREATE INDEX /i, 'CREATE INDEX IF NOT EXISTS ')
             .replace(/^CREATE UNIQUE INDEX /i, 'CREATE UNIQUE INDEX IF NOT EXISTS ');
@@ -281,6 +298,9 @@ const BackupModule = () => {
         }
         lines.push('');
       }
+
+      // Store function-dependent indexes to add after functions
+      sectionBlocks['_functionIndexes'] = functionDependentIndexes;
 
       sectionBlocks['schema'] = lines;
     }
@@ -299,6 +319,19 @@ const BackupModule = () => {
           lines.push(f.definition + ';');
           lines.push('');
         }
+      }
+
+      // Add function-dependent indexes after functions are defined
+      const funcIndexes = sectionBlocks['_functionIndexes'] as any[] | undefined;
+      if (funcIndexes?.length) {
+        lines.push('-- INDEXES (dependem de funções acima)');
+        for (const idx of funcIndexes) {
+          const idxDef = (idx.indexdef as string)
+            .replace(/^CREATE INDEX /i, 'CREATE INDEX IF NOT EXISTS ')
+            .replace(/^CREATE UNIQUE INDEX /i, 'CREATE UNIQUE INDEX IF NOT EXISTS ');
+          lines.push(`${idxDef};`);
+        }
+        lines.push('');
       }
 
       sectionBlocks['functions'] = lines;
