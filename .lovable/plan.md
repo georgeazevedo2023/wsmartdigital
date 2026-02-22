@@ -1,96 +1,123 @@
 
 
-## Pagina de Migracao Automatizada para Supabase Externo
+## Modernizar o Wizard de Migracao - Automacao Completa com Logs em Tempo Real
 
 ### Visao Geral
-Criar uma pagina dentro do Admin Panel que permite ao super admin inserir as credenciais de um Supabase externo e executar a migracao automatica do banco de dados (schema, funcoes, RLS, storage, dados filtrados) diretamente, sem precisar copiar/colar SQL manualmente.
+Transformar o MigrationWizard de um processo manual (clicar passo a passo) para uma experiencia automatizada e moderna, com botao "Executar Tudo", painel de logs em tempo real, e testes de verificacao pos-migracao.
 
-### Credenciais Necessarias
-O usuario precisara fornecer 3 dados do Supabase de destino:
-- **SUPABASE_EXTERNAL_URL**: URL do projeto externo
-- **SUPABASE_EXTERNAL_SERVICE_ROLE_KEY**: chave service role
-- **SUPABASE_EXTERNAL_DB_URL**: connection string postgres (para executar DDL)
+---
 
-A Database URL e encontrada em: Supabase Dashboard -> Settings -> Database -> Connection string -> URI
+### Mudancas Principais
 
-### Arquitetura
+#### 1. Botao "Executar Todos os Passos"
+Um botao principal que executa todos os 7 passos sequencialmente, pulando automaticamente para o proximo apos sucesso. Se um passo falhar, pausa e permite retry antes de continuar.
 
-```text
-Frontend (AdminPanel)          Edge Function              Supabase Externo
-       |                            |                           |
-       |-- 1. Credenciais --------->|                           |
-       |                            |-- 2. Testa conexao ------>|
-       |<-- 3. OK ------------------|                           |
-       |                            |                           |
-       |-- 4. Migrar Passo N ------>|                           |
-       |                            |-- 5. Gera SQL local ----->| (le do DB atual)
-       |                            |-- 6. Executa no externo ->| (escreve no externo)
-       |<-- 7. Resultado ----------|                           |
-```
+#### 2. Painel de Logs em Tempo Real
+Cada passo retornara logs detalhados (nomes de tabelas criadas, funcoes, policies) que serao exibidos em um terminal/console visual ao lado dos passos. O edge function sera modificado para retornar detalhes granulares.
 
-### Componentes
+#### 3. Testes de Verificacao Pos-Migracao
+Apos concluir todos os passos, executar verificacoes automaticas no banco externo:
+- Contagem de tabelas criadas vs esperadas
+- Contagem de funcoes, policies e triggers
+- Verificacao de buckets de storage
+- Comparativo lado a lado (origem vs destino)
 
-#### 1. Nova Edge Function: `migrate-to-external`
-- Recebe credenciais do Supabase externo + acao (test-connection, migrate-step)
-- Usa o driver Postgres nativo do Deno (`deno-postgres`) para conectar ao banco externo via Database URL
-- Executa DDL (CREATE TABLE, funcoes, RLS) diretamente no banco externo
-- Para cada passo, gera o SQL a partir do banco atual (reutilizando a logica existente do `database-backup`) e executa no externo
-- Retorna status de sucesso/erro para cada operacao
+#### 4. UI Moderna
+- Timeline vertical animada conectando os passos
+- Cores e animacoes de progresso por passo
+- Tempo decorrido por passo e total
+- Resumo final com estatisticas
 
-#### 2. Nova pagina/aba no AdminPanel: `MigrationWizard.tsx`
-Interface visual com:
-- Formulario para inserir as 3 credenciais
-- Botao "Testar Conexao" que valida se as credenciais funcionam
-- 6 passos de migracao (mesma ordem do backup), cada um com:
-  - Botao "Executar" individual
-  - Status: pendente / executando / sucesso / erro
-  - Detalhes do erro se houver
-  - Contagem de objetos migrados (ex: "12 tabelas criadas")
-- Barra de progresso geral
-
-#### 3. Passos da Migracao (executados individualmente)
-1. **Schema**: ENUMs + CREATE TABLE IF NOT EXISTS + FKs + Indexes
-2. **Funcoes**: CREATE OR REPLACE FUNCTION + indexes dependentes
-3. **RLS**: ALTER TABLE ENABLE RLS + DROP/CREATE POLICY
-4. **Storage**: Criar buckets (via Supabase client com service role)
-5. **Dados**: INSERT dos dados filtrados (com ON CONFLICT DO NOTHING)
-6. **Auth Users**: Exibir lista de usuarios para criacao manual (nao automatizavel via SQL)
-
-### Seguranca
-- Credenciais do Supabase externo sao passadas apenas na requisicao, NAO armazenadas no banco
-- Apenas super_admin pode acessar a funcionalidade
-- A edge function valida o token do usuario antes de executar
-- Connection string e usada apenas durante a sessao de migracao
-
-### Arquivos a Criar/Modificar
-
-**Novos:**
-- `supabase/functions/migrate-to-external/index.ts` - Edge function de migracao
-- `src/components/dashboard/MigrationWizard.tsx` - Componente do wizard de migracao
-
-**Modificar:**
-- `src/pages/dashboard/AdminPanel.tsx` - Adicionar nova aba "Migracao"
-- `supabase/config.toml` - Registrar nova edge function com `verify_jwt = false`
+---
 
 ### Detalhes Tecnicos
 
-**Edge Function - `migrate-to-external/index.ts`:**
-- Usa `https://deno.land/x/postgres/mod.ts` para conexao direta ao banco externo
-- Reutiliza as queries do `database-backup` para extrair schema, funcoes, RLS, etc. do banco atual
-- Aplica as mesmas transformacoes de idempotencia (IF NOT EXISTS, DROP IF EXISTS)
-- Actions suportadas:
-  - `test-connection`: testa a conexao com o banco externo
-  - `migrate-schema`: cria ENUMs, tabelas, FKs, indexes simples
-  - `migrate-functions`: cria funcoes + indexes dependentes
-  - `migrate-rls`: habilita RLS + cria policies
-  - `migrate-storage`: cria buckets via Supabase client
-  - `migrate-data`: insere dados filtrados
-  - `get-auth-users`: retorna lista de usuarios para referencia
+#### Arquivo: `supabase/functions/migrate-to-external/index.ts`
 
-**Frontend - `MigrationWizard.tsx`:**
-- Estado local para credenciais (nao persistido)
-- Estado de progresso por passo
-- Cada passo chama a edge function com a acao correspondente
-- Exibe logs em tempo real de cada operacao
-- Permite re-executar passos que falharam
+**Adicionar nova action `verify-migration`:**
+Conecta ao banco externo e conta tabelas, funcoes, policies, triggers para comparar com o banco de origem.
+
+```text
+Action: verify-migration
+Retorna: {
+  source: { tables: N, functions: N, policies: N, triggers: N, buckets: N },
+  target: { tables: N, functions: N, policies: N, triggers: N, buckets: N }
+}
+```
+
+**Enriquecer retorno de cada action com `details[]`:**
+Cada passo retornara um array `details` com descricoes das operacoes individuais (ex: "Tabela user_profiles criada", "Policy xyz aplicada").
+
+Exemplo de retorno enriquecido:
+```text
+{
+  success: 12,
+  failed: 0,
+  errors: [],
+  details: [
+    "ENUM app_role criado",
+    "ENUM inbox_role criado",
+    "Tabela user_profiles criada",
+    "Tabela user_roles criada",
+    ...
+  ]
+}
+```
+
+#### Arquivo: `src/components/dashboard/MigrationWizard.tsx`
+
+**Reescrita completa com as seguintes secoes:**
+
+1. **Estado expandido:**
+   - `logs: string[]` - array de logs acumulados de todos os passos
+   - `runningAll: boolean` - flag para execucao automatica
+   - `stepTimings: Record<string, number>` - tempo em ms de cada passo
+   - `verificationResult` - resultado da verificacao final
+   - `totalElapsed: number` - tempo total decorrido
+
+2. **Funcao `handleRunAll()`:**
+   - Itera pelos passos na ordem
+   - Executa cada um, acumula logs
+   - Se falhar, pausa e mostra opcao de retry/skip/abort
+   - Apos todos, executa verificacao automaticamente
+
+3. **Componente de Logs (Terminal visual):**
+   - Fundo escuro estilo terminal
+   - Scroll automatico para o final
+   - Cada log com timestamp e icone de status (check verde, x vermelho)
+   - Filtravel por tipo (sucesso/erro/info)
+
+4. **Componente de Verificacao:**
+   - Tabela comparativa: Origem vs Destino
+   - Badge verde se contagens iguais, amarelo se diferente
+   - Mostra: tabelas, funcoes, policies, triggers, buckets
+
+5. **Timeline visual:**
+   - Linha vertical conectando os passos
+   - Passo ativo com animacao pulse
+   - Passos concluidos com check verde e tempo
+   - Passos pendentes em cinza
+
+6. **Header com controles globais:**
+   - Botao "Executar Tudo" (destaque primario)
+   - Botao "Verificar Migracao" (apos conclusao)
+   - Timer mostrando tempo total decorrido
+   - Barra de progresso animada
+
+#### Arquivo: `src/pages/dashboard/AdminPanel.tsx`
+Nenhuma mudanca necessaria (ja importa MigrationWizard).
+
+---
+
+### Arquivos Modificados
+- `supabase/functions/migrate-to-external/index.ts` - adicionar `verify-migration` + enriquecer retornos com `details[]`
+- `src/components/dashboard/MigrationWizard.tsx` - reescrita completa da UI
+
+### Fluxo do Usuario
+1. Insere credenciais e testa conexao (igual ao atual)
+2. Clica "Executar Tudo"
+3. Assiste os passos sendo executados automaticamente com logs em tempo real
+4. Se algo falha, escolhe retry ou pular
+5. Apos conclusao, ve o resumo de verificacao comparando origem vs destino
+6. Exporta o relatorio se desejar
 
