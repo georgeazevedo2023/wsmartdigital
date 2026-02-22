@@ -30,8 +30,10 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Use service role for admin queries
-    const adminClient = createClient(supabaseUrl, serviceRoleKey)
+    // Use service role for admin queries, but pass user's auth header so auth.uid() works in exec_sql
+    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
+      global: { headers: { Authorization: authHeader } },
+    })
 
     const { data: roleData } = await adminClient
       .from('user_roles')
