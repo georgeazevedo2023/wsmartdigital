@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.send-shift-report]
 verify_jwt = false
+
+[functions.database-backup]
+verify_jwt = false

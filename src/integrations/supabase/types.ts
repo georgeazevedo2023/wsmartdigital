@@ -1205,6 +1205,7 @@ export type Database = {
         Args: { _card_id: string; _user_id: string }
         Returns: boolean
       }
+      exec_sql: { Args: { query: string }; Returns: Json }
       get_inbox_role: {
         Args: { _inbox_id: string; _user_id: string }
         Returns: Database["public"]["Enums"]["inbox_role"]
