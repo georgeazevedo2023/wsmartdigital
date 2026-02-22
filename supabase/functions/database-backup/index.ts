@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
         if (!table_name) throw new Error('table_name required')
         const safeName = table_name.replace(/[^a-zA-Z0-9_]/g, '')
         const { data, error } = await adminClient.rpc('exec_sql', {
-          query: `SELECT * FROM public."${safeName}" ORDER BY created_at DESC NULLS LAST LIMIT 10000`
+          query: `SELECT * FROM public."${safeName}" LIMIT 10000`
         })
         if (error) throw error
         result = data
