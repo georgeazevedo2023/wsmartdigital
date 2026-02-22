@@ -79,6 +79,7 @@ import { toast } from 'sonner';
 import ManageInboxUsersDialog from '@/components/dashboard/ManageInboxUsersDialog';
 import ManageUserInstancesDialog from '@/components/dashboard/ManageUserInstancesDialog';
 import CreateInboxUserDialog from '@/components/dashboard/CreateInboxUserDialog';
+import BackupModule from '@/components/dashboard/BackupModule';
 import type { Database } from '@/integrations/supabase/types';
 
 type InboxRole = Database['public']['Enums']['inbox_role'];
@@ -599,6 +600,10 @@ const AdminPanel = () => {
             <span>Equipe</span>
             <Badge variant="outline" className="ml-1 text-xs h-5 px-1.5">{teamUsers.length}</Badge>
           </TabsTrigger>
+          <TabsTrigger value="backup" className="gap-2">
+            <Briefcase className="w-4 h-4" />
+            <span>Backup</span>
+          </TabsTrigger>
         </TabsList>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
@@ -992,6 +997,13 @@ const AdminPanel = () => {
               ))}
             </div>
           )}
+        </TabsContent>
+
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        {/* TAB: Backup                                                        */}
+        {/* ══════════════════════════════════════════════════════════════════ */}
+        <TabsContent value="backup" className="mt-6">
+          <BackupModule />
         </TabsContent>
       </Tabs>
 
