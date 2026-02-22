@@ -1,60 +1,50 @@
 
+# Corrigir: Erro 404 "Instance not found" ao enviar resposta do agente IA com inbox_id
 
-# Corrigir: Mensagens do Agente IA nao aparecem na caixa "Ibirajuba Teste"
+## Problema
 
-## Diagnostico
+O fluxo quando o payload contem `inbox_id` + `status_ia` + mensagem:
 
-O webhook retorna `status_ia_instance_not_found` porque:
+1. Bloco `status_ia` (linha 89-196): funciona corretamente, resolve o inbox via `inbox_id`, atualiza status, e **cai para o processamento de mensagem**
+2. Bloco `isRawMessage` (linha 200-211): reconstroi o payload com `instanceName: payload.owner` ("558181696546")
+3. Busca de instancia (linha 257-258): procura `owner_jid.eq.558181696546@s.whatsapp.net` -- **so com sufixo**
+4. No banco, o `owner_jid` esta salvo como `558181696546` (sem sufixo) --> **404 Instance not found**
 
-1. O payload do n8n envia `"owner": "558181696546"` 
-2. O codigo na linha 119 converte para `558181696546@s.whatsapp.net`
-3. No banco, o `owner_jid` da instancia esta salvo como `558181696546` (sem o sufixo)
-4. A comparacao falha e a instancia nao e encontrada
+Existem **dois problemas**:
+- A busca na linha 257-258 tem o mesmo bug do owner_jid (so busca com sufixo)
+- O `inbox_id` ja resolvido no bloco status_ia e descartado e nao e reaproveitado
 
-Este bug afeta TODAS as caixas de entrada onde o `owner_jid` nao tem o sufixo `@s.whatsapp.net`.
+## Solucao
 
-## Solucao (duas partes)
+### Arquivo: `supabase/functions/whatsapp-webhook/index.ts`
 
-### Parte 1: Corrigir o webhook (backend)
-
-**Arquivo:** `supabase/functions/whatsapp-webhook/index.ts`
-
-Na secao de busca por `owner` (linhas 117-121), adicionar busca com E sem o sufixo `@s.whatsapp.net`:
+**Mudanca 1 - Linha 257-258:** Corrigir busca de instancia para procurar owner_jid com E sem sufixo (mesmo padrao aplicado no bloco status_ia):
 
 ```
 // Antes (bugado):
-const ownerJidVal = ownerField.includes('@') ? ownerField : `${ownerField}@s.whatsapp.net`
-iaInstanceQuery = iaInstanceQuery.eq('owner_jid', ownerJidVal)
+const ownerJid = `${instanceName}@s.whatsapp.net`
+instanceQuery = instanceQuery.or(`id.eq.${instanceName},name.eq.${instanceName},owner_jid.eq.${ownerJid}`)
 
 // Depois (corrigido):
-const ownerClean = ownerField.replace('@s.whatsapp.net', '')
+const ownerClean = instanceName.replace('@s.whatsapp.net', '')
 const ownerWithSuffix = `${ownerClean}@s.whatsapp.net`
-iaInstanceQuery = iaInstanceQuery.or(`owner_jid.eq.${ownerClean},owner_jid.eq.${ownerWithSuffix}`)
+instanceQuery = instanceQuery.or(`id.eq.${instanceName},name.eq.${instanceName},owner_jid.eq.${ownerClean},owner_jid.eq.${ownerWithSuffix}`)
 ```
 
-Isso garante que a busca funciona independente de como o `owner_jid` esta salvo no banco.
+**Mudanca 2 - Propagar inbox_id resolvido:** Quando o bloco status_ia ja resolveu o inbox e a conversa, salvar essas informacoes para que o processamento de mensagem possa pular a busca de instancia/inbox. Adicionar uma variavel `resolvedFromStatusIa` antes do bloco status_ia e, no processamento de mensagem (apos linha 270), usar o inbox_id ja resolvido se disponivel.
 
-### Parte 2: Recomendacao para o n8n (opcional mas mais robusto)
+Concretamente:
+- Antes do bloco status_ia (linha 87): declarar `let resolvedInboxIdForMessage = ''` e `let resolvedConversationId = ''`
+- Dentro do bloco status_ia, antes do fall-through (linha 194): atribuir `resolvedInboxIdForMessage = resolvedInboxId` e `resolvedConversationId = iaConv.id`
+- No bloco de busca de instancia/inbox (linhas 242-280): se `resolvedInboxIdForMessage` ja tem valor, pular a busca e usar diretamente
 
-Para cada fluxo de agente IA no n8n, incluir `inbox_id` no payload. Isso elimina completamente a necessidade de buscar a instancia. Exemplo para Ibirajuba Teste:
-
-```
-"inbox_id": "f851e9c8-f7a5-40bc-be12-697993fc5dbd"
-```
-
-IDs das caixas de entrada disponiveis:
-
-| Caixa | inbox_id |
-|---|---|
-| Vendas 01 - Wsmart | d7f5a437-a147-48f2-9f79-b29c8a2567b3 |
-| Neo Blindados - Geral | 79575754-f7a2-4945-8d88-bfc7e1f20ed4 |
-| Ibirajuba | 74c8fa53-45a7-4237-83f6-4d2548e083ed |
-| Ibirajuba Teste | f851e9c8-f7a5-40bc-be12-697993fc5dbd |
+Tambem, no bloco isRawMessage (linhas 200-211), propagar o `inbox_id` original para o payload sintetizado.
 
 ## Resumo
 
-| Arquivo | Mudanca |
+| Local | Mudanca |
 |---|---|
-| `supabase/functions/whatsapp-webhook/index.ts` | Buscar owner_jid com e sem sufixo @s.whatsapp.net |
-
-A URL do webhook continua sendo uma so para todas as caixas. O que identifica a caixa e o conteudo do payload (owner, instance_id, ou inbox_id).
+| Linha 257-258 | Buscar owner_jid com e sem sufixo @s.whatsapp.net |
+| Linhas 87, 194 | Propagar inbox_id e conversation_id resolvidos do bloco status_ia |
+| Linhas 242-280 | Se inbox_id ja resolvido, pular busca de instancia |
+| Linhas 200-211 | Propagar inbox_id no payload sintetizado do isRawMessage |
