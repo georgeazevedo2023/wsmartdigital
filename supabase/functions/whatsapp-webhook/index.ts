@@ -116,8 +116,9 @@ Deno.serve(async (req) => {
         } else {
           const ownerField = payload.owner || unwrapped?.owner || ''
           if (ownerField) {
-            const ownerJidVal = ownerField.includes('@') ? ownerField : `${ownerField}@s.whatsapp.net`
-            iaInstanceQuery = iaInstanceQuery.eq('owner_jid', ownerJidVal)
+            const ownerClean = ownerField.replace('@s.whatsapp.net', '')
+            const ownerWithSuffix = `${ownerClean}@s.whatsapp.net`
+            iaInstanceQuery = iaInstanceQuery.or(`owner_jid.eq.${ownerClean},owner_jid.eq.${ownerWithSuffix}`)
           }
         }
         const { data: iaInstance } = await iaInstanceQuery.maybeSingle()
