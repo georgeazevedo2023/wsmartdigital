@@ -53,9 +53,9 @@ const EXPORT_SECTIONS: ExportSection[] = [
   },
   {
     id: 'data',
-    label: 'Dados das Tabelas',
+    label: 'Dados das Tabelas (filtrado)',
     icon: Table2,
-    description: 'Todos os registros de cada tabela (INSERT statements ou CSV)',
+    description: 'Apenas dados estruturais (usuários, roles, instâncias, config). Exclui conversas, mensagens, logs e mídias.',
     actions: ['list-tables', 'table-data'],
   },
   {
@@ -137,190 +137,283 @@ const BackupModule = () => {
     return `'${String(val).replace(/'/g, "''")}'`;
   };
 
+  // Tables excluded from data export (high volume / transient)
+  const EXCLUDED_DATA_TABLES = [
+    'conversations', 'conversation_messages', 'conversation_labels',
+    'contacts', 'broadcast_logs', 'instance_connection_logs',
+    'scheduled_message_logs', 'shift_report_logs',
+    'lead_database_entries', 'kanban_cards', 'kanban_card_data',
+  ];
+
   const generateSQL = useCallback(async () => {
     const lines: string[] = [];
-    const sections = EXPORT_SECTIONS.filter(s => selectedSections.has(s.id));
+    const hasSchema = selectedSections.has('schema');
+    const hasData = selectedSections.has('data');
+    const hasRls = selectedSections.has('rls');
+    const hasFunctions = selectedSections.has('functions');
+    const hasUsers = selectedSections.has('users');
+    const hasStorage = selectedSections.has('storage');
+
+    // Calculate total steps for progress
+    let totalSteps = 0;
+    if (hasSchema) totalSteps++;
+    if (hasFunctions) totalSteps++;
+    if (hasRls) totalSteps++;
+    if (hasStorage) totalSteps++;
+    if (hasData) totalSteps += 2;
+    if (hasUsers) totalSteps++;
     let stepsDone = 0;
-    const totalSteps = sections.reduce((acc, s) => acc + (s.id === 'data' ? 2 : 1), 0);
 
     lines.push('-- ═══════════════════════════════════════════════════════════');
     lines.push('-- WsmartQR Database Backup');
     lines.push(`-- Generated at: ${new Date().toISOString()}`);
+    lines.push('-- Import order: ENUMs → Functions → Tables → FKs → Indexes → RLS → Storage → Data → Triggers → Auth Users');
     lines.push('-- ═══════════════════════════════════════════════════════════');
     lines.push('');
 
-    for (const section of sections) {
-      if (section.id === 'schema') {
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando schema...' });
-        const [schema, pks, fks, indexes, enums] = await Promise.all([
-          callBackupApi('schema'),
-          callBackupApi('primary-keys'),
-          callBackupApi('foreign-keys'),
-          callBackupApi('indexes'),
-          callBackupApi('enums'),
-        ]);
+    // ── Fetch all needed data in parallel ──
+    const schemaPromise = hasSchema ? Promise.all([
+      callBackupApi('schema'),
+      callBackupApi('primary-keys'),
+      callBackupApi('foreign-keys'),
+      callBackupApi('indexes'),
+      callBackupApi('enums'),
+    ]) : Promise.resolve(null);
 
-        // Enums first
-        if (enums?.length) {
-          lines.push('-- ── ENUMS ──────────────────────────────────────────────────');
-          for (const e of enums) {
-            const vals = (e.values as string).split(', ').map((v: string) => `'${v}'`).join(', ');
-            lines.push(`CREATE TYPE public.${e.enum_name} AS ENUM (${vals});`);
-          }
-          lines.push('');
-        }
+    const functionsPromise = hasFunctions ? Promise.all([
+      callBackupApi('db-functions'),
+      callBackupApi('triggers'),
+    ]) : Promise.resolve(null);
 
-        // Tables
-        if (schema?.length) {
-          lines.push('-- ── TABLES ─────────────────────────────────────────────────');
-          const pkMap = new Map((pks || []).map((p: any) => [p.table_name, p.pk_columns]));
-          for (const t of schema) {
-            let def = `CREATE TABLE IF NOT EXISTS public.${t.table_name} (\n${t.columns_def}`;
-            const pk = pkMap.get(t.table_name);
-            if (pk) def += `,\n  PRIMARY KEY (${pk})`;
-            def += '\n);';
-            lines.push(def);
-            lines.push('');
-          }
-        }
+    const rlsPromise = hasRls ? Promise.all([
+      callBackupApi('rls-policies'),
+      callBackupApi('rls-status'),
+    ]) : Promise.resolve(null);
 
-        // Foreign keys
-        if (fks?.length) {
-          lines.push('-- ── FOREIGN KEYS ──────────────────────────────────────────');
-          for (const fk of fks) {
-            lines.push(`ALTER TABLE public.${fk.table_name} ADD CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.column_name}) REFERENCES public.${fk.foreign_table_name}(${fk.foreign_column_name});`);
-          }
-          lines.push('');
-        }
+    const storagePromise = hasStorage ? Promise.all([
+      callBackupApi('storage-buckets'),
+      callBackupApi('storage-policies'),
+    ]) : Promise.resolve(null);
 
-        // Indexes
-        if (indexes?.length) {
-          lines.push('-- ── INDEXES ────────────────────────────────────────────────');
-          for (const idx of indexes) {
-            lines.push(`${idx.indexdef};`);
-          }
-          lines.push('');
-        }
-      }
+    const usersPromise = hasUsers ? callBackupApi('users-list') : Promise.resolve(null);
 
-      if (section.id === 'rls') {
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando RLS...' });
-        const [policies, status] = await Promise.all([
-          callBackupApi('rls-policies'),
-          callBackupApi('rls-status'),
-        ]);
+    setProgress({ current: 0, total: totalSteps, label: 'Buscando dados...' });
 
-        lines.push('-- ── RLS ENABLE ─────────────────────────────────────────────');
-        for (const s of (status || [])) {
-          if (s.rls_enabled) {
-            lines.push(`ALTER TABLE public.${s.table_name} ENABLE ROW LEVEL SECURITY;`);
-          }
+    const [schemaResult, functionsResult, rlsResult, storageResult, usersResult] = await Promise.all([
+      schemaPromise, functionsPromise, rlsPromise, storagePromise, usersPromise,
+    ]);
+
+    // ── 1. ENUMs ──
+    if (schemaResult) {
+      setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando schema...' });
+      const [schema, pks, fks, indexes, enums] = schemaResult;
+
+      if (enums?.length) {
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- 1. ENUMS (Custom Types)');
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        for (const e of enums) {
+          const vals = (e.values as string).split(', ').map((v: string) => `'${v}'`).join(', ');
+          lines.push(`DO $$ BEGIN CREATE TYPE public.${e.enum_name} AS ENUM (${vals}); EXCEPTION WHEN duplicate_object THEN NULL; END $$;`);
         }
         lines.push('');
-
-        if (policies?.length) {
-          lines.push('-- ── RLS POLICIES ──────────────────────────────────────────');
-          for (const p of policies) {
-            const perm = p.permissive === 'PERMISSIVE' ? 'PERMISSIVE' : 'RESTRICTIVE';
-            let stmt = `CREATE POLICY "${p.policyname}" ON public.${p.tablename} AS ${perm} FOR ${p.cmd} TO ${p.roles}`;
-            if (p.qual) stmt += ` USING (${p.qual})`;
-            if (p.with_check) stmt += ` WITH CHECK (${p.with_check})`;
-            stmt += ';';
-            lines.push(stmt);
-          }
-          lines.push('');
-        }
       }
 
-      if (section.id === 'functions') {
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando funções...' });
-        const [funcs, triggers] = await Promise.all([
-          callBackupApi('db-functions'),
-          callBackupApi('triggers'),
-        ]);
+      // ── 2. Functions (BEFORE RLS policies that reference them) ──
+      if (functionsResult) {
+        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando funções...' });
+        const [funcs, _triggers] = functionsResult;
 
         if (funcs?.length) {
-          lines.push('-- ── DATABASE FUNCTIONS ─────────────────────────────────────');
+          lines.push('-- ══════════════════════════════════════════════════════════');
+          lines.push('-- 2. DATABASE FUNCTIONS (must exist before RLS policies)');
+          lines.push('-- ══════════════════════════════════════════════════════════');
           for (const f of funcs) {
             lines.push(f.definition + ';');
             lines.push('');
           }
         }
+      }
 
-        if (triggers?.length) {
-          lines.push('-- ── TRIGGERS ──────────────────────────────────────────────');
-          for (const t of triggers) {
-            lines.push(`CREATE TRIGGER ${t.trigger_name} ${t.action_timing} ${t.event_manipulation} ON public.${t.event_object_table} ${t.action_statement};`);
-          }
+      // ── 3. Tables (DDL) ──
+      if (schema?.length) {
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- 3. TABLES (CREATE TABLE)');
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        const pkMap = new Map((pks || []).map((p: any) => [p.table_name, p.pk_columns]));
+        for (const t of schema) {
+          let def = `CREATE TABLE IF NOT EXISTS public.${t.table_name} (\n${t.columns_def}`;
+          const pk = pkMap.get(t.table_name);
+          if (pk) def += `,\n  PRIMARY KEY (${pk})`;
+          def += '\n);';
+          lines.push(def);
           lines.push('');
         }
       }
 
-      if (section.id === 'data') {
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Listando tabelas...' });
-        const tables = await callBackupApi('list-tables');
+      // ── 4. Foreign Keys ──
+      if (fks?.length) {
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- 4. FOREIGN KEYS');
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        for (const fk of fks) {
+          lines.push(`ALTER TABLE public.${fk.table_name} ADD CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.column_name}) REFERENCES public.${fk.foreign_table_name}(${fk.foreign_column_name});`);
+        }
+        lines.push('');
+      }
 
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando dados...' });
-        lines.push('-- ── TABLE DATA ────────────────────────────────────────────');
-        for (const table of (tables || [])) {
-          try {
-            const rows = await callBackupApi('table-data', table.table_name);
-            if (rows?.length) {
-              lines.push(`-- Table: ${table.table_name} (${rows.length} rows)`);
-              const cols = Object.keys(rows[0]);
-              for (const row of rows) {
-                const vals = cols.map(c => escapeSQL(row[c])).join(', ');
-                lines.push(`INSERT INTO public.${table.table_name} (${cols.join(', ')}) VALUES (${vals});`);
-              }
-              lines.push('');
+      // ── 5. Indexes ──
+      if (indexes?.length) {
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- 5. INDEXES');
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        for (const idx of indexes) {
+          lines.push(`${idx.indexdef};`);
+        }
+        lines.push('');
+      }
+    } else if (functionsResult) {
+      // Functions selected but schema not selected
+      setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando funções...' });
+      const [funcs, _triggers] = functionsResult;
+
+      if (funcs?.length) {
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- 2. DATABASE FUNCTIONS');
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        for (const f of funcs) {
+          lines.push(f.definition + ';');
+          lines.push('');
+        }
+      }
+    }
+
+    // ── 6. RLS Enable + Policies ──
+    if (rlsResult) {
+      setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando RLS...' });
+      const [policies, status] = rlsResult;
+
+      lines.push('-- ══════════════════════════════════════════════════════════');
+      lines.push('-- 6. ROW LEVEL SECURITY');
+      lines.push('-- ══════════════════════════════════════════════════════════');
+
+      // Enable RLS first
+      for (const s of (status || [])) {
+        if (s.rls_enabled) {
+          lines.push(`ALTER TABLE public.${s.table_name} ENABLE ROW LEVEL SECURITY;`);
+        }
+      }
+      lines.push('');
+
+      // Then policies
+      if (policies?.length) {
+        lines.push('-- RLS POLICIES');
+        for (const p of policies) {
+          const perm = p.permissive === 'PERMISSIVE' ? 'PERMISSIVE' : 'RESTRICTIVE';
+          let stmt = `CREATE POLICY "${p.policyname}" ON public.${p.tablename} AS ${perm} FOR ${p.cmd} TO ${p.roles}`;
+          if (p.qual) stmt += ` USING (${p.qual})`;
+          if (p.with_check) stmt += ` WITH CHECK (${p.with_check})`;
+          stmt += ';';
+          lines.push(stmt);
+        }
+        lines.push('');
+      }
+    }
+
+    // ── 7. Storage ──
+    if (storageResult) {
+      setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando storage...' });
+      const [buckets, policies] = storageResult;
+
+      if (buckets?.length) {
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- 7. STORAGE BUCKETS');
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        for (const b of buckets) {
+          lines.push(`INSERT INTO storage.buckets (id, name, public) VALUES ('${b.id}', '${b.name}', ${b.public}) ON CONFLICT (id) DO NOTHING;`);
+        }
+        lines.push('');
+      }
+
+      if (policies?.length) {
+        lines.push('-- STORAGE POLICIES');
+        for (const p of policies) {
+          const perm = p.permissive === 'PERMISSIVE' ? 'PERMISSIVE' : 'RESTRICTIVE';
+          let stmt = `CREATE POLICY "${p.policyname}" ON storage.${p.tablename} AS ${perm} FOR ${p.cmd} TO ${p.roles}`;
+          if (p.qual) stmt += ` USING (${p.qual})`;
+          if (p.with_check) stmt += ` WITH CHECK (${p.with_check})`;
+          stmt += ';';
+          lines.push(stmt);
+        }
+        lines.push('');
+      }
+    }
+
+    // ── 8. Data (filtered) ──
+    if (hasData) {
+      setProgress({ current: ++stepsDone, total: totalSteps, label: 'Listando tabelas...' });
+      const tables = await callBackupApi('list-tables');
+
+      setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando dados...' });
+      lines.push('-- ══════════════════════════════════════════════════════════');
+      lines.push('-- 8. TABLE DATA (filtered - structural data only)');
+      lines.push('-- Excluded: conversations, messages, contacts, logs, etc.');
+      lines.push('-- ══════════════════════════════════════════════════════════');
+
+      const filteredTables = (tables || []).filter(
+        (t: any) => !EXCLUDED_DATA_TABLES.includes(t.table_name)
+      );
+
+      for (const table of filteredTables) {
+        try {
+          const rows = await callBackupApi('table-data', table.table_name);
+          if (rows?.length) {
+            lines.push(`-- Table: ${table.table_name} (${rows.length} rows)`);
+            const cols = Object.keys(rows[0]);
+            for (const row of rows) {
+              const vals = cols.map(c => escapeSQL(row[c])).join(', ');
+              lines.push(`INSERT INTO public.${table.table_name} (${cols.join(', ')}) VALUES (${vals});`);
             }
-          } catch (e) {
-            lines.push(`-- Error exporting ${table.table_name}: ${(e as Error).message}`);
+            lines.push('');
           }
+        } catch (e) {
+          lines.push(`-- Error exporting ${table.table_name}: ${(e as Error).message}`);
         }
       }
 
-      if (section.id === 'users') {
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando usuários...' });
-        const users = await callBackupApi('users-list');
-        if (users?.length) {
-          lines.push('-- ── AUTH USERS ─────────────────────────────────────────────');
-          lines.push('-- Note: These are read-only exports. User passwords cannot be exported.');
-          for (const u of users) {
-            lines.push(`-- User: ${u.email} | ID: ${u.id} | Created: ${u.created_at} | Last Sign In: ${u.last_sign_in_at || 'never'}`);
-          }
-          lines.push('');
+      if (EXCLUDED_DATA_TABLES.length) {
+        lines.push('-- ── EXCLUDED TABLES (high volume) ──');
+        for (const t of EXCLUDED_DATA_TABLES) {
+          lines.push(`-- Skipped: ${t}`);
         }
+        lines.push('');
       }
+    }
 
-      if (section.id === 'storage') {
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando storage...' });
-        const [buckets, policies] = await Promise.all([
-          callBackupApi('storage-buckets'),
-          callBackupApi('storage-policies'),
-        ]);
-
-        if (buckets?.length) {
-          lines.push('-- ── STORAGE BUCKETS ────────────────────────────────────────');
-          for (const b of buckets) {
-            lines.push(`INSERT INTO storage.buckets (id, name, public) VALUES ('${b.id}', '${b.name}', ${b.public}) ON CONFLICT (id) DO NOTHING;`);
-          }
-          lines.push('');
+    // ── 9. Triggers (at the end, after functions and tables) ──
+    if (functionsResult) {
+      const [_funcs, triggers] = functionsResult;
+      if (triggers?.length) {
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- 9. TRIGGERS');
+        lines.push('-- ══════════════════════════════════════════════════════════');
+        for (const t of triggers) {
+          lines.push(`CREATE TRIGGER ${t.trigger_name} ${t.action_timing} ${t.event_manipulation} ON public.${t.event_object_table} ${t.action_statement};`);
         }
-
-        if (policies?.length) {
-          lines.push('-- ── STORAGE POLICIES ──────────────────────────────────────');
-          for (const p of policies) {
-            const perm = p.permissive === 'PERMISSIVE' ? 'PERMISSIVE' : 'RESTRICTIVE';
-            let stmt = `CREATE POLICY "${p.policyname}" ON storage.${p.tablename} AS ${perm} FOR ${p.cmd} TO ${p.roles}`;
-            if (p.qual) stmt += ` USING (${p.qual})`;
-            if (p.with_check) stmt += ` WITH CHECK (${p.with_check})`;
-            stmt += ';';
-            lines.push(stmt);
-          }
-          lines.push('');
-        }
+        lines.push('');
       }
+    }
+
+    // ── 10. Auth Users (metadata only) ──
+    if (usersResult?.length) {
+      lines.push('-- ══════════════════════════════════════════════════════════');
+      lines.push('-- 10. AUTH USERS (read-only metadata)');
+      lines.push('-- Passwords cannot be exported.');
+      lines.push('-- ══════════════════════════════════════════════════════════');
+      for (const u of usersResult) {
+        lines.push(`-- User: ${u.email} | ID: ${u.id} | Created: ${u.created_at} | Last Sign In: ${u.last_sign_in_at || 'never'}`);
+      }
+      lines.push('');
     }
 
     return lines.join('\n');
