@@ -265,6 +265,7 @@ const BackupModule = () => {
       if (fks?.length) {
         lines.push('-- FOREIGN KEYS');
         for (const fk of fks) {
+          lines.push(`ALTER TABLE public.${fk.table_name} DROP CONSTRAINT IF EXISTS ${fk.constraint_name};`);
           lines.push(`ALTER TABLE public.${fk.table_name} ADD CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.column_name}) REFERENCES public.${fk.foreign_table_name}(${fk.foreign_column_name});`);
         }
         lines.push('');
@@ -273,7 +274,10 @@ const BackupModule = () => {
       if (indexes?.length) {
         lines.push('-- INDEXES');
         for (const idx of indexes) {
-          lines.push(`${idx.indexdef};`);
+          const idxDef = (idx.indexdef as string)
+            .replace(/^CREATE INDEX /i, 'CREATE INDEX IF NOT EXISTS ')
+            .replace(/^CREATE UNIQUE INDEX /i, 'CREATE UNIQUE INDEX IF NOT EXISTS ');
+          lines.push(`${idxDef};`);
         }
         lines.push('');
       }
@@ -320,6 +324,7 @@ const BackupModule = () => {
       if (policies?.length) {
         lines.push('-- RLS POLICIES');
         for (const p of policies) {
+          lines.push(`DROP POLICY IF EXISTS "${p.policyname}" ON public.${p.tablename};`);
           const perm = p.permissive === 'PERMISSIVE' ? 'PERMISSIVE' : 'RESTRICTIVE';
           let stmt = `CREATE POLICY "${p.policyname}" ON public.${p.tablename} AS ${perm} FOR ${p.cmd} TO ${p.roles}`;
           if (p.qual) stmt += ` USING (${p.qual})`;
@@ -352,6 +357,7 @@ const BackupModule = () => {
       if (policies?.length) {
         lines.push('-- STORAGE POLICIES');
         for (const p of policies) {
+          lines.push(`DROP POLICY IF EXISTS "${p.policyname}" ON storage.${p.tablename};`);
           const perm = p.permissive === 'PERMISSIVE' ? 'PERMISSIVE' : 'RESTRICTIVE';
           let stmt = `CREATE POLICY "${p.policyname}" ON storage.${p.tablename} AS ${perm} FOR ${p.cmd} TO ${p.roles}`;
           if (p.qual) stmt += ` USING (${p.qual})`;
@@ -419,6 +425,7 @@ const BackupModule = () => {
         tLines.push('-- TRIGGERS');
         tLines.push('-- ══════════════════════════════════════════════════════════');
         for (const t of triggers) {
+          tLines.push(`DROP TRIGGER IF EXISTS ${t.trigger_name} ON public.${t.event_object_table};`);
           tLines.push(`CREATE TRIGGER ${t.trigger_name} ${t.action_timing} ${t.event_manipulation} ON public.${t.event_object_table} ${t.action_statement};`);
         }
         tLines.push('');
