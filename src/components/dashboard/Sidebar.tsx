@@ -143,7 +143,7 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
     if (user) {
       fetchInstances();
     }
-  }, [user]);
+  }, [user, isSuperAdmin]);
 
   // Listen for instance updates (e.g., after sync/delete orphans)
   useEffect(() => {
