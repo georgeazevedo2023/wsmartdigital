@@ -588,19 +588,188 @@ const BackupModule = () => {
         })}
       </div>
 
+      {/* Edge Functions */}
+      <div className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-3">
+        <h4 className="text-sm font-medium flex items-center gap-2">
+          <Zap className="w-4 h-4 text-primary" />
+          Edge Functions (no repositório)
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          As Edge Functions não ficam no banco de dados — estão na pasta <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/functions/</code> do repositório.
+          Para migrar, copie essa pasta para o novo projeto.
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+          {[
+            { name: 'uazapi-proxy', desc: 'Proxy para API UAZAPI (WhatsApp)' },
+            { name: 'whatsapp-webhook', desc: 'Recebe webhooks do WhatsApp' },
+            { name: 'admin-create-user', desc: 'Criação de usuários (admin)' },
+            { name: 'admin-delete-user', desc: 'Exclusão de usuários (admin)' },
+            { name: 'sync-conversations', desc: 'Sincroniza conversas do helpdesk' },
+            { name: 'transcribe-audio', desc: 'Transcrição de áudio (Groq)' },
+            { name: 'summarize-conversation', desc: 'Resumo de conversa com IA' },
+            { name: 'auto-summarize', desc: 'Auto-resumo ao resolver conversa' },
+            { name: 'analyze-summaries', desc: 'Análise inteligente de resumos' },
+            { name: 'send-shift-report', desc: 'Relatório de turno automático' },
+            { name: 'process-scheduled-messages', desc: 'Processa mensagens agendadas' },
+            { name: 'fire-outgoing-webhook', desc: 'Dispara webhooks de saída' },
+            { name: 'activate-ia', desc: 'Ativa/desativa IA na conversa' },
+            { name: 'cleanup-old-media', desc: 'Limpeza de mídias antigas' },
+            { name: 'database-backup', desc: 'Este módulo de backup' },
+          ].map(fn => (
+            <div key={fn.name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/50 border border-border/30">
+              <Code className="w-3.5 h-3.5 text-primary shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-medium truncate">{fn.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{fn.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Secrets necessários */}
+      <div className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-3">
+        <h4 className="text-sm font-medium flex items-center gap-2">
+          <Key className="w-4 h-4 text-primary" />
+          Secrets Necessários para Migração
+        </h4>
+        <p className="text-xs text-muted-foreground">
+          Configure estes secrets no novo projeto Supabase (Dashboard → Settings → Edge Functions → Secrets):
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {[
+            { name: 'UAZAPI_SERVER_URL', desc: 'URL do servidor UAZAPI' },
+            { name: 'UAZAPI_ADMIN_TOKEN', desc: 'Token admin da UAZAPI' },
+            { name: 'GROQ_API_KEY', desc: 'API key do Groq (transcrição/IA)' },
+            { name: 'LOVABLE_API_KEY', desc: 'API key do Lovable AI Gateway' },
+            { name: 'SUPABASE_URL', desc: 'URL do novo projeto Supabase (auto)' },
+            { name: 'SUPABASE_ANON_KEY', desc: 'Anon key do novo projeto (auto)' },
+            { name: 'SUPABASE_SERVICE_ROLE_KEY', desc: 'Service role key (auto)' },
+          ].map(s => (
+            <div key={s.name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/50 border border-border/30">
+              <Key className="w-3 h-3 text-primary shrink-0" />
+              <div className="min-w-0">
+                <p className="text-xs font-mono font-medium truncate">{s.name}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{s.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Guia de Migração */}
+      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
+        <h4 className="text-sm font-medium flex items-center gap-2">
+          <ListChecks className="w-4 h-4 text-primary" />
+          Guia Completo de Migração para Supabase
+        </h4>
+        <div className="text-xs text-muted-foreground space-y-4">
+          <div>
+            <p className="font-semibold text-foreground mb-1">1. Criar novo projeto Supabase</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Acesse <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase.com/dashboard</code> e crie um novo projeto</li>
+              <li>Anote a URL, anon key e service role key do novo projeto</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">2. Exportar e executar Schema (SQL)</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Use este módulo para exportar em formato <strong>SQL</strong> com "Estrutura do Banco" selecionado</li>
+              <li>No novo projeto, vá em <strong>SQL Editor</strong> e execute o arquivo .sql gerado</li>
+              <li>⚠️ Execute na ordem: ENUMs → CREATE TABLE → FKs → Índices → RLS</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">3. Importar Dados</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Exporte com "Dados das Tabelas" selecionado (formato SQL com INSERTs)</li>
+              <li>Execute os INSERTs no SQL Editor do novo projeto</li>
+              <li>⚠️ Respeite a ordem de FKs: tabelas sem dependências primeiro</li>
+              <li>Ordem sugerida: <code className="px-1 py-0.5 rounded bg-muted text-foreground">contacts → instances → user_profiles → user_roles → user_instance_access → inboxes → inbox_users → conversations → conversation_messages → ...</code></li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">4. Configurar RLS Policies</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Exporte com "RLS Policies" selecionado</li>
+              <li>Execute as policies no SQL Editor</li>
+              <li>Verifique que todas as tabelas têm RLS habilitado</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">5. Funções e Triggers</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Exporte com "Funções e Triggers" selecionado</li>
+              <li>Execute no SQL Editor — funções devem ser criadas ANTES dos triggers</li>
+              <li>Inclui: <code className="px-1 py-0.5 rounded bg-muted text-foreground">is_super_admin</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">has_inbox_access</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">handle_new_user</code>, etc.</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">6. Storage Buckets</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Exporte com "Storage" selecionado</li>
+              <li>Execute os INSERTs para criar os buckets e policies</li>
+              <li>⚠️ Arquivos dentro dos buckets NÃO são migrados automaticamente</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">7. Edge Functions</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Copie a pasta <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/functions/</code> para o novo projeto</li>
+              <li>Copie <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/config.toml</code> (atualize o project_id)</li>
+              <li>Execute: <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase functions deploy --project-ref NOVO_PROJECT_ID</code></li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">8. Secrets</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Configure cada secret listado acima no novo projeto</li>
+              <li>Via CLI: <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase secrets set NOME=valor --project-ref NOVO_ID</code></li>
+              <li>SUPABASE_URL, SUPABASE_ANON_KEY e SUPABASE_SERVICE_ROLE_KEY são configurados automaticamente</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">9. Usuários (Auth)</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Senhas NÃO podem ser migradas — usuários precisarão redefinir a senha</li>
+              <li>Alternativa: recrie os usuários via <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase auth admin create-user</code></li>
+              <li>Os dados de <code className="px-1 py-0.5 rounded bg-muted text-foreground">user_profiles</code> e <code className="px-1 py-0.5 rounded bg-muted text-foreground">user_roles</code> são migrados com os dados das tabelas</li>
+            </ul>
+          </div>
+
+          <div>
+            <p className="font-semibold text-foreground mb-1">10. Frontend (.env)</p>
+            <ul className="ml-4 list-disc space-y-0.5">
+              <li>Atualize o <code className="px-1 py-0.5 rounded bg-muted text-foreground">.env</code> com as novas credenciais:</li>
+              <li><code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_URL</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_PUBLISHABLE_KEY</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_PROJECT_ID</code></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
       {/* Info */}
       <div className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-2">
         <h4 className="text-sm font-medium flex items-center gap-2">
-          <ListChecks className="w-4 h-4 text-muted-foreground" />
-          Informações sobre o Backup
+          <AlertCircle className="w-4 h-4 text-muted-foreground" />
+          Observações Importantes
         </h4>
         <ul className="text-xs text-muted-foreground space-y-1 ml-6 list-disc">
           <li><strong>SQL</strong>: Gera um único arquivo .sql executável no SQL Editor para recriar toda a estrutura e dados</li>
           <li><strong>CSV</strong>: Gera múltiplos arquivos .csv (um por tabela/seção) para análise em planilhas</li>
           <li><strong>Senhas</strong>: Senhas de usuários NÃO são exportáveis por segurança</li>
-          <li><strong>Secrets</strong>: Valores de secrets são criptografados e não podem ser exportados</li>
-          <li><strong>Edge Functions</strong>: O código das funções de borda está no repositório do projeto</li>
-          <li><strong>Limite</strong>: Máximo de 10.000 registros por tabela</li>
+          <li><strong>Secrets</strong>: Valores de secrets são criptografados e não podem ser exportados — você precisa reconfigurá-los manualmente</li>
+          <li><strong>Realtime</strong>: Se usar Realtime, reconfigure as publicações: <code className="px-1 py-0.5 rounded bg-muted text-foreground">ALTER PUBLICATION supabase_realtime ADD TABLE nome_tabela;</code></li>
+          <li><strong>Webhooks</strong>: Atualize URLs de webhooks externos (n8n, etc.) para apontar para o novo projeto</li>
+          <li><strong>CRON Jobs</strong>: Reconfigure cron jobs (pg_cron) se existirem</li>
+          <li><strong>Limite</strong>: Máximo de 10.000 registros por tabela no export</li>
         </ul>
       </div>
     </div>
