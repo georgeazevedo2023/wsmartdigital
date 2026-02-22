@@ -84,6 +84,10 @@ Deno.serve(async (req) => {
     let payload = (inner?.EventType || inner?.eventType) ? inner : unwrapped
     console.log('Webhook unwrapped EventType:', payload.EventType || payload.eventType || 'none')
 
+    // Variables to propagate resolved inbox/conversation from status_ia block
+    let resolvedInboxIdForMessage = ''
+    let resolvedConversationId = ''
+
     // 1. Check status_ia FIRST (before isRawMessage) — status_ia payloads must never be treated as messages
     const statusIaPayload = payload.status_ia || unwrapped?.status_ia || inner?.status_ia
     if (!payload.EventType && !payload.eventType && statusIaPayload) {
@@ -192,7 +196,10 @@ Deno.serve(async (req) => {
       }
 
       // Has message content alongside status_ia - fall through to isRawMessage processing
-      console.log('status_ia updated, continuing to process message content:', hasMessageContent.substring(0, 80))
+      // Propagate resolved inbox_id and conversation_id so message processing can skip instance lookup
+      resolvedInboxIdForMessage = resolvedInboxId
+      resolvedConversationId = iaConv.id
+      console.log('status_ia updated, continuing to process message content:', hasMessageContent.substring(0, 80), 'resolvedInboxId:', resolvedInboxIdForMessage)
     }
 
     // 2. Detect raw UAZAPI message format (e.g. from n8n agent output)
@@ -202,11 +209,13 @@ Deno.serve(async (req) => {
       if (payload.fromMe === undefined && payload.content?.text) {
         payload.fromMe = true
       }
+      const rawPayloadRef = payload
       payload = {
         EventType: 'messages',
         instanceName: payload.owner || '',
-        message: payload,
+        message: rawPayloadRef,
         chat: null,
+        inbox_id: rawPayloadRef.inbox_id || '',
       }
     }
 
@@ -241,44 +250,71 @@ Deno.serve(async (req) => {
 
     // Extract instance name
     const instanceName = payload.instanceName || payload.instance || ''
-    if (!instanceName) {
-      console.error('No instance identifier in payload')
-      return new Response(JSON.stringify({ error: 'No instance identifier' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
 
-    // Find instance by name, id, or owner_jid (for raw agent payloads where instanceName = owner phone)
-    let instanceQuery = supabase
-      .from('instances')
-      .select('id, name, token')
-    
-    const ownerJid = `${instanceName}@s.whatsapp.net`
-    instanceQuery = instanceQuery.or(`id.eq.${instanceName},name.eq.${instanceName},owner_jid.eq.${ownerJid}`)
-    
-    const { data: instance } = await instanceQuery.maybeSingle()
+    // If inbox_id was already resolved from status_ia block, skip instance/inbox lookup
+    let instance: { id: string; name: string; token: string } | null = null
+    let inbox: { id: string } | null = null
 
-    if (!instance) {
-      console.error('Instance not found:', instanceName, 'ownerJid:', ownerJid)
-      return new Response(JSON.stringify({ error: 'Instance not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    // Check for inbox_id from payload (propagated from isRawMessage) or from status_ia resolution
+    const payloadInboxId = payload.inbox_id || resolvedInboxIdForMessage
 
-    // Find inbox for this instance
-    const { data: inbox } = await supabase
-      .from('inboxes')
-      .select('id')
-      .eq('instance_id', instance.id)
-      .maybeSingle()
+    if (payloadInboxId) {
+      console.log('Using pre-resolved inbox_id:', payloadInboxId)
+      inbox = { id: payloadInboxId }
 
-    if (!inbox) {
-      console.log('No inbox configured for instance:', instance.id)
-      return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'no_inbox' }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      // Still need instance for token (media download etc)
+      const { data: inboxData } = await supabase.from('inboxes').select('id, instance_id').eq('id', payloadInboxId).maybeSingle()
+      if (inboxData) {
+        const { data: inst } = await supabase.from('instances').select('id, name, token').eq('id', inboxData.instance_id).maybeSingle()
+        instance = inst
+      }
+      if (!instance) {
+        console.log('Could not find instance for pre-resolved inbox, proceeding with null token')
+        instance = { id: '', name: '', token: '' }
+      }
+    } else {
+      if (!instanceName) {
+        console.error('No instance identifier in payload')
+        return new Response(JSON.stringify({ error: 'No instance identifier' }), {
+          status: 400,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
+      // Find instance by name, id, or owner_jid (with AND without suffix)
+      let instanceQuery = supabase
+        .from('instances')
+        .select('id, name, token')
+      
+      const ownerClean = instanceName.replace('@s.whatsapp.net', '')
+      const ownerWithSuffix = `${ownerClean}@s.whatsapp.net`
+      instanceQuery = instanceQuery.or(`id.eq.${instanceName},name.eq.${instanceName},owner_jid.eq.${ownerClean},owner_jid.eq.${ownerWithSuffix}`)
+      
+      const { data: foundInstance } = await instanceQuery.maybeSingle()
+
+      if (!foundInstance) {
+        console.error('Instance not found:', instanceName, 'ownerClean:', ownerClean, 'ownerWithSuffix:', ownerWithSuffix)
+        return new Response(JSON.stringify({ error: 'Instance not found' }), {
+          status: 404,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      instance = foundInstance
+
+      // Find inbox for this instance
+      const { data: foundInbox } = await supabase
+        .from('inboxes')
+        .select('id')
+        .eq('instance_id', instance.id)
+        .maybeSingle()
+
+      if (!foundInbox) {
+        console.log('No inbox configured for instance:', instance.id)
+        return new Response(JSON.stringify({ ok: true, skipped: true, reason: 'no_inbox' }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+      inbox = foundInbox
     }
 
     // Extract message fields from UAZAPI format
@@ -459,15 +495,22 @@ Deno.serve(async (req) => {
       ? new Date(Number(message.messageTimestamp)).toISOString()
       : new Date().toISOString()
 
-    // Find or create conversation
-    let { data: conversation } = await supabase
-      .from('conversations')
-      .select('id')
-      .eq('inbox_id', inbox.id)
-      .eq('contact_id', contact.id)
-      .in('status', ['aberta', 'pendente'])
-      .order('created_at', { ascending: false })
-      .maybeSingle()
+    // Find or create conversation (use pre-resolved if available from status_ia)
+    let conversation: { id: string } | null = resolvedConversationId
+      ? { id: resolvedConversationId }
+      : null
+
+    if (!conversation) {
+      const { data: foundConv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('inbox_id', inbox.id)
+        .eq('contact_id', contact.id)
+        .in('status', ['aberta', 'pendente'])
+        .order('created_at', { ascending: false })
+        .maybeSingle()
+      conversation = foundConv
+    }
 
     if (!conversation) {
       const { data: newConv } = await supabase
