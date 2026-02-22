@@ -649,6 +649,19 @@ const AdminPanel = () => {
                   </AccordionTrigger>
 
                   <AccordionContent className="px-4 pb-4 space-y-4">
+                    {/* Inbox ID */}
+                    <div className="space-y-1.5">
+                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                        <Settings className="w-3 h-3" /> Inbox ID (para n8n)
+                      </p>
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/30">
+                        <code className="text-xs text-muted-foreground truncate flex-1 font-mono">{inbox.id}</code>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { navigator.clipboard.writeText(inbox.id); toast.success('Inbox ID copiado!'); }}>
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+
                     {/* Webhook URL */}
                     <div className="space-y-1.5">
                       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
