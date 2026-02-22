@@ -1,103 +1,100 @@
 
 
-## Corrigir Ordem de Importacao SQL e Filtrar Dados Relevantes
+## Redesign do Modulo de Backup - Pagina Didatica de Migracao
 
-### Problemas Identificados
+### Mudancas Principais
 
-1. **Ordem de importacao incorreta**: O SQL gerado coloca RLS policies e funcoes em blocos separados, mas o Supabase precisa que funcoes (como `is_super_admin`, `has_inbox_access`) sejam criadas ANTES das RLS policies que as referenciam. Atualmente a ordem depende de quais secoes o usuario seleciona e em que ordem sao processadas.
+#### 1. Reordenar secoes na ordem de migracao sugerida
+As secoes de export serao reordenadas para refletir a ordem correta de execucao no Supabase, com numeracao visivel (Passo 1, Passo 2, etc.) e tamanho estimado em KB de cada modulo apos a exportacao.
 
-2. **Dados desnecessarios**: A exportacao inclui TODAS as tabelas, gerando arquivos enormes com conversas, mensagens, midias base64, etc. O objetivo e exportar apenas dados estruturais relevantes.
+Nova ordem das secoes:
+1. Estrutura do Banco (Schema) - ENUMs + CREATE TABLE + FKs + Indexes
+2. Funcoes e Triggers - Funcoes PL/pgSQL (devem existir antes das RLS)
+3. RLS Policies - Enable RLS + Policies
+4. Storage (Buckets & Policies)
+5. Dados das Tabelas (filtrado)
+6. Usuarios (Auth)
+
+#### 2. Exibir tamanho em KB de cada modulo
+Apos a exportacao, calcular o tamanho em KB do bloco SQL gerado para cada secao e exibir ao lado do nome (ex: "Estrutura do Banco - 12.3 KB"). Isso sera feito apos gerar o SQL, mostrando um resumo com os tamanhos.
+
+#### 3. Incluir dados limitados de tabelas excluidas
+- `conversation_messages`: incluir apenas 5 mensagens ligadas a 5 conversas distintas (para manter a estrutura de referencia)
+- `lead_database_entries`: incluir apenas 30 registros
+
+Essas tabelas serao removidas da lista `EXCLUDED_DATA_TABLES` e terao tratamento especial com `LIMIT` customizado na logica de exportacao.
+
+#### 4. Pagina de migracao mais didatica
+Reformular o guia de migracao para ser mais visual e passo a passo, com:
+- Cards numerados com icones
+- Cada passo com descricao clara e acoes concretas
+- Indicacao de quais secoes exportar para cada passo
+- Alertas visuais para pontos de atencao
 
 ---
 
-### Solucao
+### Detalhes Tecnicos
 
-#### 1. Reestruturar a geracao SQL para ordem correta de importacao
+#### Arquivo: `src/components/dashboard/BackupModule.tsx`
 
-A ordem correta para importacao no Supabase:
-
+**Reordenar EXPORT_SECTIONS:**
 ```text
-1. ENUMs (tipos customizados)
-2. Funcoes do banco (is_super_admin, has_role, etc.)
-3. CREATE TABLE (estrutura)
-4. PRIMARY KEYs (ja inclusos no CREATE TABLE)
-5. FOREIGN KEYs (ALTER TABLE ADD CONSTRAINT)
-6. INDEXes
-7. RLS ENABLE (ALTER TABLE ENABLE ROW LEVEL SECURITY)
-8. RLS POLICIES (CREATE POLICY - dependem das funcoes)
-9. Storage Buckets + Policies
-10. DADOS (INSERT INTO - apenas tabelas relevantes)
-11. Triggers (dependem de funcoes e tabelas)
-12. Usuarios Auth (comentarios informativos)
+1. schema (Passo 1)
+2. functions (Passo 2)
+3. rls (Passo 3)
+4. storage (Passo 4)
+5. data (Passo 5)
+6. users (Passo 6)
 ```
 
-Modificar `generateSQL()` no `BackupModule.tsx` para gerar TUDO em um unico bloco ordenado, independente das secoes selecionadas.
-
-#### 2. Filtrar tabelas na exportacao de dados
-
-Criar uma lista de tabelas "relevantes para estrutura" e uma lista de tabelas "pesadas/irrelevantes" para excluir:
-
-**Tabelas a INCLUIR nos dados:**
-- `user_profiles` - perfis de usuarios
-- `user_roles` - papeis dos usuarios
-- `user_instance_access` - acesso a instancias
-- `instances` - instancias WhatsApp
-- `inboxes` - caixas de entrada
-- `inbox_users` - usuarios das caixas
-- `labels` - etiquetas
-- `kanban_boards` - quadros kanban
-- `kanban_columns` - colunas kanban
-- `kanban_fields` - campos kanban
-- `kanban_entities` - entidades kanban
-- `kanban_entity_values` - valores de entidades
-- `kanban_board_members` - membros dos quadros
-- `lead_databases` - bases de leads (meta)
-- `message_templates` - templates de mensagem
-- `shift_report_configs` - configs de relatorio
-- `scheduled_messages` - mensagens agendadas
-
-**Tabelas a EXCLUIR dos dados (pesadas/transientes):**
-- `conversations` - conversas (muito volume)
-- `conversation_messages` - mensagens (base64, volume enorme)
-- `conversation_labels` - labels de conversas
-- `contacts` - contatos (pode ter milhares)
-- `broadcast_logs` - logs de broadcast
-- `instance_connection_logs` - logs de conexao
-- `scheduled_message_logs` - logs de agendamentos
-- `shift_report_logs` - logs de relatorios
-- `lead_database_entries` - entradas de leads (volume)
-- `kanban_cards` - cards kanban (volume)
-- `kanban_card_data` - dados dos cards (volume)
-
-#### 3. Adicionar indicador visual no frontend
-
-Na secao "Dados das Tabelas", mostrar quais tabelas serao incluidas e informar que tabelas de alto volume sao excluidas para reduzir o tamanho do arquivo.
-
----
-
-### Arquivos a Modificar
-
-**`src/components/dashboard/BackupModule.tsx`:**
-- Reordenar a logica de `generateSQL()` para gerar SQL na sequencia correta de importacao
-- Adicionar constante `EXCLUDED_DATA_TABLES` com tabelas a excluir
-- Filtrar tabelas no bloco de exportacao de dados
-- Adicionar nota visual na secao de dados informando a filtragem
-- Mover funcoes para ANTES das RLS policies na saida SQL
-- Mover triggers para o FINAL do arquivo SQL
-
-**`supabase/functions/database-backup/index.ts`:**
-- Sem alteracoes necessarias (a filtragem sera feita no frontend)
-
----
-
-### Detalhes Tecnicos da Reordenacao
-
-O `generateSQL()` atual itera sobre `sections` na ordem do array e gera blocos independentes. A mudanca fara com que, quando multiplas secoes estiverem selecionadas, a geracao siga sempre a ordem logica de dependencias do PostgreSQL:
-
-```text
-Antes: Schema → Data → RLS → Functions → Users → Storage
-Depois: ENUMs → Functions → Tables → FKs → Indexes → RLS → Storage → Data (filtrado) → Triggers → Users
+**Tabelas com limite especial (novo mapa):**
+```typescript
+const LIMITED_DATA_TABLES: Record<string, number> = {
+  'conversation_messages': 5,  // 5 mensagens de 5 conversas
+  'lead_database_entries': 30,
+};
 ```
 
-Isso garante que o arquivo SQL possa ser executado de cima para baixo no SQL Editor do Supabase sem erros de dependencia.
+Remover `conversation_messages` e `lead_database_entries` do `EXCLUDED_DATA_TABLES`.
+
+**Para `conversation_messages`**, usar query especial no edge function (nova action `table-data-limited`) ou fazer a filtragem no frontend buscando primeiro 5 conversation IDs distintos e depois filtrando.
+
+Abordagem mais simples: adicionar suporte no edge function para receber um parametro `limit` opcional na action `table-data`, e no frontend passar o limite correto para cada tabela.
+
+**Edge function `database-backup/index.ts`:**
+Modificar a action `table-data` para aceitar um parametro `limit` opcional e uma query customizada para `conversation_messages`:
+
+```typescript
+case 'table-data': {
+  const safeName = table_name.replace(/[^a-zA-Z0-9_]/g, '')
+  const rowLimit = limit || 10000
+  
+  let query = `SELECT * FROM public."${safeName}" LIMIT ${rowLimit}`
+  
+  // Special query for conversation_messages: get messages from N distinct conversations
+  if (safeName === 'conversation_messages' && rowLimit <= 10) {
+    query = `
+      WITH distinct_convs AS (
+        SELECT DISTINCT conversation_id FROM public.conversation_messages LIMIT 5
+      )
+      SELECT cm.* FROM public.conversation_messages cm
+      JOIN distinct_convs dc ON dc.conversation_id = cm.conversation_id
+      LIMIT ${rowLimit}
+    `
+  }
+  // ...
+}
+```
+
+**Calculo de tamanho por secao:**
+No `generateSQL()`, em vez de um unico array `lines`, usar um mapa `sectionSizes: Record<string, number>` que acumula o tamanho em bytes de cada bloco. Apos gerar, exibir um resumo com os tamanhos.
+
+Alternativa mais simples: apos gerar o SQL completo, usar marcadores de secao (comentarios especiais) para calcular o tamanho de cada bloco e exibir um estado `exportSizes` que e renderizado nos cards das secoes.
+
+**Guia de migracao redesenhado:**
+Substituir o bloco de texto corrido por cards visuais usando componentes existentes (Card, Badge, etc.), com numeracao clara, icones correspondentes e descricoes curtas e diretas. Cada card indicara qual secao exportar e o que fazer com ela.
+
+#### Arquivo: `supabase/functions/database-backup/index.ts`
+- Aceitar parametro `limit` no body do request
+- Tratamento especial para `conversation_messages` com subquery de conversas distintas
 
