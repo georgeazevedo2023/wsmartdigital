@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: 'Forbidden: Super Admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    const { action, table_name } = await req.json()
+    const { action, table_name, limit } = await req.json()
 
     let result: any = null
 
@@ -95,16 +95,47 @@ Deno.serve(async (req) => {
       case 'table-data': {
         if (!table_name) throw new Error('table_name required')
         const safeName = table_name.replace(/[^a-zA-Z0-9_]/g, '')
-        const { data, error } = await adminClient.rpc('exec_sql', {
-          query: `SELECT * FROM public."${safeName}" LIMIT 10000`
-        })
+        const rowLimit = limit || 10000
+
+        let query = `SELECT * FROM public."${safeName}" LIMIT ${rowLimit}`
+
+        // Special query for conversation_messages: get 1 message from each of 5 distinct conversations
+        if (safeName === 'conversation_messages' && rowLimit <= 25) {
+          query = `
+            WITH distinct_convs AS (
+              SELECT DISTINCT conversation_id 
+              FROM public.conversation_messages 
+              ORDER BY conversation_id
+              LIMIT 5
+            )
+            SELECT cm.* FROM public.conversation_messages cm
+            JOIN distinct_convs dc ON dc.conversation_id = cm.conversation_id
+            LIMIT ${rowLimit}
+          `
+        }
+
+        // Special query for conversations: get the 5 conversations referenced by messages
+        if (safeName === 'conversations' && rowLimit <= 25) {
+          query = `
+            WITH sample_msgs AS (
+              SELECT DISTINCT conversation_id 
+              FROM public.conversation_messages 
+              ORDER BY conversation_id
+              LIMIT 5
+            )
+            SELECT c.* FROM public.conversations c
+            JOIN sample_msgs sm ON sm.conversation_id = c.id
+            LIMIT ${rowLimit}
+          `
+        }
+
+        const { data, error } = await adminClient.rpc('exec_sql', { query })
         if (error) throw error
         result = data
         break
       }
 
       case 'schema': {
-        // Get all CREATE TABLE statements
         const { data, error } = await adminClient.rpc('exec_sql', {
           query: `
             SELECT 

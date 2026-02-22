@@ -3,7 +3,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -11,12 +11,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
 import {
   Database,
   Download,
@@ -32,6 +26,12 @@ import {
   Key,
   Zap,
   ListChecks,
+  ArrowRight,
+  Info,
+  BookOpen,
+  Terminal,
+  Globe,
+  Settings,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -41,6 +41,8 @@ interface ExportSection {
   icon: React.ElementType;
   description: string;
   actions: string[];
+  step: number;
+  migrationNote: string;
 }
 
 const EXPORT_SECTIONS: ExportSection[] = [
@@ -48,36 +50,28 @@ const EXPORT_SECTIONS: ExportSection[] = [
     id: 'schema',
     label: 'Estrutura do Banco (Schema)',
     icon: Database,
-    description: 'CREATE TABLE, colunas, tipos, defaults, PKs, FKs, índices e enums',
+    description: 'ENUMs, CREATE TABLE, PKs, FKs e índices',
     actions: ['schema', 'primary-keys', 'foreign-keys', 'indexes', 'enums'],
-  },
-  {
-    id: 'data',
-    label: 'Dados das Tabelas (filtrado)',
-    icon: Table2,
-    description: 'Apenas dados estruturais (usuários, roles, instâncias, config). Exclui conversas, mensagens, logs e mídias.',
-    actions: ['list-tables', 'table-data'],
-  },
-  {
-    id: 'rls',
-    label: 'RLS Policies',
-    icon: Shield,
-    description: 'Todas as políticas de Row Level Security e status RLS por tabela',
-    actions: ['rls-policies', 'rls-status'],
+    step: 1,
+    migrationNote: 'Execute primeiro no SQL Editor do novo projeto',
   },
   {
     id: 'functions',
     label: 'Funções e Triggers',
     icon: Code,
-    description: 'Funções PL/pgSQL do schema public e triggers associados',
+    description: 'Funções PL/pgSQL (is_super_admin, has_role, etc.) e triggers',
     actions: ['db-functions', 'triggers'],
+    step: 2,
+    migrationNote: 'Devem existir ANTES das RLS policies',
   },
   {
-    id: 'users',
-    label: 'Usuários (Auth)',
-    icon: Users,
-    description: 'Lista de usuários autenticados com metadata',
-    actions: ['users-list'],
+    id: 'rls',
+    label: 'RLS Policies',
+    icon: Shield,
+    description: 'Enable RLS + todas as policies de segurança',
+    actions: ['rls-policies', 'rls-status'],
+    step: 3,
+    migrationNote: 'Depende das funções do passo 2',
   },
   {
     id: 'storage',
@@ -85,8 +79,42 @@ const EXPORT_SECTIONS: ExportSection[] = [
     icon: HardDrive,
     description: 'Buckets de storage e suas políticas de acesso',
     actions: ['storage-buckets', 'storage-policies'],
+    step: 4,
+    migrationNote: 'Arquivos dentro dos buckets NÃO são migrados',
+  },
+  {
+    id: 'data',
+    label: 'Dados das Tabelas (filtrado)',
+    icon: Table2,
+    description: 'Dados estruturais + amostras limitadas de conversas e leads',
+    actions: ['list-tables', 'table-data'],
+    step: 5,
+    migrationNote: 'INSERTs filtrados — apenas dados essenciais',
+  },
+  {
+    id: 'users',
+    label: 'Usuários (Auth)',
+    icon: Users,
+    description: 'Metadados dos usuários autenticados (sem senhas)',
+    actions: ['users-list'],
+    step: 6,
+    migrationNote: 'Senhas NÃO podem ser exportadas',
   },
 ];
+
+// Tables completely excluded from data export
+const EXCLUDED_DATA_TABLES = [
+  'contacts', 'broadcast_logs', 'instance_connection_logs',
+  'scheduled_message_logs', 'shift_report_logs',
+  'conversation_labels', 'kanban_cards', 'kanban_card_data',
+];
+
+// Tables with limited rows in export
+const LIMITED_DATA_TABLES: Record<string, number> = {
+  'conversation_messages': 5,
+  'conversations': 5,
+  'lead_database_entries': 30,
+};
 
 const BackupModule = () => {
   const [selectedSections, setSelectedSections] = useState<Set<string>>(
@@ -95,6 +123,8 @@ const BackupModule = () => {
   const [format, setFormat] = useState<'sql' | 'csv'>('sql');
   const [isExporting, setIsExporting] = useState(false);
   const [progress, setProgress] = useState<{ current: number; total: number; label: string } | null>(null);
+  const [sectionSizes, setSectionSizes] = useState<Record<string, number>>({});
+  const [totalSize, setTotalSize] = useState<number>(0);
 
   const toggleSection = (id: string) => {
     setSelectedSections(prev => {
@@ -108,7 +138,7 @@ const BackupModule = () => {
   const selectAll = () => setSelectedSections(new Set(EXPORT_SECTIONS.map(s => s.id)));
   const selectNone = () => setSelectedSections(new Set());
 
-  const callBackupApi = async (action: string, tableName?: string) => {
+  const callBackupApi = async (action: string, tableName?: string, limit?: number) => {
     const token = (await supabase.auth.getSession()).data.session?.access_token;
     const res = await fetch(
       `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/database-backup`,
@@ -118,7 +148,7 @@ const BackupModule = () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ action, table_name: tableName }),
+        body: JSON.stringify({ action, table_name: tableName, limit }),
       }
     );
     if (!res.ok) {
@@ -137,16 +167,13 @@ const BackupModule = () => {
     return `'${String(val).replace(/'/g, "''")}'`;
   };
 
-  // Tables excluded from data export (high volume / transient)
-  const EXCLUDED_DATA_TABLES = [
-    'conversations', 'conversation_messages', 'conversation_labels',
-    'contacts', 'broadcast_logs', 'instance_connection_logs',
-    'scheduled_message_logs', 'shift_report_logs',
-    'lead_database_entries', 'kanban_cards', 'kanban_card_data',
-  ];
+  const formatKB = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  };
 
   const generateSQL = useCallback(async () => {
-    const lines: string[] = [];
+    const sectionBlocks: Record<string, string[]> = {};
     const hasSchema = selectedSections.has('schema');
     const hasData = selectedSections.has('data');
     const hasRls = selectedSections.has('rls');
@@ -154,7 +181,6 @@ const BackupModule = () => {
     const hasUsers = selectedSections.has('users');
     const hasStorage = selectedSections.has('storage');
 
-    // Calculate total steps for progress
     let totalSteps = 0;
     if (hasSchema) totalSteps++;
     if (hasFunctions) totalSteps++;
@@ -164,12 +190,13 @@ const BackupModule = () => {
     if (hasUsers) totalSteps++;
     let stepsDone = 0;
 
-    lines.push('-- ═══════════════════════════════════════════════════════════');
-    lines.push('-- WsmartQR Database Backup');
-    lines.push(`-- Generated at: ${new Date().toISOString()}`);
-    lines.push('-- Import order: ENUMs → Functions → Tables → FKs → Indexes → RLS → Storage → Data → Triggers → Auth Users');
-    lines.push('-- ═══════════════════════════════════════════════════════════');
-    lines.push('');
+    const header: string[] = [];
+    header.push('-- ═══════════════════════════════════════════════════════════');
+    header.push('-- WsmartQR Database Backup');
+    header.push(`-- Generated at: ${new Date().toISOString()}`);
+    header.push('-- Ordem de importação: Schema → Funções → RLS → Storage → Dados → Triggers → Auth');
+    header.push('-- ═══════════════════════════════════════════════════════════');
+    header.push('');
 
     // ── Fetch all needed data in parallel ──
     const schemaPromise = hasSchema ? Promise.all([
@@ -203,14 +230,15 @@ const BackupModule = () => {
       schemaPromise, functionsPromise, rlsPromise, storagePromise, usersPromise,
     ]);
 
-    // ── 1. ENUMs ──
+    // ── 1. Schema: ENUMs + Tables + FKs + Indexes ──
     if (schemaResult) {
       setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando schema...' });
       const [schema, pks, fks, indexes, enums] = schemaResult;
+      const lines: string[] = [];
 
       if (enums?.length) {
         lines.push('-- ══════════════════════════════════════════════════════════');
-        lines.push('-- 1. ENUMS (Custom Types)');
+        lines.push('-- PASSO 1: ENUMS (Custom Types)');
         lines.push('-- ══════════════════════════════════════════════════════════');
         for (const e of enums) {
           const vals = (e.values as string).split(', ').map((v: string) => `'${v}'`).join(', ');
@@ -219,26 +247,9 @@ const BackupModule = () => {
         lines.push('');
       }
 
-      // ── 2. Functions (BEFORE RLS policies that reference them) ──
-      if (functionsResult) {
-        setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando funções...' });
-        const [funcs, _triggers] = functionsResult;
-
-        if (funcs?.length) {
-          lines.push('-- ══════════════════════════════════════════════════════════');
-          lines.push('-- 2. DATABASE FUNCTIONS (must exist before RLS policies)');
-          lines.push('-- ══════════════════════════════════════════════════════════');
-          for (const f of funcs) {
-            lines.push(f.definition + ';');
-            lines.push('');
-          }
-        }
-      }
-
-      // ── 3. Tables (DDL) ──
       if (schema?.length) {
         lines.push('-- ══════════════════════════════════════════════════════════');
-        lines.push('-- 3. TABLES (CREATE TABLE)');
+        lines.push('-- PASSO 1: TABLES (CREATE TABLE)');
         lines.push('-- ══════════════════════════════════════════════════════════');
         const pkMap = new Map((pks || []).map((p: any) => [p.table_name, p.pk_columns]));
         for (const t of schema) {
@@ -251,53 +262,54 @@ const BackupModule = () => {
         }
       }
 
-      // ── 4. Foreign Keys ──
       if (fks?.length) {
-        lines.push('-- ══════════════════════════════════════════════════════════');
-        lines.push('-- 4. FOREIGN KEYS');
-        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- FOREIGN KEYS');
         for (const fk of fks) {
           lines.push(`ALTER TABLE public.${fk.table_name} ADD CONSTRAINT ${fk.constraint_name} FOREIGN KEY (${fk.column_name}) REFERENCES public.${fk.foreign_table_name}(${fk.foreign_column_name});`);
         }
         lines.push('');
       }
 
-      // ── 5. Indexes ──
       if (indexes?.length) {
-        lines.push('-- ══════════════════════════════════════════════════════════');
-        lines.push('-- 5. INDEXES');
-        lines.push('-- ══════════════════════════════════════════════════════════');
+        lines.push('-- INDEXES');
         for (const idx of indexes) {
           lines.push(`${idx.indexdef};`);
         }
         lines.push('');
       }
-    } else if (functionsResult) {
-      // Functions selected but schema not selected
+
+      sectionBlocks['schema'] = lines;
+    }
+
+    // ── 2. Functions ──
+    if (functionsResult) {
       setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando funções...' });
       const [funcs, _triggers] = functionsResult;
+      const lines: string[] = [];
 
       if (funcs?.length) {
         lines.push('-- ══════════════════════════════════════════════════════════');
-        lines.push('-- 2. DATABASE FUNCTIONS');
+        lines.push('-- PASSO 2: DATABASE FUNCTIONS (devem existir ANTES das RLS)');
         lines.push('-- ══════════════════════════════════════════════════════════');
         for (const f of funcs) {
           lines.push(f.definition + ';');
           lines.push('');
         }
       }
+
+      sectionBlocks['functions'] = lines;
     }
 
-    // ── 6. RLS Enable + Policies ──
+    // ── 3. RLS Enable + Policies ──
     if (rlsResult) {
       setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando RLS...' });
       const [policies, status] = rlsResult;
+      const lines: string[] = [];
 
       lines.push('-- ══════════════════════════════════════════════════════════');
-      lines.push('-- 6. ROW LEVEL SECURITY');
+      lines.push('-- PASSO 3: ROW LEVEL SECURITY');
       lines.push('-- ══════════════════════════════════════════════════════════');
 
-      // Enable RLS first
       for (const s of (status || [])) {
         if (s.rls_enabled) {
           lines.push(`ALTER TABLE public.${s.table_name} ENABLE ROW LEVEL SECURITY;`);
@@ -305,7 +317,6 @@ const BackupModule = () => {
       }
       lines.push('');
 
-      // Then policies
       if (policies?.length) {
         lines.push('-- RLS POLICIES');
         for (const p of policies) {
@@ -318,16 +329,19 @@ const BackupModule = () => {
         }
         lines.push('');
       }
+
+      sectionBlocks['rls'] = lines;
     }
 
-    // ── 7. Storage ──
+    // ── 4. Storage ──
     if (storageResult) {
       setProgress({ current: ++stepsDone, total: totalSteps, label: 'Gerando storage...' });
       const [buckets, policies] = storageResult;
+      const lines: string[] = [];
 
       if (buckets?.length) {
         lines.push('-- ══════════════════════════════════════════════════════════');
-        lines.push('-- 7. STORAGE BUCKETS');
+        lines.push('-- PASSO 4: STORAGE BUCKETS');
         lines.push('-- ══════════════════════════════════════════════════════════');
         for (const b of buckets) {
           lines.push(`INSERT INTO storage.buckets (id, name, public) VALUES ('${b.id}', '${b.name}', ${b.public}) ON CONFLICT (id) DO NOTHING;`);
@@ -347,76 +361,103 @@ const BackupModule = () => {
         }
         lines.push('');
       }
+
+      sectionBlocks['storage'] = lines;
     }
 
-    // ── 8. Data (filtered) ──
+    // ── 5. Data (filtered) ──
     if (hasData) {
       setProgress({ current: ++stepsDone, total: totalSteps, label: 'Listando tabelas...' });
       const tables = await callBackupApi('list-tables');
 
       setProgress({ current: ++stepsDone, total: totalSteps, label: 'Exportando dados...' });
+      const lines: string[] = [];
       lines.push('-- ══════════════════════════════════════════════════════════');
-      lines.push('-- 8. TABLE DATA (filtered - structural data only)');
-      lines.push('-- Excluded: conversations, messages, contacts, logs, etc.');
+      lines.push('-- PASSO 5: TABLE DATA (dados filtrados)');
       lines.push('-- ══════════════════════════════════════════════════════════');
 
-      const filteredTables = (tables || []).filter(
-        (t: any) => !EXCLUDED_DATA_TABLES.includes(t.table_name)
-      );
+      const dataTableNames = (tables || [])
+        .map((t: any) => t.table_name)
+        .filter((name: string) => !EXCLUDED_DATA_TABLES.includes(name));
 
-      for (const table of filteredTables) {
+      for (const tableName of dataTableNames) {
         try {
-          const rows = await callBackupApi('table-data', table.table_name);
+          const limit = LIMITED_DATA_TABLES[tableName];
+          const rows = await callBackupApi('table-data', tableName, limit);
           if (rows?.length) {
-            lines.push(`-- Table: ${table.table_name} (${rows.length} rows)`);
+            const limitNote = limit ? ` (amostra: ${rows.length} registros)` : '';
+            lines.push(`-- Table: ${tableName} (${rows.length} rows)${limitNote}`);
             const cols = Object.keys(rows[0]);
             for (const row of rows) {
               const vals = cols.map(c => escapeSQL(row[c])).join(', ');
-              lines.push(`INSERT INTO public.${table.table_name} (${cols.join(', ')}) VALUES (${vals});`);
+              lines.push(`INSERT INTO public.${tableName} (${cols.join(', ')}) VALUES (${vals}) ON CONFLICT DO NOTHING;`);
             }
             lines.push('');
           }
         } catch (e) {
-          lines.push(`-- Error exporting ${table.table_name}: ${(e as Error).message}`);
+          lines.push(`-- Error exporting ${tableName}: ${(e as Error).message}`);
         }
       }
 
       if (EXCLUDED_DATA_TABLES.length) {
-        lines.push('-- ── EXCLUDED TABLES (high volume) ──');
+        lines.push('-- ── TABELAS EXCLUÍDAS (alto volume) ──');
         for (const t of EXCLUDED_DATA_TABLES) {
-          lines.push(`-- Skipped: ${t}`);
+          lines.push(`-- Excluída: ${t}`);
         }
         lines.push('');
       }
+
+      sectionBlocks['data'] = lines;
     }
 
-    // ── 9. Triggers (at the end, after functions and tables) ──
+    // ── Triggers (after functions and tables) ──
     if (functionsResult) {
       const [_funcs, triggers] = functionsResult;
       if (triggers?.length) {
-        lines.push('-- ══════════════════════════════════════════════════════════');
-        lines.push('-- 9. TRIGGERS');
-        lines.push('-- ══════════════════════════════════════════════════════════');
+        const tLines = sectionBlocks['functions'] || [];
+        tLines.push('-- ══════════════════════════════════════════════════════════');
+        tLines.push('-- TRIGGERS');
+        tLines.push('-- ══════════════════════════════════════════════════════════');
         for (const t of triggers) {
-          lines.push(`CREATE TRIGGER ${t.trigger_name} ${t.action_timing} ${t.event_manipulation} ON public.${t.event_object_table} ${t.action_statement};`);
+          tLines.push(`CREATE TRIGGER ${t.trigger_name} ${t.action_timing} ${t.event_manipulation} ON public.${t.event_object_table} ${t.action_statement};`);
         }
-        lines.push('');
+        tLines.push('');
+        sectionBlocks['functions'] = tLines;
       }
     }
 
-    // ── 10. Auth Users (metadata only) ──
+    // ── 6. Auth Users ──
     if (usersResult?.length) {
+      const lines: string[] = [];
       lines.push('-- ══════════════════════════════════════════════════════════');
-      lines.push('-- 10. AUTH USERS (read-only metadata)');
-      lines.push('-- Passwords cannot be exported.');
+      lines.push('-- PASSO 6: AUTH USERS (metadados — senhas NÃO exportáveis)');
+      lines.push('-- Recrie usuários via: supabase auth admin create-user');
       lines.push('-- ══════════════════════════════════════════════════════════');
       for (const u of usersResult) {
         lines.push(`-- User: ${u.email} | ID: ${u.id} | Created: ${u.created_at} | Last Sign In: ${u.last_sign_in_at || 'never'}`);
       }
       lines.push('');
+      sectionBlocks['users'] = lines;
     }
 
-    return lines.join('\n');
+    // ── Calculate sizes and assemble ──
+    const sizes: Record<string, number> = {};
+    const allLines = [...header];
+    for (const section of EXPORT_SECTIONS) {
+      const block = sectionBlocks[section.id];
+      if (block?.length) {
+        const blockText = block.join('\n');
+        sizes[section.id] = new Blob([blockText]).size;
+        allLines.push(...block);
+      }
+    }
+
+    const fullText = allLines.join('\n');
+    const totalBytes = new Blob([fullText]).size;
+    setSectionSizes(sizes);
+    setTotalSize(totalBytes);
+
+    return fullText;
   }, [selectedSections]);
 
   const generateCSV = useCallback(async () => {
@@ -431,11 +472,13 @@ const BackupModule = () => {
       if (section.id === 'data') {
         const tables = await callBackupApi('list-tables');
         for (const table of (tables || [])) {
+          if (EXCLUDED_DATA_TABLES.includes(table.table_name)) continue;
           try {
-            const rows = await callBackupApi('table-data', table.table_name);
+            const limit = LIMITED_DATA_TABLES[table.table_name];
+            const rows = await callBackupApi('table-data', table.table_name, limit);
             if (rows?.length) {
               const cols = Object.keys(rows[0]);
-              const header = cols.join(',');
+              const csvHeader = cols.join(',');
               const body = rows.map((r: any) =>
                 cols.map(c => {
                   const v = r[c];
@@ -446,7 +489,7 @@ const BackupModule = () => {
                     : s;
                 }).join(',')
               ).join('\n');
-              csvFiles.push({ name: `data_${table.table_name}.csv`, content: `${header}\n${body}` });
+              csvFiles.push({ name: `data_${table.table_name}.csv`, content: `${csvHeader}\n${body}` });
             }
           } catch {
             // skip
@@ -458,7 +501,7 @@ const BackupModule = () => {
         const policies = await callBackupApi('rls-policies');
         if (policies?.length) {
           const cols = ['tablename', 'policyname', 'permissive', 'roles', 'cmd', 'qual', 'with_check'];
-          const header = cols.join(',');
+          const csvHeader = cols.join(',');
           const body = policies.map((p: any) =>
             cols.map(c => {
               const v = p[c] ?? '';
@@ -468,7 +511,7 @@ const BackupModule = () => {
                 : s;
             }).join(',')
           ).join('\n');
-          csvFiles.push({ name: 'rls_policies.csv', content: `${header}\n${body}` });
+          csvFiles.push({ name: 'rls_policies.csv', content: `${csvHeader}\n${body}` });
         }
       }
 
@@ -476,7 +519,7 @@ const BackupModule = () => {
         const users = await callBackupApi('users-list');
         if (users?.length) {
           const cols = ['id', 'email', 'created_at', 'last_sign_in_at', 'email_confirmed_at', 'phone', 'role'];
-          const header = cols.join(',');
+          const csvHeader = cols.join(',');
           const body = users.map((u: any) =>
             cols.map(c => {
               const v = u[c] ?? '';
@@ -484,7 +527,7 @@ const BackupModule = () => {
               return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g, '""')}"` : s;
             }).join(',')
           ).join('\n');
-          csvFiles.push({ name: 'auth_users.csv', content: `${header}\n${body}` });
+          csvFiles.push({ name: 'auth_users.csv', content: `${csvHeader}\n${body}` });
         }
       }
 
@@ -532,6 +575,8 @@ const BackupModule = () => {
     }
 
     setIsExporting(true);
+    setSectionSizes({});
+    setTotalSize(0);
     setProgress({ current: 0, total: 1, label: 'Iniciando...' });
 
     try {
@@ -549,10 +594,9 @@ const BackupModule = () => {
         if (files.length === 1) {
           downloadFile(files[0].content, files[0].name, 'text/csv');
         } else {
-          // Download each file
           for (const file of files) {
             downloadFile(file.content, file.name, 'text/csv');
-            await new Promise(r => setTimeout(r, 200)); // small delay between downloads
+            await new Promise(r => setTimeout(r, 200));
           }
         }
         toast.success(`${files.length} arquivo(s) CSV exportado(s)!`);
@@ -571,9 +615,12 @@ const BackupModule = () => {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h3 className="text-lg font-semibold">Módulo de Backup</h3>
+          <h3 className="text-lg font-semibold flex items-center gap-2">
+            <Database className="w-5 h-5 text-primary" />
+            Módulo de Backup & Migração
+          </h3>
           <p className="text-sm text-muted-foreground">
-            Exporte a estrutura, dados e configurações do banco de dados
+            Exporte na ordem correta de migração para o Supabase
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -631,6 +678,16 @@ const BackupModule = () => {
         </div>
       )}
 
+      {/* Total size after export */}
+      {totalSize > 0 && (
+        <div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3 flex items-center gap-3">
+          <CheckCircle2 className="w-4 h-4 text-green-600 shrink-0" />
+          <p className="text-sm font-medium text-green-700 dark:text-green-400">
+            Arquivo gerado: {formatKB(totalSize)} total
+          </p>
+        </div>
+      )}
+
       {/* Quick actions */}
       <div className="flex gap-2">
         <Button variant="outline" size="sm" onClick={selectAll}>
@@ -641,56 +698,273 @@ const BackupModule = () => {
         </Button>
       </div>
 
-      {/* Sections */}
-      <div className="grid gap-3">
-        {EXPORT_SECTIONS.map((section) => {
-          const isSelected = selectedSections.has(section.id);
-          const Icon = section.icon;
-          return (
-            <div
-              key={section.id}
-              className={`flex items-center gap-4 p-4 rounded-xl border transition-all cursor-pointer ${
-                isSelected
-                  ? 'border-primary/30 bg-primary/5'
-                  : 'border-border/50 hover:border-border'
-              }`}
-              onClick={() => toggleSection(section.id)}
-            >
-              <Checkbox
-                checked={isSelected}
-                onCheckedChange={() => toggleSection(section.id)}
-                className="shrink-0"
-              />
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
-                isSelected ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground'
-              }`}>
-                <Icon className="w-5 h-5" />
+      {/* Sections in migration order */}
+      <div>
+        <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <ListChecks className="w-4 h-4 text-primary" />
+          Módulos de Exportação (ordem de migração)
+        </h4>
+        <div className="grid gap-3">
+          {EXPORT_SECTIONS.map((section) => {
+            const isSelected = selectedSections.has(section.id);
+            const Icon = section.icon;
+            const size = sectionSizes[section.id];
+            return (
+              <div
+                key={section.id}
+                className={`flex items-center gap-4 p-4 rounded-xl border transition-all cursor-pointer ${
+                  isSelected
+                    ? 'border-primary/30 bg-primary/5'
+                    : 'border-border/50 hover:border-border'
+                }`}
+                onClick={() => toggleSection(section.id)}
+              >
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => toggleSection(section.id)}
+                  className="shrink-0"
+                />
+                <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-bold shrink-0">
+                  {section.step}
+                </div>
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                  isSelected ? 'bg-primary/10 text-primary' : 'bg-muted/50 text-muted-foreground'
+                }`}>
+                  <Icon className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm">{section.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{section.description}</p>
+                  <p className="text-[10px] text-primary/70 mt-0.5 italic">{section.migrationNote}</p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {size !== undefined && (
+                    <Badge variant="secondary" className="text-xs font-mono">
+                      {formatKB(size)}
+                    </Badge>
+                  )}
+                  {format === 'sql' && section.id === 'data' && (
+                    <Badge variant="outline" className="text-xs">INSERT INTO</Badge>
+                  )}
+                </div>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm">{section.label}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{section.description}</p>
-              </div>
-              {format === 'sql' && section.id === 'data' && (
-                <Badge variant="outline" className="text-xs shrink-0">INSERT INTO</Badge>
-              )}
-              {format === 'csv' && section.id === 'data' && (
-                <Badge variant="outline" className="text-xs shrink-0">1 CSV/tabela</Badge>
-              )}
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
 
-      {/* Edge Functions */}
+      {/* ═══ GUIA DE MIGRAÇÃO DIDÁTICO ═══ */}
+      <div className="space-y-4">
+        <h4 className="text-lg font-semibold flex items-center gap-2">
+          <BookOpen className="w-5 h-5 text-primary" />
+          Guia de Migração para Supabase
+        </h4>
+        <p className="text-sm text-muted-foreground">
+          Siga os passos abaixo na ordem indicada para migrar seu projeto completo.
+        </p>
+
+        <div className="grid gap-3">
+          {/* Step 1 */}
+          <Card className="border-primary/20">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">1</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Globe className="w-4 h-4" /> Criar Novo Projeto Supabase
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Acesse <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase.com/dashboard</code> e crie um novo projeto</li>
+                    <li>Anote: <strong>URL</strong>, <strong>anon key</strong> e <strong>service role key</strong></li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 2 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">2</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Database className="w-4 h-4" /> Executar Schema (Passo 1 acima)
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Exporte com <strong>"Estrutura do Banco"</strong> selecionado</li>
+                    <li>No SQL Editor do novo projeto, cole e execute o SQL gerado</li>
+                    <li>Isso cria: ENUMs → Tabelas → FKs → Índices</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 3 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">3</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Code className="w-4 h-4" /> Funções e Triggers (Passo 2 acima)
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Exporte com <strong>"Funções e Triggers"</strong> selecionado</li>
+                    <li>Execute no SQL Editor — <strong>ANTES</strong> das RLS policies</li>
+                    <li>Inclui: <code className="px-1 py-0.5 rounded bg-muted text-foreground">is_super_admin</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">has_inbox_access</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">handle_new_user</code>, etc.</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 4 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">4</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Shield className="w-4 h-4" /> RLS Policies (Passo 3 acima)
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Exporte com <strong>"RLS Policies"</strong> selecionado</li>
+                    <li>Execute no SQL Editor</li>
+                    <li>Verifique que todas as tabelas têm RLS habilitado</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 5 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">5</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <HardDrive className="w-4 h-4" /> Storage (Passo 4 acima)
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Exporte com <strong>"Storage"</strong> selecionado</li>
+                    <li>Execute os INSERTs para criar buckets e policies</li>
+                    <li>⚠️ Arquivos dentro dos buckets NÃO são migrados automaticamente</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 6 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">6</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Table2 className="w-4 h-4" /> Dados Filtrados (Passo 5 acima)
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Exporte com <strong>"Dados das Tabelas"</strong> selecionado</li>
+                    <li>Inclui: perfis, roles, instâncias, inboxes, kanban, templates, etc.</li>
+                    <li>Amostras: 5 conversas + 5 mensagens, 30 leads (para validação)</li>
+                    <li>Execute os INSERTs no SQL Editor</li>
+                  </ul>
+                  <div className="mt-2 p-2 rounded bg-muted/50 text-[10px] text-muted-foreground">
+                    <strong>Excluídas:</strong> contacts, broadcast_logs, instance_connection_logs, scheduled_message_logs, shift_report_logs, conversation_labels, kanban_cards, kanban_card_data
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 7 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">7</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Zap className="w-4 h-4" /> Edge Functions
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Copie a pasta <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/functions/</code> para o novo projeto</li>
+                    <li>Copie <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/config.toml</code> (atualize o project_id)</li>
+                    <li>Deploy: <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase functions deploy --project-ref NOVO_ID</code></li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 8 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">8</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Key className="w-4 h-4" /> Configurar Secrets
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Via CLI: <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase secrets set NOME=valor --project-ref NOVO_ID</code></li>
+                    <li><code className="px-1 py-0.5 rounded bg-muted text-foreground">UAZAPI_SERVER_URL</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">UAZAPI_ADMIN_TOKEN</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">GROQ_API_KEY</code></li>
+                    <li>SUPABASE_URL, ANON_KEY e SERVICE_ROLE_KEY são configurados automaticamente</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 9 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">9</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Users className="w-4 h-4" /> Usuários (Auth)
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Senhas NÃO podem ser migradas — usuários precisarão redefinir</li>
+                    <li>Recrie via: <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase auth admin create-user</code></li>
+                    <li>Os dados de <code className="px-1 py-0.5 rounded bg-muted text-foreground">user_profiles</code> e <code className="px-1 py-0.5 rounded bg-muted text-foreground">user_roles</code> já estão nos dados exportados</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Step 10 */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-sm font-bold shrink-0">10</div>
+                <div className="flex-1">
+                  <h5 className="font-semibold text-sm flex items-center gap-2">
+                    <Settings className="w-4 h-4" /> Atualizar Frontend (.env)
+                  </h5>
+                  <ul className="mt-2 text-xs text-muted-foreground space-y-1 ml-4 list-disc">
+                    <li>Atualize o <code className="px-1 py-0.5 rounded bg-muted text-foreground">.env</code> com as novas credenciais:</li>
+                    <li><code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_URL</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_PUBLISHABLE_KEY</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_PROJECT_ID</code></li>
+                    <li>Atualize URLs de webhooks externos (n8n, etc.) para o novo projeto</li>
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Edge Functions list */}
       <div className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-3">
         <h4 className="text-sm font-medium flex items-center gap-2">
           <Zap className="w-4 h-4 text-primary" />
-          Edge Functions (no repositório)
+          Edge Functions do Projeto
         </h4>
-        <p className="text-xs text-muted-foreground">
-          As Edge Functions não ficam no banco de dados — estão na pasta <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/functions/</code> do repositório.
-          Para migrar, copie essa pasta para o novo projeto.
-        </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
           {[
             { name: 'uazapi-proxy', desc: 'Proxy para API UAZAPI (WhatsApp)' },
@@ -710,7 +984,7 @@ const BackupModule = () => {
             { name: 'database-backup', desc: 'Este módulo de backup' },
           ].map(fn => (
             <div key={fn.name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/50 border border-border/30">
-              <Code className="w-3.5 h-3.5 text-primary shrink-0" />
+              <Terminal className="w-3.5 h-3.5 text-primary shrink-0" />
               <div className="min-w-0">
                 <p className="text-xs font-medium truncate">{fn.name}</p>
                 <p className="text-[10px] text-muted-foreground truncate">{fn.desc}</p>
@@ -720,149 +994,18 @@ const BackupModule = () => {
         </div>
       </div>
 
-      {/* Secrets necessários */}
-      <div className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-3">
-        <h4 className="text-sm font-medium flex items-center gap-2">
-          <Key className="w-4 h-4 text-primary" />
-          Secrets Necessários para Migração
-        </h4>
-        <p className="text-xs text-muted-foreground">
-          Configure estes secrets no novo projeto Supabase (Dashboard → Settings → Edge Functions → Secrets):
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {[
-            { name: 'UAZAPI_SERVER_URL', desc: 'URL do servidor UAZAPI' },
-            { name: 'UAZAPI_ADMIN_TOKEN', desc: 'Token admin da UAZAPI' },
-            { name: 'GROQ_API_KEY', desc: 'API key do Groq (transcrição/IA)' },
-            { name: 'LOVABLE_API_KEY', desc: 'API key do Lovable AI Gateway' },
-            { name: 'SUPABASE_URL', desc: 'URL do novo projeto Supabase (auto)' },
-            { name: 'SUPABASE_ANON_KEY', desc: 'Anon key do novo projeto (auto)' },
-            { name: 'SUPABASE_SERVICE_ROLE_KEY', desc: 'Service role key (auto)' },
-          ].map(s => (
-            <div key={s.name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-background/50 border border-border/30">
-              <Key className="w-3 h-3 text-primary shrink-0" />
-              <div className="min-w-0">
-                <p className="text-xs font-mono font-medium truncate">{s.name}</p>
-                <p className="text-[10px] text-muted-foreground truncate">{s.desc}</p>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Guia de Migração */}
-      <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-3">
-        <h4 className="text-sm font-medium flex items-center gap-2">
-          <ListChecks className="w-4 h-4 text-primary" />
-          Guia Completo de Migração para Supabase
-        </h4>
-        <div className="text-xs text-muted-foreground space-y-4">
-          <div>
-            <p className="font-semibold text-foreground mb-1">1. Criar novo projeto Supabase</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Acesse <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase.com/dashboard</code> e crie um novo projeto</li>
-              <li>Anote a URL, anon key e service role key do novo projeto</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">2. Exportar e executar Schema (SQL)</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Use este módulo para exportar em formato <strong>SQL</strong> com "Estrutura do Banco" selecionado</li>
-              <li>No novo projeto, vá em <strong>SQL Editor</strong> e execute o arquivo .sql gerado</li>
-              <li>⚠️ Execute na ordem: ENUMs → CREATE TABLE → FKs → Índices → RLS</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">3. Importar Dados</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Exporte com "Dados das Tabelas" selecionado (formato SQL com INSERTs)</li>
-              <li>Execute os INSERTs no SQL Editor do novo projeto</li>
-              <li>⚠️ Respeite a ordem de FKs: tabelas sem dependências primeiro</li>
-              <li>Ordem sugerida: <code className="px-1 py-0.5 rounded bg-muted text-foreground">contacts → instances → user_profiles → user_roles → user_instance_access → inboxes → inbox_users → conversations → conversation_messages → ...</code></li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">4. Configurar RLS Policies</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Exporte com "RLS Policies" selecionado</li>
-              <li>Execute as policies no SQL Editor</li>
-              <li>Verifique que todas as tabelas têm RLS habilitado</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">5. Funções e Triggers</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Exporte com "Funções e Triggers" selecionado</li>
-              <li>Execute no SQL Editor — funções devem ser criadas ANTES dos triggers</li>
-              <li>Inclui: <code className="px-1 py-0.5 rounded bg-muted text-foreground">is_super_admin</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">has_inbox_access</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">handle_new_user</code>, etc.</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">6. Storage Buckets</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Exporte com "Storage" selecionado</li>
-              <li>Execute os INSERTs para criar os buckets e policies</li>
-              <li>⚠️ Arquivos dentro dos buckets NÃO são migrados automaticamente</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">7. Edge Functions</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Copie a pasta <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/functions/</code> para o novo projeto</li>
-              <li>Copie <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase/config.toml</code> (atualize o project_id)</li>
-              <li>Execute: <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase functions deploy --project-ref NOVO_PROJECT_ID</code></li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">8. Secrets</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Configure cada secret listado acima no novo projeto</li>
-              <li>Via CLI: <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase secrets set NOME=valor --project-ref NOVO_ID</code></li>
-              <li>SUPABASE_URL, SUPABASE_ANON_KEY e SUPABASE_SERVICE_ROLE_KEY são configurados automaticamente</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">9. Usuários (Auth)</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Senhas NÃO podem ser migradas — usuários precisarão redefinir a senha</li>
-              <li>Alternativa: recrie os usuários via <code className="px-1 py-0.5 rounded bg-muted text-foreground">supabase auth admin create-user</code></li>
-              <li>Os dados de <code className="px-1 py-0.5 rounded bg-muted text-foreground">user_profiles</code> e <code className="px-1 py-0.5 rounded bg-muted text-foreground">user_roles</code> são migrados com os dados das tabelas</li>
-            </ul>
-          </div>
-
-          <div>
-            <p className="font-semibold text-foreground mb-1">10. Frontend (.env)</p>
-            <ul className="ml-4 list-disc space-y-0.5">
-              <li>Atualize o <code className="px-1 py-0.5 rounded bg-muted text-foreground">.env</code> com as novas credenciais:</li>
-              <li><code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_URL</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_PUBLISHABLE_KEY</code>, <code className="px-1 py-0.5 rounded bg-muted text-foreground">VITE_SUPABASE_PROJECT_ID</code></li>
-            </ul>
-          </div>
-        </div>
-      </div>
-
-      {/* Info */}
+      {/* Observações */}
       <div className="rounded-xl border border-border/50 bg-muted/20 p-4 space-y-2">
         <h4 className="text-sm font-medium flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-muted-foreground" />
+          <Info className="w-4 h-4 text-muted-foreground" />
           Observações Importantes
         </h4>
         <ul className="text-xs text-muted-foreground space-y-1 ml-6 list-disc">
-          <li><strong>SQL</strong>: Gera um único arquivo .sql executável no SQL Editor para recriar toda a estrutura e dados</li>
-          <li><strong>CSV</strong>: Gera múltiplos arquivos .csv (um por tabela/seção) para análise em planilhas</li>
-          <li><strong>Senhas</strong>: Senhas de usuários NÃO são exportáveis por segurança</li>
-          <li><strong>Secrets</strong>: Valores de secrets são criptografados e não podem ser exportados — você precisa reconfigurá-los manualmente</li>
-          <li><strong>Realtime</strong>: Se usar Realtime, reconfigure as publicações: <code className="px-1 py-0.5 rounded bg-muted text-foreground">ALTER PUBLICATION supabase_realtime ADD TABLE nome_tabela;</code></li>
-          <li><strong>Webhooks</strong>: Atualize URLs de webhooks externos (n8n, etc.) para apontar para o novo projeto</li>
-          <li><strong>CRON Jobs</strong>: Reconfigure cron jobs (pg_cron) se existirem</li>
-          <li><strong>Limite</strong>: Máximo de 10.000 registros por tabela no export</li>
+          <li>O SQL gerado usa <code className="px-1 py-0.5 rounded bg-muted text-foreground">ON CONFLICT DO NOTHING</code> nos INSERTs para permitir reimportação</li>
+          <li><strong>Senhas</strong> de usuários NÃO são exportáveis por segurança</li>
+          <li><strong>Secrets</strong> são criptografados — reconfigure manualmente</li>
+          <li><strong>Realtime</strong>: reconfigure publicações: <code className="px-1 py-0.5 rounded bg-muted text-foreground">ALTER PUBLICATION supabase_realtime ADD TABLE nome_tabela;</code></li>
+          <li><strong>CRON Jobs</strong>: reconfigure pg_cron se existirem</li>
         </ul>
       </div>
     </div>
