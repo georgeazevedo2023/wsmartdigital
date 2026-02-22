@@ -1,57 +1,60 @@
 
 
-# Corrigir: Mensagem do Agente IA nao aparece no Helpdesk
+# Corrigir: Mensagens do Agente IA nao aparecem na caixa "Ibirajuba Teste"
 
-## Problema
+## Diagnostico
 
-O payload do n8n "Envia dados para o Lovable3" contem DOIS propositos simultaneos:
-1. `status_ia: "ligada"` - para manter o status ativo
-2. `content.text: "Bom dia! Bem-vindo a Neo Blindados..."` - a resposta do agente IA
+O webhook retorna `status_ia_instance_not_found` porque:
 
-Apos a correcao anterior, o webhook verifica `status_ia` primeiro e retorna na linha 184 sem nunca processar a mensagem. O texto do agente IA e descartado.
+1. O payload do n8n envia `"owner": "558181696546"` 
+2. O codigo na linha 119 converte para `558181696546@s.whatsapp.net`
+3. No banco, o `owner_jid` da instancia esta salvo como `558181696546` (sem o sufixo)
+4. A comparacao falha e a instancia nao e encontrada
 
-## Solucao
+Este bug afeta TODAS as caixas de entrada onde o `owner_jid` nao tem o sufixo `@s.whatsapp.net`.
+
+## Solucao (duas partes)
+
+### Parte 1: Corrigir o webhook (backend)
 
 **Arquivo:** `supabase/functions/whatsapp-webhook/index.ts`
 
-No bloco de `status_ia` (linhas 87-187), apos atualizar o status e antes de retornar, verificar se o payload tambem contem uma mensagem (content.text nao vazio). Se sim:
-
-1. Atualizar `status_ia` normalmente
-2. **Nao retornar** - em vez disso, remover `status_ia` do payload e deixar o fluxo continuar para o processamento de mensagem (isRawMessage)
-
-### Logica alterada:
+Na secao de busca por `owner` (linhas 117-121), adicionar busca com E sem o sufixo `@s.whatsapp.net`:
 
 ```
-// 1. Check status_ia FIRST
-if (!payload.EventType && !payload.eventType && statusIaPayload) {
-  // ... resolver inbox, contact, conversation (codigo existente) ...
-  // ... atualizar status_ia na conversa (codigo existente) ...
-  // ... broadcast (codigo existente) ...
+// Antes (bugado):
+const ownerJidVal = ownerField.includes('@') ? ownerField : `${ownerField}@s.whatsapp.net`
+iaInstanceQuery = iaInstanceQuery.eq('owner_jid', ownerJidVal)
 
-  // Check if payload ALSO contains a message to save
-  const hasMessageContent = payload.content?.text || unwrapped?.content?.text
-  if (!hasMessageContent) {
-    // Pure status_ia update - return early
-    return new Response(JSON.stringify({ ok: true, status_ia: ... }), ...)
-  }
-  
-  // Has message content - fall through to isRawMessage processing
-  console.log('status_ia updated, continuing to process message content')
-}
-
-// 2. Detect raw message format (agent output)
-const isRawMessage = ...
+// Depois (corrigido):
+const ownerClean = ownerField.replace('@s.whatsapp.net', '')
+const ownerWithSuffix = `${ownerClean}@s.whatsapp.net`
+iaInstanceQuery = iaInstanceQuery.or(`owner_jid.eq.${ownerClean},owner_jid.eq.${ownerWithSuffix}`)
 ```
 
-Desta forma:
-- Payloads **so com status_ia** (como o "Ativar IA") continuam funcionando normalmente
-- Payloads **com status_ia + mensagem** (como as respostas do agente IA) atualizam o status E salvam a mensagem no helpdesk
+Isso garante que a busca funciona independente de como o `owner_jid` esta salvo no banco.
+
+### Parte 2: Recomendacao para o n8n (opcional mas mais robusto)
+
+Para cada fluxo de agente IA no n8n, incluir `inbox_id` no payload. Isso elimina completamente a necessidade de buscar a instancia. Exemplo para Ibirajuba Teste:
+
+```
+"inbox_id": "f851e9c8-f7a5-40bc-be12-697993fc5dbd"
+```
+
+IDs das caixas de entrada disponiveis:
+
+| Caixa | inbox_id |
+|---|---|
+| Vendas 01 - Wsmart | d7f5a437-a147-48f2-9f79-b29c8a2567b3 |
+| Neo Blindados - Geral | 79575754-f7a2-4945-8d88-bfc7e1f20ed4 |
+| Ibirajuba | 74c8fa53-45a7-4237-83f6-4d2548e083ed |
+| Ibirajuba Teste | f851e9c8-f7a5-40bc-be12-697993fc5dbd |
 
 ## Resumo
 
 | Arquivo | Mudanca |
 |---|---|
-| `supabase/functions/whatsapp-webhook/index.ts` | No bloco status_ia: verificar se ha content.text; se sim, continuar para processamento de mensagem em vez de retornar |
+| `supabase/functions/whatsapp-webhook/index.ts` | Buscar owner_jid com e sem sufixo @s.whatsapp.net |
 
-Nenhuma mudanca necessaria no n8n - o payload atual do "Envia dados para o Lovable3" esta correto.
-
+A URL do webhook continua sendo uma so para todas as caixas. O que identifica a caixa e o conteudo do payload (owner, instance_id, ou inbox_id).
