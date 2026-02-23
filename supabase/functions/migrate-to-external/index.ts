@@ -496,7 +496,18 @@ Deno.serve(async (req) => {
           if (!dataTables.includes(name)) dataTables.push(name)
         }
 
+        // Identify tables whose FK deps point to HIGH_VOLUME_TABLES (excluded from data migration)
+        const tablesWithHighVolumeDeps = new Set<string>()
+        for (const fk of (fkRows as any[])) {
+          const child = fk.child as string
+          const parent = fk.parent as string
+          if (HIGH_VOLUME_TABLES.includes(parent) && dataTables.includes(child)) {
+            tablesWithHighVolumeDeps.add(child)
+          }
+        }
+
         console.log('Table insertion order:', dataTables)
+        console.log('Tables skipped (high-volume FK deps):', [...tablesWithHighVolumeDeps])
 
         let totalSuccess = 0, totalFailed = 0
         const errors: string[] = []
@@ -504,6 +515,10 @@ Deno.serve(async (req) => {
         const tableResults: { table: string; rows: number }[] = []
 
         for (const tableName of dataTables) {
+          if (tablesWithHighVolumeDeps.has(tableName)) {
+            details.push(`⊘ ${tableName}: pulada (depende de tabela de alto volume)`)
+            continue
+          }
           try {
             const rows = await localQuery(`SELECT * FROM public."${tableName}" LIMIT 10000`)
             if (!rows || (rows as any[]).length === 0) {
