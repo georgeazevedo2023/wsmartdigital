@@ -231,7 +231,48 @@ Deno.serve(async (req) => {
           FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid
           WHERE n.nspname = 'public' AND p.prokind = 'f' ORDER BY p.proname
         `)
-        for (const fn of functions as any[]) {
+
+        // Topological sort: base functions first, dependents after
+        const fnList = functions as any[]
+        const allNames = fnList.map((f: any) => f.function_name as string)
+        const deps = new Map<string, string[]>()
+        for (const fn of fnList) {
+          const name = fn.function_name as string
+          const body = (fn.definition as string).toLowerCase()
+          const fnDeps = allNames.filter((other) => other !== name && body.includes(other + '('))
+          deps.set(name, fnDeps)
+        }
+        // Kahn's algorithm
+        const inDeg = new Map<string, number>()
+        for (const n of allNames) inDeg.set(n, 0)
+        for (const [, d] of deps) for (const dep of d) inDeg.set(dep, (inDeg.get(dep) || 0) + 1)
+        // We want dependencies first, so reverse: items with no dependents go last
+        // Actually: a depends on b means b must come first. inDeg counts how many others depend on this node.
+        // Recompute: inDeg = how many deps this node HAS (not how many depend on it)
+        const inDeg2 = new Map<string, number>()
+        for (const n of allNames) inDeg2.set(n, deps.get(n)!.length)
+        const queue: string[] = allNames.filter((n) => inDeg2.get(n) === 0)
+        const sorted: string[] = []
+        const visited = new Set<string>()
+        while (queue.length > 0) {
+          const curr = queue.shift()!
+          if (visited.has(curr)) continue
+          visited.add(curr)
+          sorted.push(curr)
+          for (const [node, nodeDeps] of deps) {
+            if (!visited.has(node) && nodeDeps.includes(curr)) {
+              // Remove satisfied dep
+              const remaining = nodeDeps.filter((d) => !visited.has(d))
+              if (remaining.length === 0) queue.push(node)
+            }
+          }
+        }
+        // Add any remaining (circular or missed)
+        for (const n of allNames) if (!visited.has(n)) sorted.push(n)
+
+        const fnMap = new Map(fnList.map((f: any) => [f.function_name as string, f]))
+        for (const name of sorted) {
+          const fn = fnMap.get(name)!
           statements.push((fn.definition as string) + ';')
           labels.push(`Função ${fn.function_name}`)
         }
