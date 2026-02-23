@@ -440,13 +440,63 @@ Deno.serve(async (req) => {
 
       // ─── Migrate Data ─────────────────────────────────────────────────
       if (action === 'migrate-data') {
+        // Fetch tables
         const tables = await localQuery(`
           SELECT table_name FROM information_schema.tables
-          WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name
+          WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
         `)
-        const dataTables = (tables as any[])
+        const allTableNames = (tables as any[])
           .map((t: any) => t.table_name)
           .filter((name: string) => !HIGH_VOLUME_TABLES.includes(name))
+
+        // Build FK dependency graph for topological sort
+        const fkRows = await localQuery(`
+          SELECT
+            tc.table_name AS child,
+            ccu.table_name AS parent
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+          JOIN information_schema.constraint_column_usage ccu ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+          WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = 'public'
+        `)
+        const fkDeps = new Map<string, Set<string>>()
+        for (const name of allTableNames) fkDeps.set(name, new Set())
+        for (const fk of (fkRows as any[])) {
+          const child = fk.child as string
+          const parent = fk.parent as string
+          if (fkDeps.has(child) && allTableNames.includes(parent)) {
+            fkDeps.get(child)!.add(parent)
+          }
+        }
+        // Kahn's algorithm
+        const inDegree = new Map<string, number>()
+        const adj = new Map<string, string[]>()
+        for (const name of allTableNames) { inDegree.set(name, 0); adj.set(name, []) }
+        for (const [child, parents] of fkDeps) {
+          for (const parent of parents) {
+            if (parent !== child && allTableNames.includes(parent)) {
+              adj.get(parent)!.push(child)
+              inDegree.set(child, (inDegree.get(child) || 0) + 1)
+            }
+          }
+        }
+        const queue: string[] = []
+        for (const [name, deg] of inDegree) { if (deg === 0) queue.push(name) }
+        const dataTables: string[] = []
+        while (queue.length > 0) {
+          const node = queue.shift()!
+          dataTables.push(node)
+          for (const dep of (adj.get(node) || [])) {
+            inDegree.set(dep, (inDegree.get(dep) || 0) - 1)
+            if (inDegree.get(dep) === 0) queue.push(dep)
+          }
+        }
+        // Add any remaining tables not in sorted result (circular deps)
+        for (const name of allTableNames) {
+          if (!dataTables.includes(name)) dataTables.push(name)
+        }
+
+        console.log('Table insertion order:', dataTables)
 
         let totalSuccess = 0, totalFailed = 0
         const errors: string[] = []
@@ -470,8 +520,8 @@ Deno.serve(async (req) => {
                 if (v === null || v === undefined) return 'NULL'
                 if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE'
                 if (typeof v === 'number') return String(v)
-                if (typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`
-                if (Array.isArray(v)) return `ARRAY[${v.map((i: any) => `'${String(i).replace(/'/g, "''")}'`).join(',')}]`
+                if (Array.isArray(v)) return `ARRAY[${v.map((i: any) => `'${String(i).replace(/'/g, "''")}'`).join(',')}]::text[]`
+                if (v !== null && typeof v === 'object') return `'${JSON.stringify(v).replace(/'/g, "''")}'::jsonb`
                 return `'${String(v).replace(/'/g, "''")}'`
               })
               return `(${vals.join(', ')})`
