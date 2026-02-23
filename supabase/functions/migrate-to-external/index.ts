@@ -326,7 +326,8 @@ Deno.serve(async (req) => {
           let sql = `CREATE POLICY "${p.policyname}" ON public.${p.tablename}`
           sql += ` AS ${p.permissive === 'true' ? 'PERMISSIVE' : 'RESTRICTIVE'}`
           sql += ` FOR ${p.cmd}`
-          sql += ` TO ${p.roles === '{public}' ? 'public' : p.roles?.replace(/[{}]/g, '') || 'public'}`
+          const rolesStr = Array.isArray(p.roles) ? p.roles.join(', ') : String(p.roles || '{public}').replace(/[{}]/g, '')
+          sql += ` TO ${rolesStr || 'public'}`
           if (p.qual) sql += ` USING (${p.qual})`
           if (p.with_check) sql += ` WITH CHECK (${p.with_check})`
           sql += ';'
@@ -415,7 +416,8 @@ Deno.serve(async (req) => {
           let createSql = `CREATE POLICY "${p.policyname}" ON storage.${p.tablename}`
           createSql += ` AS ${p.permissive === 'true' ? 'PERMISSIVE' : 'RESTRICTIVE'}`
           createSql += ` FOR ${p.cmd}`
-          createSql += ` TO ${p.roles === '{public}' ? 'public' : p.roles?.replace(/[{}]/g, '') || 'public'}`
+          const sRolesStr = Array.isArray(p.roles) ? p.roles.join(', ') : String(p.roles || '{public}').replace(/[{}]/g, '')
+          createSql += ` TO ${sRolesStr || 'public'}`
           if (p.qual) createSql += ` USING (${p.qual})`
           if (p.with_check) createSql += ` WITH CHECK (${p.with_check})`
           createSql += ';'
