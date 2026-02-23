@@ -1,44 +1,47 @@
 
+## Automatizar Criacao de Usuarios Auth no Destino
 
-## Tratar Erros Esperados em Tabelas com FK para Tabelas de Alto Volume
-
-### Problema
-`conversation_labels` tem FK para `conversations`, que esta na lista `HIGH_VOLUME_TABLES` (excluida da migracao de dados). O INSERT falha com violacao de FK, o que e esperado, mas o sistema conta como erro.
+### Situacao Atual
+A migracao lista os 8 usuarios e pede para criar manualmente no dashboard do Supabase destino. Isso e trabalhoso e propenso a erros.
 
 ### Solucao
-Identificar tabelas cujas dependencias FK apontam para tabelas em `HIGH_VOLUME_TABLES`. Para essas tabelas, tratar falhas de INSERT como "esperado" e nao como erro.
+Automatizar a criacao dos usuarios no Supabase destino usando a Admin API (`auth.admin.createUser`). O sistema vai:
 
-### Mudancas no arquivo `supabase/functions/migrate-to-external/index.ts`
+1. Buscar os usuarios do projeto origem (ja funciona)
+2. Criar cada usuario no projeto destino com o **mesmo UUID**, email e metadados
+3. Definir uma senha temporaria padrao para todos
+4. Mostrar resultado no log
 
-**No bloco `migrate-data` (linhas ~462-470):**
-Apos construir o grafo de FKs, criar um Set de tabelas que dependem de `HIGH_VOLUME_TABLES`:
+### Como funciona para voce
 
-```text
-const tablesWithHighVolumeDeps = new Set<string>()
-for (const fk of fkRows) {
-  if (HIGH_VOLUME_TABLES.includes(fk.parent) && allTableNames.includes(fk.child)) {
-    tablesWithHighVolumeDeps.add(fk.child)
-  }
-}
-```
+Apos a migracao, cada usuario vai poder fazer login no novo sistema usando:
+- **Email**: o mesmo de antes
+- **Senha temporaria**: `Trocar@123` (voce informa para cada usuario trocar depois)
 
-**No bloco de insercao (linhas ~536-538):**
-Se a tabela esta em `tablesWithHighVolumeDeps`, nao contar falha como erro:
+Os UUIDs sao preservados, entao todas as referencias nas tabelas (`user_profiles`, `user_roles`, `inbox_users`, etc.) continuam funcionando.
 
-```text
-if (r.success) { 
-  tableRows += batch.length; totalSuccess++ 
-} else if (tablesWithHighVolumeDeps.has(tableName)) {
-  // Esperado - FK aponta para tabela de alto volume que foi excluida
-  details.push(`⊘ ${tableName}: pulada (depende de tabela de alto volume)`)
-} else { 
-  totalFailed++; errors.push(...); tableFailed = true 
-}
-```
+### Detalhes Tecnicos
 
-Na pratica, em vez de tentar inserir e falhar, podemos **pular a tabela inteira** se todas as suas FKs obrigatorias apontam para HIGH_VOLUME_TABLES, ja que os dados nao terao referencia valida.
+**Arquivo 1: `supabase/functions/migrate-to-external/index.ts`**
+
+Adicionar nova action `migrate-auth-users` que:
+- Busca usuarios da origem via `pureAdminClient.auth.admin.listUsers()`
+- Para cada usuario, cria no destino via `externalClient.auth.admin.createUser()` com:
+  - `id`: mesmo UUID original
+  - `email`: mesmo email
+  - `email_confirm: true` (para nao precisar confirmar)
+  - `password`: senha temporaria `Trocar@123`
+  - `user_metadata`: mesmos metadados (full_name, etc.)
+- Retorna contagem de sucesso/falha
+
+**Arquivo 2: `src/components/dashboard/MigrationWizard.tsx`**
+
+- Alterar o step `auth` de `get-auth-users` para `migrate-auth-users`
+- Atualizar descricao de "Lista usuarios para criacao manual" para "Cria usuarios no destino"
+- Remover o card de "Crie manualmente" e substituir por resultado automatizado
+- Mostrar a senha temporaria no log para o admin saber
 
 ### Resumo
-- 1 arquivo modificado: `supabase/functions/migrate-to-external/index.ts`
-- ~10 linhas adicionadas
-- Resultado: migracao mostra 0 erros, tabelas dependentes de alto volume sao marcadas como "pulada"
+- 2 arquivos modificados
+- Usuarios criados automaticamente com mesmo UUID e senha temporaria
+- Zero trabalho manual necessario
