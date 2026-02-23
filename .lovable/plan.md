@@ -1,48 +1,38 @@
 
 
-## Corrigir Ordem de Criacao de Funcoes - Ordenacao Topologica por Dependencia
+## Corrigir Erros na Migracao de Dados
 
-### Problema
-As funcoes estao sendo criadas em ordem alfabetica. `can_access_kanban_board` depende de `is_super_admin`, mas e criada antes dela. Resultado: erro `function is_super_admin(uuid) does not exist`.
+### Problema 1: Arrays serializados como JSONB
+Na linha 474 do edge function, o check `Array.isArray(v)` vem DEPOIS de `typeof v === 'object'`. Como arrays sao objetos em JavaScript, eles caem no branch de JSONB antes de chegar ao branch de Array. Resultado: colunas do tipo `text[]` recebem JSON ao inves de `ARRAY[...]`.
 
-Cadeia de dependencias:
+**Correcao:** Mover o `Array.isArray(v)` para ANTES do `typeof v === 'object'`.
+
+### Problema 2: Ordem de insercao viola Foreign Keys
+As tabelas sao inseridas em ordem alfabetica. Isso causa erros de FK:
+- `conversation_labels` precisa de `conversations` (que e alto volume e excluida)
+- `inbox_users` precisa de `inboxes`
+- `kanban_card_data` precisa de `kanban_cards`
+- `kanban_board_members` precisa de `kanban_boards`
+
+**Correcao:** Ordenar as tabelas topologicamente usando as foreign keys do banco, garantindo que tabelas referenciadas sejam inseridas primeiro. Tabelas cujas dependencias estao em HIGH_VOLUME_TABLES (e portanto sem dados) terao seus inserts executados com erros esperados - usar `ON CONFLICT DO NOTHING` e nao contar como falha fatal.
+
+### Mudancas no arquivo `supabase/functions/migrate-to-external/index.ts`
+
+**1. Fix Array check (linhas 468-476):**
 ```text
-is_super_admin        (sem dependencias)
-is_gerente            (sem dependencias)
-has_role              (sem dependencias)
-has_inbox_access      (sem dependencias)
-is_inbox_member       (sem dependencias)
-get_inbox_role        (sem dependencias)
-can_access_kanban_board  -> depende de is_super_admin, is_inbox_member
-can_access_kanban_card   -> depende de is_super_admin, can_access_kanban_board
+Antes:
+  if (typeof v === 'object') return jsonb...
+  if (Array.isArray(v)) return ARRAY[...]
+
+Depois:
+  if (Array.isArray(v)) return ARRAY[...]
+  if (typeof v === 'object') return jsonb...
 ```
 
-### Solucao
-Ordenar topologicamente as funcoes antes de executa-las: funcoes sem dependencias primeiro, depois as que dependem delas.
+**2. Ordenar tabelas por dependencia FK (bloco migrate-data):**
+- Buscar FKs do banco local com query em `information_schema.table_constraints` + `key_column_usage` + `constraint_column_usage`
+- Construir grafo de dependencias e ordenar topologicamente
+- Inserir dados na ordem correta
 
-### Mudanca no arquivo `supabase/functions/migrate-to-external/index.ts`
-
-No bloco `migrate-functions` (linhas ~225-258), apos buscar as funcoes, adicionar logica de ordenacao:
-
-1. Para cada funcao, verificar quais outras funcoes publicas ela referencia no seu corpo (`definition`)
-2. Construir um grafo de dependencias
-3. Ordenar topologicamente (funcoes base primeiro, dependentes depois)
-4. Executar nessa ordem
-
-```text
-Antes:  [can_access_kanban_board, can_access_kanban_card, exec_sql, get_inbox_role, ...]
-Depois: [is_super_admin, is_gerente, has_role, get_inbox_role, ..., can_access_kanban_board, can_access_kanban_card]
-```
-
-### Implementacao tecnica
-
-Adicionar uma funcao auxiliar `topoSortFunctions` que:
-- Recebe o array de funcoes com `function_name` e `definition`
-- Para cada funcao, procura referencias a outras funcoes publicas no corpo
-- Faz uma ordenacao topologica (Kahn's algorithm)
-- Retorna o array ordenado
-
-### Resumo
-- 1 arquivo modificado: `supabase/functions/migrate-to-external/index.ts`
-- Adicionar ~30 linhas de logica de ordenacao topologica
-- Nenhuma mudanca no frontend
+### Arquivo modificado
+- `supabase/functions/migrate-to-external/index.ts`
