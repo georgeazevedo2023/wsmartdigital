@@ -582,6 +582,64 @@ Deno.serve(async (req) => {
         })
       }
 
+      // ─── Migrate Auth Users ────────────────────────────────────────────
+      if (action === 'migrate-auth-users') {
+        if (!external_url || !external_service_role_key) {
+          throw new Error('external_url and external_service_role_key required for auth user migration')
+        }
+        const externalClient = createClient(external_url, external_service_role_key)
+
+        const { data: { users: authUsers }, error } = await pureAdminClient.auth.admin.listUsers({ perPage: 1000 })
+        if (error) throw error
+
+        const TEMP_PASSWORD = 'Trocar@123'
+        let success = 0, failed = 0
+        const errors: string[] = []
+        const details: string[] = []
+        const createdUsers: any[] = []
+
+        for (const user of (authUsers || [])) {
+          try {
+            const { data: created, error: createError } = await externalClient.auth.admin.createUser({
+              id: user.id,
+              email: user.email!,
+              password: TEMP_PASSWORD,
+              email_confirm: true,
+              user_metadata: user.user_metadata || {},
+            })
+            if (createError) {
+              if (createError.message?.includes('already been registered') || createError.message?.includes('already exists')) {
+                success++
+                details.push(`⚠ ${user.email}: já existe no destino (UUID preservado)`)
+                createdUsers.push({ id: user.id, email: user.email, status: 'already_exists' })
+              } else {
+                failed++
+                errors.push(`${user.email}: ${createError.message}`)
+                details.push(`✗ ${user.email}: ${createError.message}`)
+              }
+            } else {
+              success++
+              details.push(`✓ ${user.email}: criado com sucesso (${user.id.substring(0, 8)}...)`)
+              createdUsers.push({ id: user.id, email: user.email, status: 'created' })
+            }
+          } catch (e: any) {
+            failed++
+            errors.push(`${user.email}: ${e.message}`)
+            details.push(`✗ ${user.email}: ${e.message}`)
+          }
+        }
+
+        details.push(``)
+        details.push(`🔑 Senha temporária para todos: ${TEMP_PASSWORD}`)
+        details.push(`📋 Informe cada usuário para trocar a senha após o primeiro login.`)
+
+        return new Response(JSON.stringify({ 
+          data: { success, failed, errors, details, step: 'auth', users: createdUsers, tempPassword: TEMP_PASSWORD } 
+        }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+
       // ─── Verify Migration ─────────────────────────────────────────────
       if (action === 'verify-migration') {
         // Source counts

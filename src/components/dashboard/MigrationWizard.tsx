@@ -107,7 +107,7 @@ const MigrationWizard = () => {
     { id: 'triggers', action: 'migrate-triggers', label: 'Triggers', description: 'Triggers de automação', icon: <ArrowRight className="w-4 h-4" />, status: 'pending' },
     { id: 'storage', action: 'migrate-storage', label: 'Storage', description: 'Buckets + políticas de storage', icon: <HardDrive className="w-4 h-4" />, status: 'pending' },
     { id: 'data', action: 'migrate-data', label: 'Dados', description: 'Dados filtrados (exceto alto volume)', icon: <Table2 className="w-4 h-4" />, status: 'pending' },
-    { id: 'auth', action: 'get-auth-users', label: 'Auth Users', description: 'Lista usuários para criação manual', icon: <Users className="w-4 h-4" />, status: 'pending' },
+    { id: 'auth', action: 'migrate-auth-users', label: 'Auth Users', description: 'Cria usuários no destino com senha temporária', icon: <Users className="w-4 h-4" />, status: 'pending' },
   ]);
 
   const completedSteps = steps.filter(s => s.status === 'success' || s.status === 'skipped').length;
@@ -191,15 +191,20 @@ const MigrationWizard = () => {
       const json = await callEdgeFunction(step.action);
       const duration = Date.now() - start;
 
-      if (step.action === 'get-auth-users') {
-        const users = json.data || [];
+      if (step.action === 'migrate-auth-users') {
+        const data = json.data;
+        const users = data?.users || [];
         setAuthUsers(users);
-        setShowAuthUsers(true);
-        const details = json.details || users.map((u: any) => `✓ ${u.email}`);
-        details.forEach((d: string) => addLog(step.label, d, 'success'));
-        updateStep(step.id, { status: 'success', result: { success: users.length, failed: 0, errors: [], details }, duration });
-        addLog(step.label, `Concluído em ${formatMs(duration)} - ${users.length} usuários`, 'success');
-        return true;
+        if (users.length > 0) setShowAuthUsers(true);
+        const details = data?.details || [];
+        details.forEach((d: string) => {
+          const type = d.startsWith('✓') ? 'success' : d.startsWith('✗') ? 'error' : d.startsWith('⚠') ? 'warning' : 'info';
+          addLog(step.label, d, type);
+        });
+        const status = (data?.failed || 0) > 0 ? 'error' : 'success';
+        updateStep(step.id, { status, result: { success: data?.success || 0, failed: data?.failed || 0, errors: data?.errors || [], details }, duration });
+        addLog(step.label, `Concluído em ${formatMs(duration)} - ${data?.success || 0} OK, ${data?.failed || 0} erros`, status === 'error' ? 'warning' : 'success');
+        return (data?.failed || 0) === 0;
       }
 
       const data = json.data as StepResult;
@@ -591,10 +596,10 @@ const MigrationWizard = () => {
           <CardHeader className="pb-2 pt-3">
             <CardTitle className="flex items-center gap-2 text-sm">
               <Users className="w-4 h-4 text-primary" />
-              Usuários Auth ({authUsers.length})
+              Usuários Migrados ({authUsers.length})
             </CardTitle>
             <CardDescription className="text-xs">
-              Crie estes usuários manualmente no Supabase de destino (Authentication → Users).
+              Usuários criados automaticamente no destino. Senha temporária: <code className="bg-muted px-1.5 py-0.5 rounded font-bold">Trocar@123</code>
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -602,8 +607,20 @@ const MigrationWizard = () => {
               <div className="space-y-1">
                 {authUsers.map((u: any) => (
                   <div key={u.id} className="flex items-center justify-between p-2 rounded bg-muted/20 border border-border/20 text-xs">
-                    <span className="font-medium">{u.email}</span>
-                    <span className="font-mono text-muted-foreground">{u.id.substring(0, 8)}...</span>
+                    <div className="flex items-center gap-2">
+                      {u.status === 'created' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                      ) : (
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-500" />
+                      )}
+                      <span className="font-medium">{u.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="text-[10px] h-5">
+                        {u.status === 'created' ? 'Criado' : 'Já existia'}
+                      </Badge>
+                      <span className="font-mono text-muted-foreground">{u.id.substring(0, 8)}...</span>
+                    </div>
                   </div>
                 ))}
               </div>
