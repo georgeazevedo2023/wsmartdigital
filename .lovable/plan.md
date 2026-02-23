@@ -1,38 +1,44 @@
 
 
-## Corrigir Erros na Migracao de Dados
+## Tratar Erros Esperados em Tabelas com FK para Tabelas de Alto Volume
 
-### Problema 1: Arrays serializados como JSONB
-Na linha 474 do edge function, o check `Array.isArray(v)` vem DEPOIS de `typeof v === 'object'`. Como arrays sao objetos em JavaScript, eles caem no branch de JSONB antes de chegar ao branch de Array. Resultado: colunas do tipo `text[]` recebem JSON ao inves de `ARRAY[...]`.
+### Problema
+`conversation_labels` tem FK para `conversations`, que esta na lista `HIGH_VOLUME_TABLES` (excluida da migracao de dados). O INSERT falha com violacao de FK, o que e esperado, mas o sistema conta como erro.
 
-**Correcao:** Mover o `Array.isArray(v)` para ANTES do `typeof v === 'object'`.
-
-### Problema 2: Ordem de insercao viola Foreign Keys
-As tabelas sao inseridas em ordem alfabetica. Isso causa erros de FK:
-- `conversation_labels` precisa de `conversations` (que e alto volume e excluida)
-- `inbox_users` precisa de `inboxes`
-- `kanban_card_data` precisa de `kanban_cards`
-- `kanban_board_members` precisa de `kanban_boards`
-
-**Correcao:** Ordenar as tabelas topologicamente usando as foreign keys do banco, garantindo que tabelas referenciadas sejam inseridas primeiro. Tabelas cujas dependencias estao em HIGH_VOLUME_TABLES (e portanto sem dados) terao seus inserts executados com erros esperados - usar `ON CONFLICT DO NOTHING` e nao contar como falha fatal.
+### Solucao
+Identificar tabelas cujas dependencias FK apontam para tabelas em `HIGH_VOLUME_TABLES`. Para essas tabelas, tratar falhas de INSERT como "esperado" e nao como erro.
 
 ### Mudancas no arquivo `supabase/functions/migrate-to-external/index.ts`
 
-**1. Fix Array check (linhas 468-476):**
-```text
-Antes:
-  if (typeof v === 'object') return jsonb...
-  if (Array.isArray(v)) return ARRAY[...]
+**No bloco `migrate-data` (linhas ~462-470):**
+Apos construir o grafo de FKs, criar um Set de tabelas que dependem de `HIGH_VOLUME_TABLES`:
 
-Depois:
-  if (Array.isArray(v)) return ARRAY[...]
-  if (typeof v === 'object') return jsonb...
+```text
+const tablesWithHighVolumeDeps = new Set<string>()
+for (const fk of fkRows) {
+  if (HIGH_VOLUME_TABLES.includes(fk.parent) && allTableNames.includes(fk.child)) {
+    tablesWithHighVolumeDeps.add(fk.child)
+  }
+}
 ```
 
-**2. Ordenar tabelas por dependencia FK (bloco migrate-data):**
-- Buscar FKs do banco local com query em `information_schema.table_constraints` + `key_column_usage` + `constraint_column_usage`
-- Construir grafo de dependencias e ordenar topologicamente
-- Inserir dados na ordem correta
+**No bloco de insercao (linhas ~536-538):**
+Se a tabela esta em `tablesWithHighVolumeDeps`, nao contar falha como erro:
 
-### Arquivo modificado
-- `supabase/functions/migrate-to-external/index.ts`
+```text
+if (r.success) { 
+  tableRows += batch.length; totalSuccess++ 
+} else if (tablesWithHighVolumeDeps.has(tableName)) {
+  // Esperado - FK aponta para tabela de alto volume que foi excluida
+  details.push(`⊘ ${tableName}: pulada (depende de tabela de alto volume)`)
+} else { 
+  totalFailed++; errors.push(...); tableFailed = true 
+}
+```
+
+Na pratica, em vez de tentar inserir e falhar, podemos **pular a tabela inteira** se todas as suas FKs obrigatorias apontam para HIGH_VOLUME_TABLES, ja que os dados nao terao referencia valida.
+
+### Resumo
+- 1 arquivo modificado: `supabase/functions/migrate-to-external/index.ts`
+- ~10 linhas adicionadas
+- Resultado: migracao mostra 0 erros, tabelas dependentes de alto volume sao marcadas como "pulada"
