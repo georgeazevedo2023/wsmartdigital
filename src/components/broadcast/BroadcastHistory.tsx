@@ -1058,15 +1058,18 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                           {log.recipients_failed > 0 && (
                             <div className="flex items-center gap-1.5">
                               <XCircle className="w-3.5 h-3.5 text-red-500" />
-                              <span className="text-red-600">{log.recipients_failed} falha</span>
+                              <span className="text-red-600">{log.recipients_failed} {log.recipients_failed === 1 ? 'falha' : 'falhas'}</span>
                             </div>
                           )}
                         </div>
 
-                        {log.error_message && (
-                          <div className="p-2 bg-destructive/10 rounded text-xs sm:text-sm text-destructive">
-                            <p className="text-xs mb-1">Erro:</p>
-                            <p>{log.error_message}</p>
+                        {(log.error_message || log.recipients_failed > 0) && (
+                          <div className="p-2 bg-destructive/10 rounded text-xs sm:text-sm text-destructive border border-destructive/20">
+                            <p className="text-xs font-medium mb-1 flex items-center gap-1">
+                              <XCircle className="w-3 h-3" />
+                              Observações de erro:
+                            </p>
+                            <p>{log.error_message || `${log.recipients_failed} destinatário${log.recipients_failed === 1 ? '' : 's'} não recebeu a mensagem. Possíveis causas: número inválido, contato bloqueou o remetente ou falha temporária na API.`}</p>
                           </div>
                         )}
 
