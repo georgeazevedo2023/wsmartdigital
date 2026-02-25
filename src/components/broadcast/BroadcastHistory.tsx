@@ -957,7 +957,7 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
                             {log.random_delay && log.random_delay !== 'none' && (
                               <Badge variant="outline" className="text-xs hidden sm:flex">
                                 <Shield className="w-3 h-3 mr-1" />
-                                {log.random_delay === '5-10' ? '5-10s' : '10-20s'}
+                                {log.random_delay === '120-180' ? '2-3min' : `${log.random_delay}s`}
                               </Badge>
                             )}
                           </div>

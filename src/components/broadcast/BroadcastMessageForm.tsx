@@ -86,7 +86,7 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
   const [message, setMessage] = useState(() => initialData?.content || '');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
   // selectedGroups used directly for all participant logic
-  const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20'>('none');
+  const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20' | '30-40' | '40-60' | '120-180'>('none');
   const [progress, setProgress] = useState<SendProgress>({
     currentGroup: 0,
     totalGroups: 0,
@@ -254,10 +254,14 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
       return SEND_DELAY_MS; // 350ms padrão
     }
     
-    const [min, max] = randomDelay === '5-10' 
-      ? [5000, 10000]   // 5 a 10 segundos
-      : [10000, 20000]; // 10 a 20 segundos
-    
+    const ranges: Record<string, [number, number]> = {
+      '5-10': [5000, 10000],
+      '10-20': [10000, 20000],
+      '30-40': [30000, 40000],
+      '40-60': [40000, 60000],
+      '120-180': [120000, 180000],
+    };
+    const [min, max] = ranges[randomDelay] || [5000, 10000];
     return Math.floor(Math.random() * (max - min + 1)) + min;
   };
 
@@ -266,10 +270,14 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
       return GROUP_DELAY_MS; // 500ms padrão
     }
     
-    const [min, max] = randomDelay === '5-10' 
-      ? [5000, 10000]   // 5 a 10 segundos
-      : [10000, 20000]; // 10 a 20 segundos
-    
+    const ranges: Record<string, [number, number]> = {
+      '5-10': [5000, 10000],
+      '10-20': [10000, 20000],
+      '30-40': [30000, 40000],
+      '40-60': [40000, 60000],
+      '120-180': [120000, 180000],
+    };
+    const [min, max] = ranges[randomDelay] || [5000, 10000];
     return Math.floor(Math.random() * (max - min + 1)) + min;
   };
 
@@ -1641,19 +1649,20 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
   const getEstimatedTime = (): { min: number; max: number } | null => {
     if (randomDelay === 'none' || targetCount <= 1) return null;
     
-    const messagesCount = targetCount - 1; // Delays happen between messages, not after the last one
+    const messagesCount = targetCount - 1;
+    const rangeMap: Record<string, [number, number]> = {
+      '5-10': [5, 10],
+      '10-20': [10, 20],
+      '30-40': [30, 40],
+      '40-60': [40, 60],
+      '120-180': [120, 180],
+    };
+    const [minSec, maxSec] = rangeMap[randomDelay] || [5, 10];
     
-    if (randomDelay === '5-10') {
-      return {
-        min: messagesCount * 5,  // 5 seconds minimum
-        max: messagesCount * 10, // 10 seconds maximum
-      };
-    } else {
-      return {
-        min: messagesCount * 10, // 10 seconds minimum
-        max: messagesCount * 20, // 20 seconds maximum
-      };
-    }
+    return {
+      min: messagesCount * minSec,
+      max: messagesCount * maxSec,
+    };
   };
 
   const formatDuration = (seconds: number): string => {
@@ -2253,33 +2262,25 @@ const BroadcastMessageForm = ({ instance, selectedGroups, onComplete, initialDat
                 </div>
                 
                 <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant={randomDelay === 'none' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setRandomDelay('none')}
-                    disabled={isSending}
-                  >
-                    Desativado
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={randomDelay === '5-10' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setRandomDelay('5-10')}
-                    disabled={isSending}
-                  >
-                    5-10 seg
-                  </Button>
-                  <Button
-                    type="button"
-                    variant={randomDelay === '10-20' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setRandomDelay('10-20')}
-                    disabled={isSending}
-                  >
-                    10-20 seg
-                  </Button>
+                  {([
+                    ['none', 'Desativado'],
+                    ['5-10', '5-10 seg'],
+                    ['10-20', '10-20 seg'],
+                    ['30-40', '30-40 seg'],
+                    ['40-60', '40-60 seg'],
+                    ['120-180', '2-3 min'],
+                  ] as const).map(([value, label]) => (
+                    <Button
+                      key={value}
+                      type="button"
+                      variant={randomDelay === value ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setRandomDelay(value as any)}
+                      disabled={isSending}
+                    >
+                      {label}
+                    </Button>
+                  ))}
                 </div>
 
                 {/* Estimated time indicator */}
