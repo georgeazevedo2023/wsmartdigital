@@ -47,6 +47,7 @@ import {
   BookMarked,
   LayoutGrid,
   List,
+  Copy,
 } from 'lucide-react';
 import { MessageTemplate, useMessageTemplates } from '@/hooks/useMessageTemplates';
 import { CarouselEditor, type CarouselData } from '@/components/broadcast/CarouselEditor';
@@ -236,6 +237,21 @@ export default function TemplatesManager() {
     setDeletingTemplate(null);
   };
 
+  const handleDuplicate = async (template: MessageTemplate) => {
+    const result = await createTemplate({
+      name: `${template.name} (cópia)`,
+      content: template.content || undefined,
+      message_type: template.message_type,
+      media_url: template.media_url || undefined,
+      filename: template.filename || undefined,
+      category: template.category || undefined,
+      carousel_data: template.carousel_data || undefined,
+    });
+    if (result) {
+      toast.success('Template duplicado!');
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -346,10 +362,13 @@ export default function TemplatesManager() {
                     <span className="font-medium truncate">{template.name}</span>
                   </div>
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(template)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDuplicate(template)} title="Duplicar">
+                      <Copy className="w-3.5 h-3.5" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(template)} title="Editar">
                       <Pencil className="w-3.5 h-3.5" />
                     </Button>
-                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeletingTemplate(template)}>
+                    <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeletingTemplate(template)} title="Excluir">
                       <Trash2 className="w-3.5 h-3.5" />
                     </Button>
                   </div>
@@ -416,10 +435,13 @@ export default function TemplatesManager() {
                 )}
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(template)}>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDuplicate(template)} title="Duplicar">
+                  <Copy className="w-3.5 h-3.5" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEdit(template)} title="Editar">
                   <Pencil className="w-3.5 h-3.5" />
                 </Button>
-                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeletingTemplate(template)}>
+                <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => setDeletingTemplate(template)} title="Excluir">
                   <Trash2 className="w-3.5 h-3.5" />
                 </Button>
               </div>
