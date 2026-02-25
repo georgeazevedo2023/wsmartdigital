@@ -102,7 +102,7 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
       cards: [createEmptyCard(), createEmptyCard()],
     };
   });
-  const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20'>('none');
+  const [randomDelay, setRandomDelay] = useState<'none' | '5-10' | '10-20' | '30-40' | '40-60' | '120-180'>('none');
   const [progress, setProgress] = useState<SendProgress>({
     current: 0,
     total: 0,
@@ -190,7 +190,14 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
   const getRandomDelay = (): number => {
     if (randomDelay === 'none') return SEND_DELAY_MS;
     
-    const [min, max] = randomDelay === '5-10' ? [5000, 10000] : [10000, 20000];
+    const ranges: Record<string, [number, number]> = {
+      '5-10': [5000, 10000],
+      '10-20': [10000, 20000],
+      '30-40': [30000, 40000],
+      '40-60': [40000, 60000],
+      '120-180': [120000, 180000],
+    };
+    const [min, max] = ranges[randomDelay] || [5000, 10000];
     return Math.floor(Math.random() * (max - min + 1)) + min;
   };
 
@@ -208,7 +215,14 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
     if (randomDelay === 'none') return '';
     
     const count = selectedLeads.length;
-    const [minSec, maxSec] = randomDelay === '5-10' ? [5, 10] : [10, 20];
+    const rangeMap: Record<string, [number, number]> = {
+      '5-10': [5, 10],
+      '10-20': [10, 20],
+      '30-40': [30, 40],
+      '40-60': [40, 60],
+      '120-180': [120, 180],
+    };
+    const [minSec, maxSec] = rangeMap[randomDelay] || [5, 10];
     
     const minTotal = Math.ceil((count * minSec) / 60);
     const maxTotal = Math.ceil((count * maxSec) / 60);
@@ -1189,6 +1203,9 @@ const LeadMessageForm = ({ instance, selectedLeads, onComplete, initialData }: L
                   <SelectItem value="none">Desativado</SelectItem>
                   <SelectItem value="5-10">5-10 seg</SelectItem>
                   <SelectItem value="10-20">10-20 seg</SelectItem>
+                  <SelectItem value="30-40">30-40 seg</SelectItem>
+                  <SelectItem value="40-60">40-60 seg</SelectItem>
+                  <SelectItem value="120-180">2-3 min</SelectItem>
                 </SelectContent>
               </Select>
             </div>
