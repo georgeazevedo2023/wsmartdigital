@@ -22,6 +22,7 @@ const ScheduledMessages = lazy(() => import("./pages/dashboard/ScheduledMessages
 const Broadcaster = lazy(() => import("./pages/dashboard/Broadcaster"));
 const BroadcastHistoryPage = lazy(() => import("./pages/dashboard/BroadcastHistoryPage"));
 const LeadsBroadcaster = lazy(() => import("./pages/dashboard/LeadsBroadcaster"));
+const TemplatesManager = lazy(() => import("./pages/dashboard/TemplatesManager"));
 const HelpDesk = lazy(() => import("./pages/dashboard/HelpDesk"));
 const InboxManagement = lazy(() => import("./pages/dashboard/InboxManagement"));
 const InboxUsersManagement = lazy(() => import("./pages/dashboard/InboxUsersManagement"));
@@ -153,6 +154,7 @@ const AppRoutes = () => {
         <Route index element={<AdminRoute><Suspense fallback={<PageLoader />}><DashboardHome /></Suspense></AdminRoute>} />
         <Route path="broadcast" element={<AdminRoute><Suspense fallback={<PageLoader />}><Broadcaster /></Suspense></AdminRoute>} />
         <Route path="broadcast/history" element={<AdminRoute><Suspense fallback={<PageLoader />}><BroadcastHistoryPage /></Suspense></AdminRoute>} />
+        <Route path="broadcast/templates" element={<AdminRoute><Suspense fallback={<PageLoader />}><TemplatesManager /></Suspense></AdminRoute>} />
         <Route path="broadcast/leads" element={<AdminRoute><Suspense fallback={<PageLoader />}><LeadsBroadcaster /></Suspense></AdminRoute>} />
         <Route path="instances" element={<AdminRoute><Suspense fallback={<PageLoader />}><Instances /></Suspense></AdminRoute>} />
         <Route path="instances/:id" element={<AdminRoute><Suspense fallback={<PageLoader />}><InstanceDetails /></Suspense></AdminRoute>} />
