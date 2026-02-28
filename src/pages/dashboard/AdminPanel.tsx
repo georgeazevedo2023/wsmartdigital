@@ -190,6 +190,13 @@ const InboxCard = ({
   inbox,
   onManageMembers,
   onDelete,
+  onEditName,
+  editingName,
+  editNameValue,
+  setEditNameValue,
+  onSaveName,
+  onCancelEditName,
+  isSavingName,
   editingWebhookId,
   editWebhookValue,
   setEditWebhookValue,
@@ -206,6 +213,13 @@ const InboxCard = ({
   inbox: InboxWithDetails;
   onManageMembers: () => void;
   onDelete: () => void;
+  onEditName: () => void;
+  editingName: boolean;
+  editNameValue: string;
+  setEditNameValue: (v: string) => void;
+  onSaveName: () => void;
+  onCancelEditName: () => void;
+  isSavingName: boolean;
   editingWebhookId: string | null;
   editWebhookValue: string;
   setEditWebhookValue: (v: string) => void;
@@ -225,12 +239,44 @@ const InboxCard = ({
     <div className="glass-card-hover p-4 sm:p-5 space-y-4">
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isConnected ? 'bg-primary/10 border border-primary/20' : 'bg-muted/50 border border-border/50'}`}>
             <Inbox className={`w-5 h-5 ${isConnected ? 'text-primary' : 'text-muted-foreground'}`} />
           </div>
-          <div className="min-w-0">
-            <p className="font-semibold text-sm truncate">{inbox.name}</p>
+          <div className="min-w-0 flex-1">
+            {editingName ? (
+              <div className="flex items-center gap-1.5">
+                <Input
+                  className="h-8 text-sm font-semibold flex-1"
+                  value={editNameValue}
+                  onChange={e => setEditNameValue(e.target.value)}
+                  autoFocus
+                  onKeyDown={e => { if (e.key === 'Enter') onSaveName(); if (e.key === 'Escape') onCancelEditName(); }}
+                />
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 text-primary shrink-0" disabled={isSavingName} onClick={onSaveName}>
+                        {isSavingName ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Salvar nome</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onCancelEditName}>
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Cancelar</TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            ) : (
+              <p className="font-semibold text-sm truncate">{inbox.name}</p>
+            )}
             <div className="flex items-center gap-1.5 mt-0.5">
               <span className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40'}`} />
               <span className="text-xs text-muted-foreground truncate">{inbox.instance_name}</span>
@@ -239,17 +285,34 @@ const InboxCard = ({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <Badge variant="outline" className="gap-1 h-7">
-            <Users className="w-3 h-3" />
-            {inbox.member_count}
-          </Badge>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="gap-1 h-7 cursor-default">
+                  <Users className="w-3 h-3" />
+                  {inbox.member_count}
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>Total de membros</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
           <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="h-8 w-8">
-                <MoreVertical className="w-4 h-4" />
-              </Button>
-            </DropdownMenuTrigger>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="h-8 w-8">
+                      <MoreVertical className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Opções</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={onEditName}>
+                <Pencil className="w-4 h-4 mr-2" /> Editar Nome
+              </DropdownMenuItem>
               <DropdownMenuItem onClick={onManageMembers}>
                 <Users className="w-4 h-4 mr-2" /> Gerenciar Membros
               </DropdownMenuItem>
@@ -366,11 +429,13 @@ const UserCard = ({
   onChangeRole,
   onManageInstances,
   onDelete,
+  onEdit,
 }: {
   user: UserWithRole;
   onChangeRole: (userId: string, role: AppRole) => void;
   onManageInstances: () => void;
   onDelete: () => void;
+  onEdit: () => void;
 }) => {
   const roleConfig = APP_ROLE_CONFIG[u.app_role];
   const RoleIcon = roleConfig.icon;
@@ -394,10 +459,17 @@ const UserCard = ({
               {roleConfig.label}
             </Badge>
             {u.instance_count > 0 && (
-              <Badge variant="outline" className="gap-1 text-[11px] h-6">
-                <MonitorSmartphone className="w-3 h-3" />
-                {u.instance_count}
-              </Badge>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Badge variant="outline" className="gap-1 text-[11px] h-6 cursor-default">
+                      <MonitorSmartphone className="w-3 h-3" />
+                      {u.instance_count}
+                    </Badge>
+                  </TooltipTrigger>
+                  <TooltipContent>{u.instance_count} instância(s) vinculada(s)</TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             )}
           </div>
         </div>
@@ -410,31 +482,62 @@ const UserCard = ({
           const Icon = config.icon;
           const isActive = u.app_role === role;
           return (
-            <button
-              key={role}
-              onClick={() => !isActive && onChangeRole(u.id, role)}
-              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all min-h-[36px] ${
-                isActive
-                  ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
-              }`}
-            >
-              <Icon className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{config.label}</span>
-            </button>
+            <TooltipProvider key={role}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={() => !isActive && onChangeRole(u.id, role)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all min-h-[36px] ${
+                      isActive
+                        ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{config.label}</span>
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>Definir como {config.label}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           );
         })}
       </div>
 
       {/* Actions */}
       <div className="flex gap-2 pt-1 border-t border-border/20">
-        <Button variant="ghost" size="sm" className="flex-1 h-9 text-xs gap-1.5" onClick={onManageInstances}>
-          <Settings className="w-3.5 h-3.5" />
-          Instâncias
-        </Button>
-        <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onDelete}>
-          <Trash2 className="w-4 h-4" />
-        </Button>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" className="flex-1 h-9 text-xs gap-1.5" onClick={onEdit}>
+                <Pencil className="w-3.5 h-3.5" />
+                Editar
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Editar nome do usuário</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="sm" className="flex-1 h-9 text-xs gap-1.5" onClick={onManageInstances}>
+                <Settings className="w-3.5 h-3.5" />
+                Instâncias
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Gerenciar instâncias</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onDelete}>
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Excluir usuário</TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       </div>
     </div>
   );
@@ -444,10 +547,12 @@ const TeamSection = ({
   teamUsers,
   inboxes,
   onRemoveMembership,
+  onChangeTeamRole,
 }: {
   teamUsers: InboxUser[];
   inboxes: InboxWithDetails[];
   onRemoveMembership: (userId: string, inboxId: string, userName: string, inboxName: string) => void;
+  onChangeTeamRole: (userId: string, inboxId: string, newRole: InboxRole) => void;
 }) => {
   // Group by inbox
   const groupedByInbox = useMemo(() => {
@@ -485,10 +590,17 @@ const TeamSection = ({
                 <p className="text-xs text-muted-foreground">{group.instanceName}</p>
               )}
             </div>
-            <Badge variant="outline" className="ml-auto shrink-0 gap-1">
-              <Users className="w-3 h-3" />
-              {group.members.length}
-            </Badge>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Badge variant="outline" className="ml-auto shrink-0 gap-1 cursor-default">
+                    <Users className="w-3 h-3" />
+                    {group.members.length}
+                  </Badge>
+                </TooltipTrigger>
+                <TooltipContent>Total de membros nesta caixa</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
 
           {/* Members */}
@@ -507,17 +619,43 @@ const TeamSection = ({
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className={`text-[11px] h-6 ${ROLE_COLORS[member.role]}`}>
-                    {ROLE_LABELS[member.role]}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => onRemoveMembership(member.userId, inboxId, member.userName, group.inboxName)}
+                  <Select
+                    value={member.role}
+                    onValueChange={(val) => onChangeTeamRole(member.userId, inboxId, val as InboxRole)}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </Button>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <SelectTrigger className={`h-7 w-auto min-w-[90px] text-[11px] border ${ROLE_COLORS[member.role]}`}>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent>Alterar papel do membro</TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                    <SelectContent>
+                      {(['admin', 'gestor', 'agente'] as InboxRole[]).map(role => (
+                        <SelectItem key={role} value={role} className="text-xs">
+                          {ROLE_LABELS[role]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => onRemoveMembership(member.userId, inboxId, member.userName, group.inboxName)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Remover membro</TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
             ))}
@@ -590,6 +728,15 @@ const AdminPanel = () => {
   // Manage user instances
   const [manageInstancesUser, setManageInstancesUser] = useState<UserWithRole | null>(null);
   const [isManageInstancesOpen, setIsManageInstancesOpen] = useState(false);
+
+  // Inbox name editing
+  const [editingInboxName, setEditingInboxName] = useState<{ id: string; value: string } | null>(null);
+  const [isSavingInboxName, setIsSavingInboxName] = useState(false);
+
+  // Edit user dialog
+  const [editingUser, setEditingUser] = useState<UserWithRole | null>(null);
+  const [editUserName, setEditUserName] = useState('');
+  const [isSavingUser, setIsSavingUser] = useState(false);
 
   // Team state
   const [teamUsers, setTeamUsers] = useState<InboxUser[]>([]);
@@ -907,6 +1054,55 @@ const AdminPanel = () => {
     }
   };
 
+  const handleChangeTeamRole = async (userId: string, inboxId: string, newRole: InboxRole) => {
+    try {
+      const { error } = await supabase
+        .from('inbox_users')
+        .update({ role: newRole })
+        .eq('user_id', userId)
+        .eq('inbox_id', inboxId);
+      if (error) throw error;
+      toast.success('Papel atualizado!');
+      fetchTeam();
+    } catch {
+      toast.error('Erro ao alterar papel');
+    }
+  };
+
+  // ── Handlers: Inbox Name Edit ──────────────────────────────────────────────
+  const handleSaveInboxName = async () => {
+    if (!editingInboxName || !editingInboxName.value.trim()) return;
+    setIsSavingInboxName(true);
+    try {
+      const { error } = await supabase.from('inboxes').update({ name: editingInboxName.value.trim() }).eq('id', editingInboxName.id);
+      if (error) throw error;
+      toast.success('Nome atualizado!');
+      setEditingInboxName(null);
+      fetchInboxes();
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao atualizar nome');
+    } finally {
+      setIsSavingInboxName(false);
+    }
+  };
+
+  // ── Handlers: Edit User Profile ────────────────────────────────────────────
+  const handleSaveUserProfile = async () => {
+    if (!editingUser || !editUserName.trim()) return;
+    setIsSavingUser(true);
+    try {
+      const { error } = await supabase.from('user_profiles').update({ full_name: editUserName.trim() }).eq('id', editingUser.id);
+      if (error) throw error;
+      toast.success('Usuário atualizado!');
+      setEditingUser(null);
+      fetchUsers();
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao atualizar');
+    } finally {
+      setIsSavingUser(false);
+    }
+  };
+
   // ── Filtered data ──────────────────────────────────────────────────────────
   const filteredInboxes = inboxes.filter(
     i => i.name.toLowerCase().includes(inboxSearch.toLowerCase()) ||
@@ -1019,6 +1215,13 @@ const AdminPanel = () => {
                   inbox={inbox}
                   onManageMembers={() => setManageInbox(inbox)}
                   onDelete={() => setInboxToDelete(inbox)}
+                  onEditName={() => setEditingInboxName({ id: inbox.id, value: inbox.name })}
+                  editingName={editingInboxName?.id === inbox.id}
+                  editNameValue={editingInboxName?.id === inbox.id ? editingInboxName.value : ''}
+                  setEditNameValue={(v) => setEditingInboxName(prev => prev ? { ...prev, value: v } : null)}
+                  onSaveName={handleSaveInboxName}
+                  onCancelEditName={() => setEditingInboxName(null)}
+                  isSavingName={isSavingInboxName}
                   editingWebhookId={editingWebhookId}
                   editWebhookValue={editWebhookValue}
                   setEditWebhookValue={setEditWebhookValue}
@@ -1093,6 +1296,7 @@ const AdminPanel = () => {
                   onChangeRole={handleChangeRole}
                   onManageInstances={() => { setManageInstancesUser(u); setIsManageInstancesOpen(true); }}
                   onDelete={() => setUserToDelete(u)}
+                  onEdit={() => { setEditingUser(u); setEditUserName(u.full_name || ''); }}
                 />
               ))}
             </div>
@@ -1130,6 +1334,7 @@ const AdminPanel = () => {
               onRemoveMembership={(userId, inboxId, userName, inboxName) =>
                 setRemoveMembership({ userId, inboxId, userName, inboxName })
               }
+              onChangeTeamRole={handleChangeTeamRole}
             />
           )}
         </TabsContent>
@@ -1253,6 +1458,38 @@ const AdminPanel = () => {
             <Button variant="outline" onClick={() => setIsCreateUserOpen(false)}>Cancelar</Button>
             <Button onClick={handleCreateUser} disabled={isCreatingUser}>
               {isCreatingUser ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Criando...</> : 'Criar Usuário'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit User Dialog */}
+      <Dialog open={!!editingUser} onOpenChange={open => { if (!open) setEditingUser(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar Usuário</DialogTitle>
+            <DialogDescription>Atualize o nome completo do usuário</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input value={editingUser?.email || ''} disabled className="opacity-60" />
+            </div>
+            <div className="space-y-2">
+              <Label>Nome Completo</Label>
+              <Input
+                placeholder="Nome do usuário"
+                value={editUserName}
+                onChange={e => setEditUserName(e.target.value)}
+                autoFocus
+                onKeyDown={e => { if (e.key === 'Enter') handleSaveUserProfile(); }}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingUser(null)}>Cancelar</Button>
+            <Button onClick={handleSaveUserProfile} disabled={isSavingUser || !editUserName.trim()}>
+              {isSavingUser ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Salvando...</> : 'Salvar'}
             </Button>
           </DialogFooter>
         </DialogContent>
