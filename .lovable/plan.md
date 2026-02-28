@@ -1,81 +1,68 @@
 
 
-## Otimizacao de Custos do Servidor
+# Modernizacao do Painel Administrativo
 
-### Diagnostico Atual
+## Objetivo
+Reformular o painel de administracao para uma experiencia mais moderna, intuitiva e responsiva, aplicando principios de UX como Lei de Hick (reduzir opcoes visiveis), Mobile-First e feedback visual aprimorado.
 
-| Recurso | Tamanho | Causa |
-|---------|---------|-------|
-| `cron.job_run_details` | **49 MB** (42.456 registros) | Logs de execucao do cron a cada 1 minuto |
-| `net._http_response` | **47 MB** (366 registros) | Respostas HTTP cacheadas pelo pg_net |
-| Dados reais do app | ~1.5 MB | Conversas, contatos, kanban, etc. |
+## Mudancas Planejadas
 
-**96 MB de 111 MB sao lixo de sistema** - representam 87% do uso do banco.
+### 1. Tabs redesenhadas com scroll horizontal no mobile
+- Substituir a TabsList atual por tabs com icones maiores e scroll suave no mobile
+- No mobile, mostrar apenas icone + badge (sem texto) para caber na tela
+- Adicionar indicador animado (underline) na tab ativa
+- Agrupar "Backup" e "Migracao" sob uma unica tab "Ferramentas" (Lei de Hick: 5 tabs -> 4 tabs)
 
-### Cron Jobs Atuais (5 jobs)
+### 2. Header com stats resumidos
+- Adicionar mini-cards de estatisticas no topo (total caixas, usuarios, membros ativos)
+- Stats cards com glassmorphism seguindo o tema visual existente
+- No mobile, exibir stats em row horizontal com scroll
 
-| Job | Frequencia | Impacto |
-|-----|-----------|---------|
-| `process-scheduled-messages` | **A cada 1 minuto** | ~43.200 execucoes/mes |
-| `auto-summarize-inactive` | A cada 1 hora | 720 execucoes/mes |
-| `send-shift-reports-hourly` | A cada 1 hora | 720 execucoes/mes |
-| `cleanup-old-media` | 1x/dia as 03h | 30 execucoes/mes |
-| `cleanup-expired-summaries` | 1x/dia as 03h | 30 execucoes/mes |
+### 3. Tab Caixas de Entrada -- melhorias
+- Cards ao inves de acordeao: cada caixa como um card glassmorphism com status visual proeminente (dot + texto)
+- Webhook URLs em tooltip/hover ao inves de expandir (menos ruido visual)
+- Acoes agrupadas em menu contextual (tres pontos) no canto do card
+- Grid de 2 colunas no desktop, 1 coluna no mobile
 
-### Plano de Otimizacao (3 acoes)
+### 4. Tab Usuarios -- melhorias
+- Cards uniformes em grid (desktop: 3 colunas, tablet: 2, mobile: 1)
+- Cada card mostra avatar, nome, email, badge de papel e contagem de instancias
+- Seletor de papel como segmented control dentro do card (mais visual que dropdown)
+- Acoes (instancias, excluir) como icones no footer do card
+- Barra de busca com filtro por tipo (All/Admin/Gerente/Atendente) como chips
 
-**Acao 1 - Reduzir frequencia do cron principal**
-- Mudar `process-scheduled-messages` de **1 minuto para 5 minutos**
-- Reducao: de 43.200 para 8.640 execucoes/mes (80% menos)
-- Impacto no usuario: mensagens agendadas podem atrasar ate 5 min (aceitavel para agendamentos)
+### 5. Tab Equipe -- melhorias
+- Agrupar por caixa de entrada (ao inves de por usuario) para melhor escaneabilidade
+- Cada caixa mostra seus membros com avatar em linha
+- Adicionar membro diretamente na caixa com botao "+"
 
-**Acao 2 - Criar cron de limpeza automatica dos logs**
-- Novo cron job diario (as 04h) que:
-  - Deleta registros de `cron.job_run_details` com mais de 7 dias
-  - Deleta registros de `net._http_response` com mais de 7 dias
-- Isso mantem essas tabelas pequenas permanentemente
+### 6. Dialogs modernizados
+- Adicionar stepper visual no dialog de criacao de usuario (dados -> perfil -> confirmacao)
+- Animacoes de entrada/saida suaves nos dialogs
+- Validacao inline nos campos (feedback imediato)
 
-**Acao 3 - Limpeza imediata unica**
-- Executar DELETE nas duas tabelas agora para liberar os 96 MB
-- Rodar VACUUM para devolver o espaco ao banco
+### 7. Micro-interacoes e polish
+- Skeleton loading com shimmer animation
+- Toast de sucesso com animacao de check
+- Transicoes suaves entre tabs (fade + slide)
+- Empty states com ilustracoes vetoriais simples e CTA direto
 
-### Resultado Esperado
+## Detalhes Tecnicos
 
-| Metrica | Antes | Depois |
-|---------|-------|--------|
-| Tamanho do banco | ~111 MB | ~15 MB |
-| Execucoes edge functions/mes | ~44.670 | ~10.110 |
-| Custo estimado | ~$15/mes | ~$3-5/mes |
+### Arquivos modificados
+- `src/pages/dashboard/AdminPanel.tsx` -- refatoracao completa do render (manter toda a logica de estado e handlers)
 
-### Detalhes Tecnicos
+### Abordagem
+- Manter TODA a logica de negocio intacta (handlers, fetchers, estado)
+- Refatorar apenas a camada de apresentacao (JSX/CSS)
+- Extrair sub-componentes internos para legibilidade: `AdminStatsBar`, `InboxCard`, `UserCard`, `TeamSection`
+- Usar classes Tailwind existentes + glassmorphism do tema
+- Manter compatibilidade com os dialogs e sub-componentes existentes (ManageInboxUsersDialog, ManageUserInstancesDialog, CreateInboxUserDialog, BackupModule, MigrationWizard)
 
-**Passo 1 - SQL para alterar cron de 1 min para 5 min:**
-```sql
-SELECT cron.unschedule('process-scheduled-messages');
-SELECT cron.schedule(
-  'process-scheduled-messages',
-  '*/5 * * * *',
-  $$ SELECT net.http_post(...) $$
-);
-```
-
-**Passo 2 - SQL para criar cron de limpeza automatica:**
-```sql
-SELECT cron.schedule(
-  'cleanup-system-logs',
-  '0 4 * * *',
-  $$
-    DELETE FROM cron.job_run_details WHERE end_time < now() - interval '7 days';
-    DELETE FROM net._http_response WHERE created < now() - interval '7 days';
-  $$
-);
-```
-
-**Passo 3 - SQL para limpeza imediata:**
-```sql
-DELETE FROM cron.job_run_details WHERE end_time < now() - interval '1 day';
-DELETE FROM net._http_response WHERE created < now() - interval '1 day';
-```
-
-Nenhum arquivo de codigo precisa ser alterado. Todas as mudancas sao via SQL no banco de dados.
+### Responsividade
+- Breakpoints: mobile (<640), tablet (640-1024), desktop (>1024)
+- Touch targets minimos de 44px no mobile
+- Tabs com icones-only no mobile, icone+texto no desktop
+- Grid adaptativo em todas as tabs
+- Busca com largura total no mobile
 
