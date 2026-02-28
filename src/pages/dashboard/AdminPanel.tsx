@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { Navigate } from 'react-router-dom';
@@ -36,6 +36,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -46,11 +47,11 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '@/components/ui/accordion';
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import {
   ShieldCheck,
   Plus,
@@ -63,7 +64,6 @@ import {
   Settings,
   MonitorSmartphone,
   Shield,
-  User,
   ChevronDown,
   Link,
   Copy,
@@ -71,9 +71,11 @@ import {
   Check,
   X,
   UserPlus,
-  Phone,
   AlertTriangle,
   Briefcase,
+  MoreVertical,
+  Wrench,
+  Filter,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import ManageInboxUsersDialog from '@/components/dashboard/ManageInboxUsersDialog';
@@ -81,6 +83,7 @@ import ManageUserInstancesDialog from '@/components/dashboard/ManageUserInstance
 import CreateInboxUserDialog from '@/components/dashboard/CreateInboxUserDialog';
 import BackupModule from '@/components/dashboard/BackupModule';
 import MigrationWizard from '@/components/dashboard/MigrationWizard';
+import { useIsMobile } from '@/hooks/use-mobile';
 import type { Database } from '@/integrations/supabase/types';
 
 type InboxRole = Database['public']['Enums']['inbox_role'];
@@ -140,6 +143,12 @@ const ROLE_COLORS: Record<InboxRole, string> = {
   agente: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
 };
 
+const APP_ROLE_CONFIG: Record<AppRole, { label: string; icon: React.ElementType; colorClass: string }> = {
+  super_admin: { label: 'Admin', icon: Shield, colorClass: 'bg-primary/10 text-primary border-primary/20' },
+  gerente: { label: 'Gerente', icon: Briefcase, colorClass: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
+  user: { label: 'Atendente', icon: Headphones, colorClass: 'bg-muted text-muted-foreground border-border' },
+};
+
 const formatPhone = (jid: string | null): string => {
   if (!jid) return '';
   const clean = jid.replace(/@s\.whatsapp\.net$/, '');
@@ -150,10 +159,380 @@ const formatPhone = (jid: string | null): string => {
   return clean;
 };
 
+// ─── Sub-Components ──────────────────────────────────────────────────────────
+
+const AdminStatsBar = ({ inboxes, users, teamUsers }: { inboxes: InboxWithDetails[]; users: UserWithRole[]; teamUsers: InboxUser[] }) => {
+  const connectedInboxes = inboxes.filter(i => i.instance_status === 'connected').length;
+  const stats = [
+    { label: 'Caixas', value: inboxes.length, sub: `${connectedInboxes} online`, icon: Inbox },
+    { label: 'Usuários', value: users.length, sub: `${users.filter(u => u.app_role === 'super_admin').length} admins`, icon: Users },
+    { label: 'Atendentes', value: teamUsers.length, sub: `${new Set(teamUsers.flatMap(u => u.memberships.map(m => m.inbox_id))).size} caixas`, icon: Headphones },
+  ];
+
+  return (
+    <div className="flex gap-3 overflow-x-auto no-scrollbar pb-1">
+      {stats.map(s => (
+        <div key={s.label} className="glass-card flex-1 min-w-[140px] p-4 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+            <s.icon className="w-5 h-5 text-primary" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-2xl font-display font-bold leading-none">{s.value}</p>
+            <p className="text-xs text-muted-foreground mt-0.5 truncate">{s.sub}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const InboxCard = ({
+  inbox,
+  onManageMembers,
+  onDelete,
+  editingWebhookId,
+  editWebhookValue,
+  setEditWebhookValue,
+  setEditingWebhookId,
+  handleSaveWebhook,
+  isSavingWebhook,
+  editingOutgoingId,
+  editOutgoingValue,
+  setEditOutgoingValue,
+  setEditingOutgoingId,
+  handleSaveOutgoing,
+  isSavingOutgoing,
+}: {
+  inbox: InboxWithDetails;
+  onManageMembers: () => void;
+  onDelete: () => void;
+  editingWebhookId: string | null;
+  editWebhookValue: string;
+  setEditWebhookValue: (v: string) => void;
+  setEditingWebhookId: (v: string | null) => void;
+  handleSaveWebhook: (id: string) => void;
+  isSavingWebhook: boolean;
+  editingOutgoingId: string | null;
+  editOutgoingValue: string;
+  setEditOutgoingValue: (v: string) => void;
+  setEditingOutgoingId: (v: string | null) => void;
+  handleSaveOutgoing: (id: string) => void;
+  isSavingOutgoing: boolean;
+}) => {
+  const isConnected = inbox.instance_status === 'connected';
+
+  return (
+    <div className="glass-card-hover p-4 sm:p-5 space-y-4">
+      {/* Header row */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${isConnected ? 'bg-primary/10 border border-primary/20' : 'bg-muted/50 border border-border/50'}`}>
+            <Inbox className={`w-5 h-5 ${isConnected ? 'text-primary' : 'text-muted-foreground'}`} />
+          </div>
+          <div className="min-w-0">
+            <p className="font-semibold text-sm truncate">{inbox.name}</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${isConnected ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground/40'}`} />
+              <span className="text-xs text-muted-foreground truncate">{inbox.instance_name}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <Badge variant="outline" className="gap-1 h-7">
+            <Users className="w-3 h-3" />
+            {inbox.member_count}
+          </Badge>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8">
+                <MoreVertical className="w-4 h-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={onManageMembers}>
+                <Users className="w-4 h-4 mr-2" /> Gerenciar Membros
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => { navigator.clipboard.writeText(inbox.id); toast.success('Inbox ID copiado!'); }}>
+                <Copy className="w-4 h-4 mr-2" /> Copiar ID
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDelete}>
+                <Trash2 className="w-4 h-4 mr-2" /> Excluir
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      </div>
+
+      {/* Webhooks compact */}
+      <div className="space-y-2">
+        <WebhookRow
+          label="Webhook Entrada"
+          value={inbox.webhook_url}
+          isEditing={editingWebhookId === inbox.id}
+          editValue={editWebhookValue}
+          setEditValue={setEditWebhookValue}
+          onEdit={() => { setEditingWebhookId(inbox.id); setEditWebhookValue(inbox.webhook_url || ''); }}
+          onSave={() => handleSaveWebhook(inbox.id)}
+          onCancel={() => setEditingWebhookId(null)}
+          isSaving={isSavingWebhook}
+        />
+        <WebhookRow
+          label="Webhook Saída"
+          value={inbox.webhook_outgoing_url}
+          isEditing={editingOutgoingId === inbox.id}
+          editValue={editOutgoingValue}
+          setEditValue={setEditOutgoingValue}
+          onEdit={() => { setEditingOutgoingId(inbox.id); setEditOutgoingValue(inbox.webhook_outgoing_url || ''); }}
+          onSave={() => handleSaveOutgoing(inbox.id)}
+          onCancel={() => setEditingOutgoingId(null)}
+          isSaving={isSavingOutgoing}
+        />
+      </div>
+    </div>
+  );
+};
+
+const WebhookRow = ({
+  label,
+  value,
+  isEditing,
+  editValue,
+  setEditValue,
+  onEdit,
+  onSave,
+  onCancel,
+  isSaving,
+}: {
+  label: string;
+  value: string | null;
+  isEditing: boolean;
+  editValue: string;
+  setEditValue: (v: string) => void;
+  onEdit: () => void;
+  onSave: () => void;
+  onCancel: () => void;
+  isSaving: boolean;
+}) => {
+  if (isEditing) {
+    return (
+      <div className="flex gap-2">
+        <Input className="h-8 text-xs flex-1" value={editValue} onChange={e => setEditValue(e.target.value)} autoFocus placeholder="https://..." />
+        <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" disabled={isSaving} onClick={onSave}>
+          {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+        </Button>
+        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onCancel}>
+          <X className="w-3.5 h-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/20 border border-border/20 min-h-[32px]">
+      <Link className="w-3 h-3 text-muted-foreground shrink-0" />
+      <span className="text-[11px] text-muted-foreground font-medium shrink-0">{label}:</span>
+      {value ? (
+        <>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-xs text-muted-foreground truncate flex-1 cursor-default">{value}</span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[400px] break-all">
+                <p className="text-xs">{value}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { navigator.clipboard.writeText(value); toast.success('Copiado!'); }}>
+            <Copy className="w-3 h-3" />
+          </Button>
+          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={onEdit}>
+            <Pencil className="w-3 h-3" />
+          </Button>
+        </>
+      ) : (
+        <button onClick={onEdit} className="text-xs text-primary/70 hover:text-primary transition-colors ml-auto">
+          + Adicionar
+        </button>
+      )}
+    </div>
+  );
+};
+
+const UserCard = ({
+  user: u,
+  onChangeRole,
+  onManageInstances,
+  onDelete,
+}: {
+  user: UserWithRole;
+  onChangeRole: (userId: string, role: AppRole) => void;
+  onManageInstances: () => void;
+  onDelete: () => void;
+}) => {
+  const roleConfig = APP_ROLE_CONFIG[u.app_role];
+  const RoleIcon = roleConfig.icon;
+
+  return (
+    <div className="glass-card-hover p-4 sm:p-5 flex flex-col gap-4">
+      {/* User info */}
+      <div className="flex items-start gap-3">
+        <Avatar className="w-11 h-11 shrink-0">
+          <AvatarImage src={u.avatar_url || undefined} />
+          <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
+            {u.full_name?.charAt(0)?.toUpperCase() || 'U'}
+          </AvatarFallback>
+        </Avatar>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-sm truncate">{u.full_name || 'Sem nome'}</p>
+          <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <Badge variant="outline" className={`gap-1 text-[11px] h-6 ${roleConfig.colorClass}`}>
+              <RoleIcon className="w-3 h-3" />
+              {roleConfig.label}
+            </Badge>
+            {u.instance_count > 0 && (
+              <Badge variant="outline" className="gap-1 text-[11px] h-6">
+                <MonitorSmartphone className="w-3 h-3" />
+                {u.instance_count}
+              </Badge>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Role selector - segmented control */}
+      <div className="flex gap-1 p-1 rounded-lg bg-muted/30 border border-border/30">
+        {(['super_admin', 'gerente', 'user'] as AppRole[]).map(role => {
+          const config = APP_ROLE_CONFIG[role];
+          const Icon = config.icon;
+          const isActive = u.app_role === role;
+          return (
+            <button
+              key={role}
+              onClick={() => !isActive && onChangeRole(u.id, role)}
+              className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-xs font-medium transition-all min-h-[36px] ${
+                isActive
+                  ? 'bg-primary/15 text-primary border border-primary/30 shadow-sm'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted/40'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{config.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2 pt-1 border-t border-border/20">
+        <Button variant="ghost" size="sm" className="flex-1 h-9 text-xs gap-1.5" onClick={onManageInstances}>
+          <Settings className="w-3.5 h-3.5" />
+          Instâncias
+        </Button>
+        <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={onDelete}>
+          <Trash2 className="w-4 h-4" />
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const TeamSection = ({
+  teamUsers,
+  inboxes,
+  onRemoveMembership,
+}: {
+  teamUsers: InboxUser[];
+  inboxes: InboxWithDetails[];
+  onRemoveMembership: (userId: string, inboxId: string, userName: string, inboxName: string) => void;
+}) => {
+  // Group by inbox
+  const groupedByInbox = useMemo(() => {
+    const map = new Map<string, { inboxName: string; instanceName: string; members: { userId: string; userName: string; email: string; role: InboxRole }[] }>();
+    teamUsers.forEach(u => {
+      u.memberships.forEach(m => {
+        if (!map.has(m.inbox_id)) {
+          map.set(m.inbox_id, { inboxName: m.inbox_name, instanceName: m.instance_name, members: [] });
+        }
+        map.get(m.inbox_id)!.members.push({
+          userId: u.id,
+          userName: u.full_name || u.email,
+          email: u.email,
+          role: m.role,
+        });
+      });
+    });
+    return Array.from(map.entries());
+  }, [teamUsers]);
+
+  if (groupedByInbox.length === 0) return null;
+
+  return (
+    <div className="space-y-4">
+      {groupedByInbox.map(([inboxId, group]) => (
+        <div key={inboxId} className="glass-card p-4 sm:p-5 space-y-3">
+          {/* Inbox header */}
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
+              <Inbox className="w-4 h-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <p className="font-semibold text-sm truncate">{group.inboxName}</p>
+              {group.instanceName && (
+                <p className="text-xs text-muted-foreground">{group.instanceName}</p>
+              )}
+            </div>
+            <Badge variant="outline" className="ml-auto shrink-0 gap-1">
+              <Users className="w-3 h-3" />
+              {group.members.length}
+            </Badge>
+          </div>
+
+          {/* Members */}
+          <div className="space-y-1.5">
+            {group.members.map(member => (
+              <div key={`${member.userId}-${inboxId}`} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/20 border border-border/20">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Avatar className="w-7 h-7 shrink-0">
+                    <AvatarFallback className="bg-primary/10 text-primary text-[10px] font-semibold">
+                      {member.userName.charAt(0).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="text-sm truncate">{member.userName}</p>
+                    <p className="text-[11px] text-muted-foreground truncate hidden sm:block">{member.email}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Badge variant="outline" className={`text-[11px] h-6 ${ROLE_COLORS[member.role]}`}>
+                    {ROLE_LABELS[member.role]}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => onRemoveMembership(member.userId, inboxId, member.userName, group.inboxName)}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 const AdminPanel = () => {
   const { isSuperAdmin, user } = useAuth();
+  const isMobile = useIsMobile();
 
   // Tabs
   const [activeTab, setActiveTab] = useState('inboxes');
@@ -162,6 +541,7 @@ const AdminPanel = () => {
   const [inboxSearch, setInboxSearch] = useState('');
   const [usersSearch, setUsersSearch] = useState('');
   const [teamSearch, setTeamSearch] = useState('');
+  const [userRoleFilter, setUserRoleFilter] = useState<'all' | AppRole>('all');
 
   // Inboxes state
   const [inboxes, setInboxes] = useState<InboxWithDetails[]>([]);
@@ -532,10 +912,12 @@ const AdminPanel = () => {
     i => i.name.toLowerCase().includes(inboxSearch.toLowerCase()) ||
          i.instance_name.toLowerCase().includes(inboxSearch.toLowerCase())
   );
-  const filteredUsers = users.filter(
-    u => u.email.toLowerCase().includes(usersSearch.toLowerCase()) ||
-         u.full_name?.toLowerCase().includes(usersSearch.toLowerCase())
-  );
+  const filteredUsers = users.filter(u => {
+    const matchesSearch = u.email.toLowerCase().includes(usersSearch.toLowerCase()) ||
+         u.full_name?.toLowerCase().includes(usersSearch.toLowerCase());
+    const matchesRole = userRoleFilter === 'all' || u.app_role === userRoleFilter;
+    return matchesSearch && matchesRole;
+  });
   const filteredTeam = teamUsers.filter(
     u => u.email.toLowerCase().includes(teamSearch.toLowerCase()) ||
          u.full_name?.toLowerCase().includes(teamSearch.toLowerCase())
@@ -543,7 +925,7 @@ const AdminPanel = () => {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6 max-w-6xl mx-auto animate-fade-in">
+    <div className="space-y-5 max-w-6xl mx-auto animate-fade-in">
 
       {/* ── Page Header ── */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -553,11 +935,10 @@ const AdminPanel = () => {
           </div>
           <div>
             <h1 className="text-2xl font-display font-bold">Administração</h1>
-            <p className="text-sm text-muted-foreground">Caixas, usuários e equipe de atendimento</p>
+            <p className="text-sm text-muted-foreground">Gerencie caixas, usuários e equipe</p>
           </div>
         </div>
 
-        {/* "Criar Novo" dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button className="gap-2">
@@ -583,39 +964,37 @@ const AdminPanel = () => {
         </DropdownMenu>
       </div>
 
+      {/* ── Stats Bar ── */}
+      <AdminStatsBar inboxes={inboxes} users={users} teamUsers={teamUsers} />
+
       {/* ── Tabs ── */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="w-full sm:w-auto overflow-x-auto no-scrollbar">
-          <TabsTrigger value="inboxes" className="gap-2">
+        <TabsList className="w-full sm:w-auto overflow-x-auto no-scrollbar h-11">
+          <TabsTrigger value="inboxes" className="gap-2 min-h-[36px]">
             <Inbox className="w-4 h-4" />
-            <span>Caixas</span>
-            <Badge variant="outline" className="ml-1 text-xs h-5 px-1.5">{inboxes.length}</Badge>
+            <span className={isMobile ? 'sr-only' : ''}>{!isMobile && 'Caixas'}</span>
+            <Badge variant="outline" className="text-[10px] h-5 px-1.5">{inboxes.length}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="users" className="gap-2">
+          <TabsTrigger value="users" className="gap-2 min-h-[36px]">
             <Shield className="w-4 h-4" />
-            <span>Usuários</span>
-            <Badge variant="outline" className="ml-1 text-xs h-5 px-1.5">{users.length}</Badge>
+            <span className={isMobile ? 'sr-only' : ''}>{!isMobile && 'Usuários'}</span>
+            <Badge variant="outline" className="text-[10px] h-5 px-1.5">{users.length}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="team" className="gap-2">
+          <TabsTrigger value="team" className="gap-2 min-h-[36px]">
             <Headphones className="w-4 h-4" />
-            <span>Equipe</span>
-            <Badge variant="outline" className="ml-1 text-xs h-5 px-1.5">{teamUsers.length}</Badge>
+            <span className={isMobile ? 'sr-only' : ''}>{!isMobile && 'Equipe'}</span>
+            <Badge variant="outline" className="text-[10px] h-5 px-1.5">{teamUsers.length}</Badge>
           </TabsTrigger>
-          <TabsTrigger value="backup" className="gap-2">
-            <Briefcase className="w-4 h-4" />
-            <span>Backup</span>
-          </TabsTrigger>
-          <TabsTrigger value="migration" className="gap-2">
-            <MonitorSmartphone className="w-4 h-4" />
-            <span>Migração</span>
+          <TabsTrigger value="tools" className="gap-2 min-h-[36px]">
+            <Wrench className="w-4 h-4" />
+            <span className={isMobile ? 'sr-only' : ''}>{!isMobile && 'Ferramentas'}</span>
           </TabsTrigger>
         </TabsList>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* TAB: Caixas de Entrada                                            */}
         {/* ══════════════════════════════════════════════════════════════════ */}
-        <TabsContent value="inboxes" className="mt-6 space-y-4">
-          {/* Search */}
+        <TabsContent value="inboxes" className="mt-5 space-y-4">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
@@ -627,310 +1006,95 @@ const AdminPanel = () => {
           </div>
 
           {inboxesLoading ? (
-            <div className="space-y-3">
-              {[1,2,3].map(i => <Skeleton key={i} className="h-16 rounded-xl" />)}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              {[1,2,3,4].map(i => <Skeleton key={i} className="h-40 rounded-2xl" />)}
             </div>
           ) : filteredInboxes.length === 0 ? (
             <EmptyState icon={Inbox} title="Nenhuma caixa encontrada" desc="Crie a primeira caixa de entrada" />
           ) : (
-            <Accordion type="multiple" className="space-y-2">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {filteredInboxes.map(inbox => (
-                <AccordionItem
+                <InboxCard
                   key={inbox.id}
-                  value={inbox.id}
-                  className="rounded-xl border border-border/50 bg-card/40 px-0 overflow-hidden"
-                >
-                  <AccordionTrigger className="px-4 py-3 hover:no-underline hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center gap-3 flex-1 min-w-0 mr-2">
-                      {/* Status dot */}
-                      <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${inbox.instance_status === 'connected' ? 'bg-emerald-400' : 'bg-muted-foreground/40'}`} />
-                      <div className="min-w-0 text-left">
-                        <p className="font-semibold text-sm truncate">{inbox.name}</p>
-                        <p className="text-xs text-muted-foreground flex items-center gap-1">
-                          <MonitorSmartphone className="w-3 h-3" />
-                          {inbox.instance_name}
-                        </p>
-                      </div>
-                      <Badge variant="outline" className="ml-auto mr-2 shrink-0 gap-1">
-                        <Users className="w-3 h-3" />
-                        {inbox.member_count}
-                      </Badge>
-                    </div>
-                  </AccordionTrigger>
-
-                  <AccordionContent className="px-4 pb-4 space-y-4">
-                    {/* Inbox ID */}
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                        <Settings className="w-3 h-3" /> Inbox ID (para n8n)
-                      </p>
-                      <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/30">
-                        <code className="text-xs text-muted-foreground truncate flex-1 font-mono">{inbox.id}</code>
-                        <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { navigator.clipboard.writeText(inbox.id); toast.success('Inbox ID copiado!'); }}>
-                          <Copy className="w-3 h-3" />
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Webhook URL */}
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                        <Link className="w-3 h-3" /> Webhook Entrada (n8n)
-                      </p>
-                      {editingWebhookId === inbox.id ? (
-                        <div className="flex gap-2">
-                          <Input className="h-8 text-xs flex-1" value={editWebhookValue} onChange={e => setEditWebhookValue(e.target.value)} autoFocus placeholder="https://..." />
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" disabled={isSavingWebhook} onClick={() => handleSaveWebhook(inbox.id)}>
-                            {isSavingWebhook ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingWebhookId(null)}>
-                            <X className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      ) : inbox.webhook_url ? (
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/30">
-                          <span className="text-xs text-muted-foreground truncate flex-1">{inbox.webhook_url}</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { navigator.clipboard.writeText(inbox.webhook_url!); toast.success('Copiado!'); }}>
-                            <Copy className="w-3 h-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { setEditingWebhookId(inbox.id); setEditWebhookValue(inbox.webhook_url || ''); }}>
-                            <Pencil className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button variant="outline" size="sm" className="h-8 text-xs w-full" onClick={() => { setEditingWebhookId(inbox.id); setEditWebhookValue(''); }}>
-                          <Plus className="w-3 h-3 mr-1.5" /> Adicionar Webhook
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Webhook Outgoing */}
-                    <div className="space-y-1.5">
-                      <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                        <Link className="w-3 h-3" /> Webhook Saída (outgoing)
-                      </p>
-                      {editingOutgoingId === inbox.id ? (
-                        <div className="flex gap-2">
-                          <Input className="h-8 text-xs flex-1" value={editOutgoingValue} onChange={e => setEditOutgoingValue(e.target.value)} autoFocus placeholder="https://..." />
-                          <Button variant="ghost" size="icon" className="h-8 w-8 text-primary" disabled={isSavingOutgoing} onClick={() => handleSaveOutgoing(inbox.id)}>
-                            {isSavingOutgoing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setEditingOutgoingId(null)}>
-                            <X className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      ) : inbox.webhook_outgoing_url ? (
-                        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/30">
-                          <span className="text-xs text-muted-foreground truncate flex-1">{inbox.webhook_outgoing_url}</span>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { navigator.clipboard.writeText(inbox.webhook_outgoing_url!); toast.success('Copiado!'); }}>
-                            <Copy className="w-3 h-3" />
-                          </Button>
-                          <Button variant="ghost" size="icon" className="h-6 w-6 shrink-0" onClick={() => { setEditingOutgoingId(inbox.id); setEditOutgoingValue(inbox.webhook_outgoing_url || ''); }}>
-                            <Pencil className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button variant="outline" size="sm" className="h-8 text-xs w-full" onClick={() => { setEditingOutgoingId(inbox.id); setEditOutgoingValue(''); }}>
-                          <Plus className="w-3 h-3 mr-1.5" /> Adicionar Webhook Saída
-                        </Button>
-                      )}
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2 pt-2 border-t border-border/30">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="flex-1"
-                        onClick={() => setManageInbox(inbox)}
-                      >
-                        <Users className="w-3.5 h-3.5 mr-1.5" />
-                        Gerenciar Membros
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                        onClick={() => setInboxToDelete(inbox)}
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
+                  inbox={inbox}
+                  onManageMembers={() => setManageInbox(inbox)}
+                  onDelete={() => setInboxToDelete(inbox)}
+                  editingWebhookId={editingWebhookId}
+                  editWebhookValue={editWebhookValue}
+                  setEditWebhookValue={setEditWebhookValue}
+                  setEditingWebhookId={setEditingWebhookId}
+                  handleSaveWebhook={handleSaveWebhook}
+                  isSavingWebhook={isSavingWebhook}
+                  editingOutgoingId={editingOutgoingId}
+                  editOutgoingValue={editOutgoingValue}
+                  setEditOutgoingValue={setEditOutgoingValue}
+                  setEditingOutgoingId={setEditingOutgoingId}
+                  handleSaveOutgoing={handleSaveOutgoing}
+                  isSavingOutgoing={isSavingOutgoing}
+                />
               ))}
-            </Accordion>
+            </div>
           )}
         </TabsContent>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* TAB: Usuários                                                      */}
         {/* ══════════════════════════════════════════════════════════════════ */}
-        <TabsContent value="users" className="mt-6 space-y-4">
-          {/* Search */}
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar usuários..."
-              className="pl-9"
-              value={usersSearch}
-              onChange={e => setUsersSearch(e.target.value)}
-            />
+        <TabsContent value="users" className="mt-5 space-y-4">
+          {/* Search + filters */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar usuários..."
+                className="pl-9"
+                value={usersSearch}
+                onChange={e => setUsersSearch(e.target.value)}
+              />
+            </div>
+            {/* Role filter chips */}
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+              {([
+                { value: 'all', label: 'Todos', count: users.length },
+                { value: 'super_admin', label: 'Admin', count: users.filter(u => u.app_role === 'super_admin').length },
+                { value: 'gerente', label: 'Gerente', count: users.filter(u => u.app_role === 'gerente').length },
+                { value: 'user', label: 'Atendente', count: users.filter(u => u.app_role === 'user').length },
+              ] as { value: 'all' | AppRole; label: string; count: number }[]).map(f => (
+                <button
+                  key={f.value}
+                  onClick={() => setUserRoleFilter(f.value)}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all whitespace-nowrap min-h-[32px] ${
+                    userRoleFilter === f.value
+                      ? 'bg-primary/15 text-primary border border-primary/30'
+                      : 'bg-muted/30 text-muted-foreground border border-border/30 hover:bg-muted/50'
+                  }`}
+                >
+                  {f.label}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                    userRoleFilter === f.value ? 'bg-primary/20' : 'bg-muted/50'
+                  }`}>{f.count}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           {usersLoading ? (
-            <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-52 rounded-2xl" />)}
+            </div>
           ) : filteredUsers.length === 0 ? (
             <EmptyState icon={Users} title="Nenhum usuário encontrado" desc="Crie o primeiro usuário" />
           ) : (
-            <div className="rounded-xl border border-border/50 overflow-hidden">
-              {/* Desktop table */}
-              <div className="hidden md:block">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border/50 bg-muted/30">
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Usuário</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Tipo</th>
-                      <th className="text-left px-4 py-3 font-medium text-muted-foreground">Instâncias</th>
-                      <th className="text-right px-4 py-3 font-medium text-muted-foreground">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredUsers.map((u, idx) => (
-                      <tr key={u.id} className={`border-b border-border/30 last:border-0 hover:bg-muted/10 transition-colors ${idx % 2 === 0 ? '' : 'bg-muted/5'}`}>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-3">
-                            <Avatar className="w-9 h-9 shrink-0">
-                              <AvatarImage src={u.avatar_url || undefined} />
-                              <AvatarFallback className="bg-primary/10 text-primary text-sm font-semibold">
-                                {u.full_name?.charAt(0)?.toUpperCase() || 'U'}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div className="min-w-0">
-                              <p className="font-medium truncate">{u.full_name || 'Sem nome'}</p>
-                              <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          {/* Role badge com select inline */}
-                          <Select value={u.app_role} onValueChange={(v) => handleChangeRole(u.id, v as AppRole)}>
-                            <SelectTrigger className="h-8 w-36 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="super_admin">
-                                <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-primary" /> Super Admin</span>
-                              </SelectItem>
-                              <SelectItem value="gerente">
-                                <span className="flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5 text-info" /> Gerente</span>
-                              </SelectItem>
-                              <SelectItem value="user">
-                                <span className="flex items-center gap-1.5"><Headphones className="w-3.5 h-3.5 text-muted-foreground" /> Atendente</span>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className="text-muted-foreground">
-                            {u.instance_count === 0 ? (
-                              <span className="text-xs italic">Nenhuma</span>
-                            ) : (
-                              <span className="flex items-center gap-1 text-xs">
-                                <MonitorSmartphone className="w-3.5 h-3.5" />
-                                {u.instance_count} {u.instance_count === 1 ? 'instância' : 'instâncias'}
-                              </span>
-                            )}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex items-center justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-8 text-xs"
-                              onClick={() => { setManageInstancesUser(u); setIsManageInstancesOpen(true); }}
-                            >
-                              <Settings className="w-3.5 h-3.5 mr-1" />
-                              Instâncias
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-8 w-8 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                              onClick={() => setUserToDelete(u)}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Mobile cards */}
-              <div className="md:hidden divide-y divide-border/30">
-                {filteredUsers.map(u => (
-                  <div key={u.id} className="p-4 space-y-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <Avatar className="w-10 h-10 shrink-0">
-                          <AvatarImage src={u.avatar_url || undefined} />
-                          <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                            {u.full_name?.charAt(0)?.toUpperCase() || 'U'}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <p className="font-medium truncate">{u.full_name || 'Sem nome'}</p>
-                          <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                        </div>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={
-                          u.app_role === 'super_admin'
-                            ? 'gap-1 shrink-0 bg-primary/10 text-primary border-primary/20'
-                            : u.app_role === 'gerente'
-                            ? 'gap-1 shrink-0 bg-info/10 text-info border-info/20'
-                            : 'gap-1 shrink-0 bg-muted text-muted-foreground border-border'
-                        }
-                      >
-                        {u.app_role === 'super_admin'
-                          ? <><Shield className="w-3 h-3" /> Admin</>
-                          : u.app_role === 'gerente'
-                          ? <><Briefcase className="w-3 h-3" /> Gerente</>
-                          : <><Headphones className="w-3 h-3" /> Atendente</>}
-                      </Badge>
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Select value={u.app_role} onValueChange={(v) => handleChangeRole(u.id, v as AppRole)}>
-                        <SelectTrigger className="flex-1 h-9 text-xs">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="super_admin">
-                            <span className="flex items-center gap-1.5"><Shield className="w-3.5 h-3.5 text-primary" /> Super Admin</span>
-                          </SelectItem>
-                          <SelectItem value="gerente">
-                            <span className="flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5 text-info" /> Gerente</span>
-                          </SelectItem>
-                          <SelectItem value="user">
-                            <span className="flex items-center gap-1.5"><Headphones className="w-3.5 h-3.5 text-muted-foreground" /> Atendente</span>
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Button variant="outline" size="sm" className="flex-1 h-9 text-xs" onClick={() => { setManageInstancesUser(u); setIsManageInstancesOpen(true); }}>
-                        <Settings className="w-3.5 h-3.5 mr-1" /> Instâncias
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-9 w-9 text-destructive hover:bg-destructive/10" onClick={() => setUserToDelete(u)}>
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+              {filteredUsers.map(u => (
+                <UserCard
+                  key={u.id}
+                  user={u}
+                  onChangeRole={handleChangeRole}
+                  onManageInstances={() => { setManageInstancesUser(u); setIsManageInstancesOpen(true); }}
+                  onDelete={() => setUserToDelete(u)}
+                />
+              ))}
             </div>
           )}
         </TabsContent>
@@ -938,84 +1102,56 @@ const AdminPanel = () => {
         {/* ══════════════════════════════════════════════════════════════════ */}
         {/* TAB: Equipe                                                        */}
         {/* ══════════════════════════════════════════════════════════════════ */}
-        <TabsContent value="team" className="mt-6 space-y-4">
-          {/* Search */}
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input
-              placeholder="Buscar membros..."
-              className="pl-9"
-              value={teamSearch}
-              onChange={e => setTeamSearch(e.target.value)}
-            />
+        <TabsContent value="team" className="mt-5 space-y-4">
+          <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+            <div className="relative flex-1 max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar membros..."
+                className="pl-9"
+                value={teamSearch}
+                onChange={e => setTeamSearch(e.target.value)}
+              />
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setIsCreateTeamUserOpen(true)}>
+              <UserPlus className="w-4 h-4" />
+              Adicionar Membro
+            </Button>
           </div>
 
           {teamLoading ? (
-            <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+            <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
           ) : filteredTeam.length === 0 ? (
             <EmptyState icon={Headphones} title="Nenhum membro na equipe" desc="Adicione membros às caixas de atendimento" />
           ) : (
-            <div className="space-y-3">
-              {filteredTeam.map(u => (
-                <div key={u.id} className="p-4 rounded-xl border border-border/50 bg-card/40 space-y-3">
-                  {/* User header */}
-                  <div className="flex items-center gap-3">
-                    <Avatar className="w-10 h-10">
-                      <AvatarFallback className="bg-primary/10 text-primary font-semibold">
-                        {u.full_name?.charAt(0)?.toUpperCase() || 'U'}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0">
-                      <p className="font-semibold text-sm truncate">{u.full_name || 'Sem nome'}</p>
-                      <p className="text-xs text-muted-foreground truncate">{u.email}</p>
-                    </div>
-                  </div>
-
-                  {/* Memberships */}
-                  <div className="space-y-1.5">
-                    {u.memberships.map(m => (
-                      <div key={m.inbox_id} className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-muted/30 border border-border/20">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Inbox className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                          <span className="text-sm truncate">{m.inbox_name}</span>
-                          {m.instance_name && (
-                            <span className="text-xs text-muted-foreground hidden sm:inline">({m.instance_name})</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0">
-                          <Badge variant="outline" className={ROLE_COLORS[m.role]}>
-                            {ROLE_LABELS[m.role]}
-                          </Badge>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-7 w-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => setRemoveMembership({ userId: u.id, inboxId: m.inbox_id, userName: u.full_name || u.email, inboxName: m.inbox_name })}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <TeamSection
+              teamUsers={filteredTeam}
+              inboxes={inboxes}
+              onRemoveMembership={(userId, inboxId, userName, inboxName) =>
+                setRemoveMembership({ userId, inboxId, userName, inboxName })
+              }
+            />
           )}
         </TabsContent>
 
         {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* TAB: Backup                                                        */}
+        {/* TAB: Ferramentas (Backup + Migração merged)                       */}
         {/* ══════════════════════════════════════════════════════════════════ */}
-        <TabsContent value="backup" className="mt-6">
-          <BackupModule />
-        </TabsContent>
-
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        {/* TAB: Migração                                                      */}
-        {/* ══════════════════════════════════════════════════════════════════ */}
-        <TabsContent value="migration" className="mt-6">
-          <MigrationWizard />
+        <TabsContent value="tools" className="mt-5 space-y-6">
+          <div className="space-y-2">
+            <h2 className="text-lg font-display font-semibold flex items-center gap-2">
+              <Briefcase className="w-5 h-5 text-primary" />
+              Backup
+            </h2>
+            <BackupModule />
+          </div>
+          <div className="border-t border-border/30 pt-6 space-y-2">
+            <h2 className="text-lg font-display font-semibold flex items-center gap-2">
+              <MonitorSmartphone className="w-5 h-5 text-primary" />
+              Migração
+            </h2>
+            <MigrationWizard />
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -1214,7 +1350,7 @@ const AdminPanel = () => {
 
 const EmptyState = ({ icon: Icon, title, desc }: { icon: React.ElementType; title: string; desc: string }) => (
   <div className="flex flex-col items-center justify-center py-16 text-center">
-    <div className="w-16 h-16 rounded-full bg-muted/30 flex items-center justify-center mb-4">
+    <div className="w-16 h-16 rounded-2xl bg-muted/30 border border-border/30 flex items-center justify-center mb-4">
       <Icon className="w-8 h-8 text-muted-foreground" />
     </div>
     <h3 className="font-semibold mb-1">{title}</h3>
