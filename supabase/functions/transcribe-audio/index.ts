@@ -11,6 +11,34 @@ Deno.serve(async (req) => {
   }
 
   try {
+    // Validate caller: accept service role key (from webhook) or valid JWT
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader?.startsWith('Bearer ')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      })
+    }
+    const token = authHeader.replace('Bearer ', '')
+    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY') || ''
+    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
+    
+    // If not anon key (used by webhook) and not service role key, validate as user JWT
+    if (token !== anonKey && token !== serviceRoleKey) {
+      const userSupabase = createClient(
+        Deno.env.get('SUPABASE_URL')!,
+        anonKey,
+        { global: { headers: { Authorization: authHeader } } }
+      )
+      const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token)
+      if (claimsError || !claimsData?.claims) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        })
+      }
+    }
+
     const { messageId, audioUrl, conversationId } = await req.json()
 
     if (!messageId || !audioUrl) {

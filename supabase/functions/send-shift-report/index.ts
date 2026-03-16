@@ -347,7 +347,18 @@ serve(async (req) => {
       });
     }
 
-    // Cron mode — find configs where send_hour matches current hour (São Paulo time)
+    // Cron mode — validate cron secret
+    const cronSecret = Deno.env.get("CRON_SECRET");
+    if (cronSecret) {
+      const cronAuthHeader = req.headers.get("Authorization");
+      if (!cronAuthHeader || cronAuthHeader !== `Bearer ${cronSecret}`) {
+        return new Response(JSON.stringify({ error: "Unauthorized" }), {
+          status: 401,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const now = new Date();
     const spHour = parseInt(
       now.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: "America/Sao_Paulo" })

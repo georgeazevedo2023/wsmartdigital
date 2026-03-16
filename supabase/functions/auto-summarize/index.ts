@@ -129,6 +129,20 @@ serve(async (req) => {
     const body = await req.json();
     const { conversation_id, mode, limit } = body;
 
+    // Auth: cron/backfill modes require CRON_SECRET, single conversation accepts anon key from trigger
+    if (mode === "backfill" || mode === "inactive" || !conversation_id) {
+      const cronSecret = Deno.env.get("CRON_SECRET");
+      if (cronSecret) {
+        const authHeader = req.headers.get("Authorization");
+        if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
+          return new Response(JSON.stringify({ error: "Unauthorized" }), {
+            status: 401,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      }
+    }
+
     // Mode: single conversation (triggered by status change trigger or manual call)
     if (conversation_id) {
       const { data: conv } = await serviceSupabase
