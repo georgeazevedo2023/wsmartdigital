@@ -58,6 +58,7 @@ export function CardDetailSheet({
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (!card || !open) return;
