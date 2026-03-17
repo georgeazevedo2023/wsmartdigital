@@ -7,9 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Switch } from '@/components/ui/switch';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxyWithToken } from '@/lib/uazapiProxy';
 import { Image, FileIcon, Upload, Send, X, Video, Mic, Users, Clock } from 'lucide-react';
 import { Checkbox } from '@/components/ui/checkbox';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import SendStatusModal, { SendStatus } from './SendStatusModal';
 import { ScheduleMessageDialog, ScheduleConfig } from './ScheduleMessageDialog';
 import type { Participant } from '@/pages/dashboard/SendToGroup';
@@ -132,32 +133,17 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
       payload.filename = filename.trim();
     }
 
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      let errorMsg = errorData.error || errorData.message || 'Erro ao enviar mídia';
-      
+    try {
+      return await callUazapiProxyWithToken(payload, accessToken);
+    } catch (err: any) {
+      let errorMsg = err.message || 'Erro ao enviar mídia';
       if (errorMsg.includes('certificate') || errorMsg.includes('tls')) {
         errorMsg = 'URL com certificado SSL inválido. Tente fazer upload direto ou usar outra URL.';
       } else if (errorMsg.includes('fetch') && errorMsg.includes('URL')) {
         errorMsg = 'Não foi possível acessar a URL. Verifique se o link é válido ou faça upload direto.';
       }
-      
       throw new Error(errorMsg);
     }
-
-    return response.json();
   };
 
   const handleSend = async () => {
@@ -254,22 +240,18 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
   const handleSchedule = async (config: ScheduleConfig) => {
     // Para agendamento de mídia, precisamos de uma URL (não arquivo local)
     if (selectedFile) {
-      toast({
-        title: 'Erro',
-        description: 'Para agendar, use uma URL de mídia ao invés de arquivo local',
-        variant: 'destructive',
-      });
+      toast.error('Para agendar, use uma URL de mídia ao invés de arquivo local');
       return;
     }
 
     const finalMediaUrl = mediaUrl.trim();
     if (!finalMediaUrl) {
-      toast({ title: 'Erro', description: 'Informe a URL da mídia', variant: 'destructive' });
+      toast.error('Informe a URL da mídia');
       return;
     }
 
     if (!instanceId) {
-      toast({ title: 'Erro', description: 'Instância não encontrada', variant: 'destructive' });
+      toast.error('Instância não encontrada');
       return;
     }
 
@@ -278,7 +260,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
     try {
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
-        toast({ title: 'Erro', description: 'Sessão expirada', variant: 'destructive' });
+        toast.error('Sessão expirada');
         return;
       }
 
@@ -314,10 +296,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
 
       if (error) throw error;
 
-      toast({
-        title: 'Agendado com sucesso!',
-        description: `Mídia será enviada em ${config.scheduledAt.toLocaleDateString('pt-BR')} às ${config.scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
-      });
+      toast.success(`Mídia será enviada em ${config.scheduledAt.toLocaleDateString('pt-BR')} às ${config.scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
 
       setMediaUrl('');
       setCaption('');
@@ -326,11 +305,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
       onMediaSent?.();
     } catch (error) {
       console.error('Error scheduling media:', error);
-      toast({
-        title: 'Erro ao agendar',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast.error(error instanceof Error ? error.message : 'Erro ao agendar');
     } finally {
       setIsScheduling(false);
     }
