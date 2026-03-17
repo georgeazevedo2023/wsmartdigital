@@ -1,36 +1,16 @@
 import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
 import { extractAuth, createUserClient, validateUser } from '../_shared/supabase-admin.ts'
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return corsResponse();
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const auth = extractAuth(req);
+    if (!auth) return errorResponse("Unauthorized", 401);
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
-
-    const token = authHeader.replace("Bearer ", "");
-    const { data: authData, error: authError } = await supabase.auth.getClaims(token);
-    if (authError || !authData?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const userId = authData.claims.sub;
+    const supabase = createUserClient(auth.authHeader);
+    const userId = await validateUser(supabase, auth.token);
+    if (!userId) return errorResponse("Unauthorized", 401);
     const { conversation_id, force_refresh } = await req.json();
 
     if (!conversation_id) {
