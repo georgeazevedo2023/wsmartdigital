@@ -165,7 +165,7 @@ export function useBroadcastHistory() {
     });
   }, [logs, statusFilter, typeFilter, targetFilter, instanceFilter, dateFrom, dateTo, searchQuery]);
 
-  const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || targetFilter !== 'all' || instanceFilter !== 'all' || dateFrom || dateTo || searchQuery;
+  const hasActiveFilters = statusFilter !== 'all' || typeFilter !== 'all' || targetFilter !== 'all' || instanceFilter !== 'all' || !!dateFrom || !!dateTo || !!searchQuery;
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
