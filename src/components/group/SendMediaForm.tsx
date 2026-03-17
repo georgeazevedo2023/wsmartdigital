@@ -260,7 +260,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
     try {
       const session = await supabase.auth.getSession();
       if (!session.data.session) {
-        toast({ title: 'Erro', description: 'Sessão expirada', variant: 'destructive' });
+        toast.error('Sessão expirada');
         return;
       }
 
