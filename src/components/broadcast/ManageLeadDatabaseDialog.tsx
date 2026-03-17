@@ -313,17 +313,15 @@ const ManageLeadDatabaseDialog = ({
                   >
                     Cancelar
                   </Button>
-                  <Button
+                  <LoadingButton
                     size="sm"
                     onClick={handleSaveMeta}
-                    disabled={!editName.trim() || isSavingMeta}
+                    disabled={!editName.trim()}
+                    loading={isSavingMeta}
+                    loadingText="Salvando..."
                   >
-                    {isSavingMeta ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      'Salvar'
-                    )}
-                  </Button>
+                    Salvar
+                  </LoadingButton>
                 </div>
               </div>
             ) : (
