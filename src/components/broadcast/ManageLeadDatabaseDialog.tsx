@@ -427,9 +427,7 @@ const ManageLeadDatabaseDialog = ({
 
             {/* Contact list */}
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
+              <LoadingSpinner />
             ) : (
               <ScrollArea className="flex-1 min-h-0 border rounded-lg">
                 <div className="p-2 space-y-1">

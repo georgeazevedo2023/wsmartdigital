@@ -37,7 +37,7 @@ const SendStatusModal = ({ status, message, mediaType, progress, onClose }: Send
         <div className="flex flex-col items-center justify-center py-6 space-y-4">
           {status === 'sending' && (
             <>
-              <Loader2 className="w-16 h-16 text-primary animate-spin" />
+              <Loader2 className="w-16 h-16 text-primary animate-spin" /> {/* inline – modal hero spinner */}
               <h3 className="text-lg font-semibold">Enviando...</h3>
               {progress && progress.total > 1 ? (
                 <div className="w-full space-y-2">

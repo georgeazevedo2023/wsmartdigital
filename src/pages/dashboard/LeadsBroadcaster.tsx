@@ -603,10 +603,7 @@ const LeadsBroadcaster = () => {
                 </Button>
 
                 {isLoadingDatabases ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-sm text-muted-foreground">Carregando...</span>
-                  </div>
+                  <LoadingSpinner size="sm" label="Carregando..." className="py-4" />
                 ) : (
                   databases.map(db => {
                     const isSelected = selectedDatabases.some(d => d.id === db.id);
