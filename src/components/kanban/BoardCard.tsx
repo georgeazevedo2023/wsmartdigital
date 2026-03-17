@@ -262,13 +262,23 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
       </div>
 
       {canManage && (
-        <EditBoardDialog
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          board={board}
-          inboxes={inboxes}
-          onSaved={onRefresh}
-        />
+        <>
+          <EditBoardDialog
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            board={board}
+            inboxes={inboxes}
+            onSaved={onRefresh}
+          />
+          <ConfirmDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            title="Excluir Quadro?"
+            description="Todos os cards e dados deste quadro serão perdidos. Esta ação não pode ser desfeita."
+            onConfirm={handleDelete}
+            confirmLabel="Excluir"
+          />
+        </>
       )}
     </>
   );

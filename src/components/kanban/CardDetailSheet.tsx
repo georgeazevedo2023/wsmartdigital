@@ -177,30 +177,9 @@ export function CardDetailSheet({
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-border">
           <div className="flex items-start justify-between gap-3">
             <SheetTitle className="text-base">Detalhes do Card</SheetTitle>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive shrink-0">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Excluir Card?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Todos os dados deste card serão excluídos permanentemente.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={handleDelete}
-                  >
-                    Excluir
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive shrink-0" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="w-4 h-4" />
+            </Button>
           </div>
         </SheetHeader>
 

@@ -1099,56 +1099,35 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
       </CardContent>
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <AlertDialogContent className="max-w-[95vw] sm:max-w-lg">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir registro</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja excluir este registro do histórico? Esta ação não pode ser desfeita.
-              {logToDelete && (
-                <span className="block mt-2 text-sm">
-                  <strong>Tipo:</strong> {getMessageTypeLabel(logToDelete.message_type)} • 
-                  <strong> Grupos:</strong> {logToDelete.groups_targeted} • 
-                  <strong> Data:</strong> {formatBR(logToDelete.created_at, "dd/MM/yyyy")}
-                </span>
-              )}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel className="sm:w-auto w-full">Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 sm:w-auto w-full"
-              disabled={deleteMutation.isPending}
-            >
-              {deleteMutation.isPending ? 'Excluindo...' : 'Excluir'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        title="Excluir registro"
+        description={<>
+          Tem certeza que deseja excluir este registro do histórico? Esta ação não pode ser desfeita.
+          {logToDelete && (
+            <span className="block mt-2 text-sm">
+              <strong>Tipo:</strong> {getMessageTypeLabel(logToDelete.message_type)} • 
+              <strong> Grupos:</strong> {logToDelete.groups_targeted} • 
+              <strong> Data:</strong> {formatBR(logToDelete.created_at, "dd/MM/yyyy")}
+            </span>
+          )}
+        </>}
+        onConfirm={confirmDelete}
+        isLoading={deleteMutation.isPending}
+        confirmLabel="Excluir"
+      />
 
       {/* Batch Delete Confirmation Dialog */}
-      <AlertDialog open={batchDeleteDialogOpen} onOpenChange={setBatchDeleteDialogOpen}>
-        <AlertDialogContent className="max-w-[95vw] sm:max-w-lg">
-          <AlertDialogHeader>
-            <AlertDialogTitle>Excluir {selectedIds.size} registros</AlertDialogTitle>
-            <AlertDialogDescription>
-              Tem certeza que deseja excluir <strong>{selectedIds.size} registros</strong> do histórico? 
-              Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
-            <AlertDialogCancel className="sm:w-auto w-full">Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={confirmBatchDelete}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90 sm:w-auto w-full"
-              disabled={batchDeleteMutation.isPending}
-            >
-              {batchDeleteMutation.isPending ? 'Excluindo...' : `Excluir ${selectedIds.size} registros`}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={batchDeleteDialogOpen}
+        onOpenChange={setBatchDeleteDialogOpen}
+        title={`Excluir ${selectedIds.size} registros`}
+        description={<>Tem certeza que deseja excluir <strong>{selectedIds.size} registros</strong> do histórico? Esta ação não pode ser desfeita.</>}
+        onConfirm={confirmBatchDelete}
+        isLoading={batchDeleteMutation.isPending}
+        confirmLabel={`Excluir ${selectedIds.size} registros`}
+      />
     </Card>
   );
 };
