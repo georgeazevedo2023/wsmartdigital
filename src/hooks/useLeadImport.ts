@@ -277,15 +277,7 @@ export function useLeadImport({ instance, onLeadsImported }: UseLeadImportOption
   const fetchGroups = async () => {
     setLoadingGroups(true);
     try {
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) throw new Error('Not authenticated');
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.data.session.access_token}` },
-          body: JSON.stringify({ action: 'groups', token: instance.token }) }
-      );
-      if (!response.ok) throw new Error('Failed to fetch groups');
-      const data = await response.json();
+      const data = await callUazapiProxy({ action: 'groups', token: instance.token });
 
       let groupsData: any[] = [];
       if (Array.isArray(data)) groupsData = data;

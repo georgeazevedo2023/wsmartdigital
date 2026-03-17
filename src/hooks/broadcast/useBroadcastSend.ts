@@ -67,9 +67,7 @@ export function useBroadcastSend({ instance, selectedGroups, excludeAdmins, rand
   };
 
   const proxyCall = async (body: Record<string, unknown>, accessToken: string) => {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+    return callUazapiProxyWithToken({ ...body, token: instance.token }, accessToken);
       body: JSON.stringify({ ...body, token: instance.token }),
     });
     if (!response.ok) {
