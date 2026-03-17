@@ -384,20 +384,15 @@ const ManageLeadDatabaseDialog = ({
                     onChange={(e) => setNewName(e.target.value)}
                     className="flex-1"
                   />
-                  <Button
+                  <LoadingButton
                     onClick={handleAddContact}
-                    disabled={!newPhone.trim() || isAdding}
+                    disabled={!newPhone.trim()}
+                    loading={isAdding}
                     className="shrink-0"
                   >
-                    {isAdding ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4 mr-1" />
-                        Adicionar
-                      </>
-                    )}
-                  </Button>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Adicionar
+                  </LoadingButton>
                 </div>
               </div>
             ) : (

@@ -682,18 +682,10 @@ const BackupModule = () => {
               </SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleExport} disabled={isExporting || selectedSections.size === 0}>
-            {isExporting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Exportando...
-              </>
-            ) : (
-              <>
-                <Download className="w-4 h-4" />
-                Exportar
-              </>
-            )}
+          <LoadingButton onClick={handleExport} disabled={selectedSections.size === 0} loading={isExporting} loadingText="Exportando...">
+            <Download className="w-4 h-4" />
+            Exportar
+          </LoadingButton>
           </Button>
         </div>
       </div>
