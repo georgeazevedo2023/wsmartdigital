@@ -339,7 +339,7 @@ const AdminPanel = () => {
           {inboxesLoading ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div>
           ) : filteredInboxes.length === 0 ? (
-            <EmptyState icon={Inbox} title="Nenhuma caixa encontrada" desc="Crie a primeira caixa de entrada" />
+            <EmptyState icon={Inbox} title="Nenhuma caixa encontrada" description="Crie a primeira caixa de entrada" />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {filteredInboxes.map(inbox => (
