@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import { Trash2, X, Plus, Save, StickyNote } from 'lucide-react';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { DynamicFormField, KanbanField } from './DynamicFormField';
 import type { CardData } from './KanbanCardItem';
 import type { ColumnData } from './KanbanColumn';
@@ -58,6 +58,7 @@ export function CardDetailSheet({
   const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   useEffect(() => {
     if (!card || !open) return;
@@ -177,30 +178,9 @@ export function CardDetailSheet({
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-border">
           <div className="flex items-start justify-between gap-3">
             <SheetTitle className="text-base">Detalhes do Card</SheetTitle>
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive shrink-0">
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Excluir Card?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Todos os dados deste card serão excluídos permanentemente.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                  <AlertDialogAction
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                    onClick={handleDelete}
-                  >
-                    Excluir
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive shrink-0" onClick={() => setDeleteOpen(true)}>
+              <Trash2 className="w-4 h-4" />
+            </Button>
           </div>
         </SheetHeader>
 
@@ -331,6 +311,14 @@ export function CardDetailSheet({
           </Button>
         </div>
       </SheetContent>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Excluir Card?"
+        description="Todos os dados deste card serão excluídos permanentemente."
+        onConfirm={handleDelete}
+        confirmLabel="Excluir"
+      />
     </Sheet>
   );
 }

@@ -12,16 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   Search,
   User,
@@ -546,34 +537,15 @@ const ManageLeadDatabaseDialog = ({
       </Dialog>
 
       {/* Delete confirmation */}
-      <AlertDialog
+      <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remover contato?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Remover{' '}
-              <strong>
-                {deleteTarget?.name ||
-                  formatPhoneForDisplay(deleteTarget?.phone || '')}
-              </strong>{' '}
-              desta base de leads. Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDeleteContact}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting ? 'Removendo...' : 'Remover'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Remover contato?"
+        description={<>Remover <strong>{deleteTarget?.name || formatPhoneForDisplay(deleteTarget?.phone || '')}</strong> desta base de leads. Esta ação não pode ser desfeita.</>}
+        onConfirm={handleDeleteContact}
+        isLoading={isDeleting}
+        confirmLabel="Remover"
+      />
     </>
   );
 };

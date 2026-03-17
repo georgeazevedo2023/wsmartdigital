@@ -11,20 +11,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { MoreVertical, Edit, Copy, Trash2, ArrowRight, Columns, FileText, Users, Lock, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { EditBoardDialog } from './EditBoardDialog';
+
 
 interface KanbanBoard {
   id: string;
@@ -57,6 +48,7 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
   const { user } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const handleDuplicate = async () => {
     if (!user) return;
@@ -209,33 +201,12 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
                   <Copy className="w-4 h-4 mr-2" /> {duplicating ? 'Duplicando...' : 'Duplicar'}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onSelect={e => e.preventDefault()}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Excluir Quadro?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Todos os cards e dados deste quadro serão perdidos. Esta ação não pode ser desfeita.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        onClick={handleDelete}
-                      >
-                        Excluir
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => { e.preventDefault(); setDeleteOpen(true); }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
@@ -291,13 +262,23 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
       </div>
 
       {canManage && (
-        <EditBoardDialog
-          open={editOpen}
-          onOpenChange={setEditOpen}
-          board={board}
-          inboxes={inboxes}
-          onSaved={onRefresh}
-        />
+        <>
+          <EditBoardDialog
+            open={editOpen}
+            onOpenChange={setEditOpen}
+            board={board}
+            inboxes={inboxes}
+            onSaved={onRefresh}
+          />
+          <ConfirmDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            title="Excluir Quadro?"
+            description="Todos os cards e dados deste quadro serão perdidos. Esta ação não pode ser desfeita."
+            onConfirm={handleDelete}
+            confirmLabel="Excluir"
+          />
+        </>
       )}
     </>
   );
