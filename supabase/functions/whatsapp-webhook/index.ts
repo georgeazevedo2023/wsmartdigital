@@ -58,28 +58,19 @@ function extractPhone(jid: string): string {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    // Validate webhook secret
     const webhookSecret = Deno.env.get('WEBHOOK_SECRET')
     if (webhookSecret) {
       const providedSecret = req.headers.get('x-webhook-secret') || req.headers.get('X-Webhook-Secret')
       if (providedSecret !== webhookSecret) {
         console.error('Invalid webhook secret')
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
+        return errorResponse('Unauthorized', 401)
       }
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
+    const supabase = createServiceClient()
 
     const rawPayload = await req.json()
     console.log('Webhook raw received:', JSON.stringify(rawPayload).substring(0, 500))
