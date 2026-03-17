@@ -200,33 +200,12 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
                   <Copy className="w-4 h-4 mr-2" /> {duplicating ? 'Duplicando...' : 'Duplicar'}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <DropdownMenuItem
-                      className="text-destructive focus:text-destructive"
-                      onSelect={e => e.preventDefault()}
-                    >
-                      <Trash2 className="w-4 h-4 mr-2" /> Excluir
-                    </DropdownMenuItem>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Excluir Quadro?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Todos os cards e dados deste quadro serão perdidos. Esta ação não pode ser desfeita.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                      <AlertDialogAction
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                        onClick={handleDelete}
-                      >
-                        Excluir
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                <DropdownMenuItem
+                  className="text-destructive focus:text-destructive"
+                  onSelect={(e) => { e.preventDefault(); setDeleteOpen(true); }}
+                >
+                  <Trash2 className="w-4 h-4 mr-2" /> Excluir
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           )}

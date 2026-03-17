@@ -265,27 +265,15 @@ const LeadDatabaseSelector = ({
       />
 
       {/* Delete Confirmation Dialog */}
-      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Remover base de leads?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta ação irá remover permanentemente a base "{deleteTarget?.name}" e todos os {deleteTarget?.leads_count} contatos. 
-              Esta ação não pode ser desfeita.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isDeleting}>Cancelar</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={handleDelete}
-              disabled={isDeleting}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {isDeleting ? 'Removendo...' : 'Remover'}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => !open && setDeleteTarget(null)}
+        title="Remover base de leads?"
+        description={<>Esta ação irá remover permanentemente a base "{deleteTarget?.name}" e todos os {deleteTarget?.leads_count} contatos. Esta ação não pode ser desfeita.</>}
+        onConfirm={handleDelete}
+        isLoading={isDeleting}
+        confirmLabel="Remover"
+      />
     </div>
   );
 };
