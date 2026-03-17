@@ -1,69 +1,94 @@
 
-# Melhorias de UX/UI no Painel Administrativo
 
-## Problema Identificado
-Faltam opcoes de edicao em varias areas do painel: nao e possivel editar nome de caixas de entrada, editar dados de usuarios (nome/email), nem alterar o papel de membros da equipe inline. Alem disso, faltam tooltips e recursos de usabilidade.
+# Otimização e Componentização do AdminPanel
 
-## Mudancas Planejadas
+## Diagnóstico
 
-### 1. Editar Caixa de Entrada (Inbox)
-- Adicionar opcao "Editar Nome" no menu contextual (DropdownMenu) de cada InboxCard
-- Ao clicar, o nome da caixa entra em modo de edicao inline (input com botoes salvar/cancelar)
-- Salvar atualiza diretamente na tabela `inboxes`
+O arquivo `AdminPanel.tsx` tem **1598 linhas** e contém vários padrões repetidos:
 
-### 2. Editar Usuario
-- Adicionar opcao "Editar" no UserCard (botao com icone de lapis no footer, ao lado de "Instancias")
-- Abre um Dialog para editar nome completo do usuario
-- Salva na tabela `user_profiles`
+1. **TooltipProvider repetido ~30x** — Já existe um `<TooltipProvider>` global em `App.tsx`. Todos os `<TooltipProvider>` locais são redundantes e podem ser removidos, mantendo apenas `<Tooltip>`, `<TooltipTrigger>`, `<TooltipContent>`.
 
-### 3. Editar Papel do Membro na Equipe
-- No TeamSection, adicionar um seletor de papel (dropdown) ao lado do badge de papel de cada membro
-- Permitir alterar entre admin/gestor/agente diretamente inline
-- Salva na tabela `inbox_users`
+2. **Código duplicado com `InboxManagement.tsx` (646 linhas) e `UsersManagement.tsx` (587 linhas)** — Esses dois arquivos contêm lógica quase idêntica ao que já existe no AdminPanel (fetch inboxes, fetch users, create/delete handlers, mesmos tipos). Parecem ser as páginas anteriores que o AdminPanel unificado substituiu.
 
-### 4. Tooltips em Acoes
-- Envolver todos os botoes de icone (excluir, instancias, editar, menu contextual) com Tooltip descritivo
-- Adicionar tooltips nos filtros de papel, nos stats cards e nos badges de contagem
+3. **Padrão de confirmação (AlertDialog) repetido 3x** — Delete inbox, delete user, remove membership usam a mesma estrutura.
 
-### 5. Melhorias de UX Adicionais
-- Botao "Editar" na caixa de entrada para renomear inline com animacao suave
-- Feedback visual ao salvar (toast + animacao de check)
-- Transicao suave ao mudar entre modo visualizacao e edicao
-- Empty states com CTAs mais claros e botoes de acao diretos
-- Touch targets de 44px minimos em todos os botoes de acao no mobile
+4. **`formatPhone` duplicada** — Existe em AdminPanel e UsersManagement.
 
-## Detalhes Tecnicos
+5. **InboxCard recebe 16 props** — Muitas são estados de edição de webhook que poderiam ser gerenciados internamente.
+
+## Plano de Mudanças
+
+### 1. Criar componente reutilizável `ActionTooltip`
+**Arquivo:** `src/components/ui/action-tooltip.tsx`
+
+Wrapper simples que elimina a repetição de `<TooltipProvider><Tooltip><TooltipTrigger>...<TooltipContent>`:
+```tsx
+const ActionTooltip = ({ label, children }) => (
+  <Tooltip>
+    <TooltipTrigger asChild>{children}</TooltipTrigger>
+    <TooltipContent>{label}</TooltipContent>
+  </Tooltip>
+);
+```
+Remove ~120 linhas de boilerplate do AdminPanel.
+
+### 2. Criar componente reutilizável `ConfirmDialog`
+**Arquivo:** `src/components/ui/confirm-dialog.tsx`
+
+Props: `open`, `onOpenChange`, `title`, `description`, `onConfirm`, `isLoading`, `confirmLabel`, `destructive`, `icon`.
+
+Substitui os 3 AlertDialogs repetidos no AdminPanel (~60 linhas) e pode ser reutilizado em outras páginas.
+
+### 3. Criar `src/lib/formatPhone.ts`
+Mover `formatPhone` para um utilitário compartilhado, remover duplicatas de AdminPanel e UsersManagement.
+
+### 4. Refatorar `InboxCard` — gerenciar estado de webhook internamente
+Mover os estados de edição de webhook (`editingWebhookId`, `editWebhookValue`, etc.) para dentro do próprio `InboxCard`, recebendo apenas `inbox`, `onSaveWebhook(id, field, value)` como prop. Reduz de 16 props para ~6.
+
+### 5. Extrair sub-componentes para arquivos separados
+**Novos arquivos em `src/components/admin/`:**
+- `AdminStatsBar.tsx` — Barra de estatísticas
+- `InboxCard.tsx` — Card de inbox com webhook editing interno
+- `UserCard.tsx` — Card de usuário
+- `TeamSection.tsx` — Seção de equipe agrupada por inbox
+- `WebhookRow.tsx` — Linha de webhook editável (usado dentro de InboxCard)
+
+### 6. Remover todos os `<TooltipProvider>` locais do AdminPanel
+Como já há um global em `App.tsx`, simplesmente usar `<Tooltip>` direto.
+
+### 7. Remover `InboxManagement.tsx` e `UsersManagement.tsx` se não estiverem em uso
+Verificar rotas — se o AdminPanel já é o substituto unificado, essas páginas podem ser removidas (~1230 linhas eliminadas).
+
+## Estimativa de Redução
+
+| Área | Linhas removidas |
+|------|-----------------|
+| TooltipProvider boilerplate | ~120 |
+| ConfirmDialog consolidação | ~60 |
+| Webhook state internalized | ~40 |
+| Sub-componentes extraídos | AdminPanel fica ~400 linhas (de 1598) |
+| Páginas duplicadas removidas | ~1230 |
+| **Total** | **~1050+ linhas** |
+
+## Detalhes Técnicos
+
+### Arquivos criados
+- `src/components/ui/action-tooltip.tsx`
+- `src/components/ui/confirm-dialog.tsx`
+- `src/lib/formatPhone.ts`
+- `src/components/admin/AdminStatsBar.tsx`
+- `src/components/admin/InboxCard.tsx`
+- `src/components/admin/UserCard.tsx`
+- `src/components/admin/TeamSection.tsx`
+- `src/components/admin/WebhookRow.tsx`
 
 ### Arquivos modificados
-- `src/pages/dashboard/AdminPanel.tsx` -- Adicionar funcionalidades de edicao e tooltips
+- `src/pages/dashboard/AdminPanel.tsx` — Refatorado para importar sub-componentes
+- `src/pages/dashboard/UsersManagement.tsx` — Importar `formatPhone` do utilitário
 
-### Novos estados necessarios
-```text
-editingInboxName: { id: string; value: string } | null
-editingUser: UserWithRole | null (para dialog de edicao)
-```
+### Arquivos possivelmente removidos
+- `src/pages/dashboard/InboxManagement.tsx` (se não usado em rotas)
+- `src/pages/dashboard/UsersManagement.tsx` (se não usado em rotas)
 
-### Novos handlers
-```text
-handleEditInboxName(inboxId, newName) -- UPDATE inboxes SET name WHERE id
-handleEditUserProfile(userId, fullName) -- UPDATE user_profiles SET full_name WHERE id
-handleChangeTeamRole(userId, inboxId, newRole) -- UPDATE inbox_users SET role WHERE user_id AND inbox_id
-```
+Antes de remover, verificarei as rotas em `App.tsx` para confirmar.
 
-### InboxCard -- mudancas
-- Nova prop: onEditName
-- Menu contextual ganha item "Editar Nome" com icone Pencil
-- Modo de edicao inline no header (substituir texto por Input)
-
-### UserCard -- mudancas
-- Nova prop: onEdit
-- Botao "Editar" no footer (ao lado de Instancias)
-- Dialog de edicao com campo de nome
-
-### TeamSection -- mudancas
-- Cada membro ganha um DropdownMenu ou Select para trocar papel (admin/gestor/agente)
-- Atualiza inline sem dialog
-
-### Tooltips
-- Todos os Button size="icon" envolvidos com TooltipProvider > Tooltip > TooltipTrigger/Content
-- Labels descritivos: "Excluir usuario", "Gerenciar instancias", "Editar nome", "Copiar ID", etc.
