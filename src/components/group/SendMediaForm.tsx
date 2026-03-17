@@ -296,10 +296,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
 
       if (error) throw error;
 
-      toast({
-        title: 'Agendado com sucesso!',
-        description: `Mídia será enviada em ${config.scheduledAt.toLocaleDateString('pt-BR')} às ${config.scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
-      });
+      toast.success(`Mídia será enviada em ${config.scheduledAt.toLocaleDateString('pt-BR')} às ${config.scheduledAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`);
 
       setMediaUrl('');
       setCaption('');
