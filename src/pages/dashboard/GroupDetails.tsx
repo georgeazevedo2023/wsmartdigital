@@ -294,9 +294,8 @@ const GroupDetails = () => {
       {/* Mensagem se não encontrar resultados */}
       {filteredParticipants.length === 0 && searchTerm && (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8 space-y-2">
-            <Search className="w-12 h-12 text-muted-foreground" />
-            <p className="text-muted-foreground">Nenhum participante encontrado</p>
+          <CardContent className="py-0">
+            <EmptyState icon={Search} title="Nenhum participante encontrado" compact />
           </CardContent>
         </Card>
       )}

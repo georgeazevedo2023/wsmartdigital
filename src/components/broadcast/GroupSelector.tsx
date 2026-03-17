@@ -229,10 +229,11 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
 
       {/* Groups List */}
       {filteredGroups.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
-          <MessageSquare className="w-12 h-12 mx-auto mb-3 opacity-50" />
-          <p>{searchTerm ? 'Nenhum grupo encontrado' : 'Nenhum grupo disponível'}</p>
-        </div>
+        <EmptyState
+          icon={MessageSquare}
+          title={searchTerm ? 'Nenhum grupo encontrado' : 'Nenhum grupo disponível'}
+          compact
+        />
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {filteredGroups.map((group) => {

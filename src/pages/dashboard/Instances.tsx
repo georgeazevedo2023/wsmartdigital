@@ -627,15 +627,11 @@ const Instances = () => {
 
       {/* Instances Grid */}
       {filteredInstances.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Server className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>Nenhuma instância encontrada</p>
-          {isSuperAdmin && (
-            <p className="text-sm mt-2">
-              Clique em "Nova Instância" para criar uma
-            </p>
-          )}
-        </div>
+        <EmptyState
+          icon={Server}
+          title="Nenhuma instância encontrada"
+          description={isSuperAdmin ? 'Clique em "Nova Instância" para criar uma' : undefined}
+        />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredInstances.map((instance) => (

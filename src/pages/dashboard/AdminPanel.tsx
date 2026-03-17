@@ -28,7 +28,7 @@ import AdminStatsBar from '@/components/admin/AdminStatsBar';
 import InboxCard from '@/components/admin/InboxCard';
 import UserCard from '@/components/admin/UserCard';
 import TeamSection from '@/components/admin/TeamSection';
-import EmptyState from '@/components/admin/EmptyState';
+import EmptyState from '@/components/ui/empty-state';
 import { APP_ROLE_CONFIG } from '@/components/admin/constants';
 import type { AppRole, InboxRole, InboxWithDetails, UserWithRole, InboxUser } from '@/components/admin/types';
 

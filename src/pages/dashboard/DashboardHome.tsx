@@ -508,15 +508,11 @@ const DashboardHome = () => {
       <div className="space-y-4 animate-fade-in" style={{ animationDelay: '300ms' }}>
         <h2 className="text-lg font-semibold">Instâncias Recentes</h2>
         {instances.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Server className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>Nenhuma instância encontrada</p>
-            {isSuperAdmin && (
-              <p className="text-sm mt-2">
-                Acesse o menu "Instâncias" para criar uma nova
-              </p>
-            )}
-          </div>
+          <EmptyState
+            icon={Server}
+            title="Nenhuma instância encontrada"
+            description={isSuperAdmin ? 'Acesse o menu "Instâncias" para criar uma nova' : undefined}
+          />
         ) : (
           <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {instances.slice(0, 6).map((instance) => (
