@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent } from '@/components/ui/card';
@@ -681,19 +682,10 @@ const BackupModule = () => {
               </SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleExport} disabled={isExporting || selectedSections.size === 0}>
-            {isExporting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Exportando...
-              </>
-            ) : (
-              <>
-                <Download className="w-4 h-4" />
-                Exportar
-              </>
-            )}
-          </Button>
+          <LoadingButton onClick={handleExport} disabled={selectedSections.size === 0} loading={isExporting} loadingText="Exportando...">
+            <Download className="w-4 h-4" />
+            Exportar
+          </LoadingButton>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import EmptyState from '@/components/ui/empty-state';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -875,25 +876,24 @@ const BroadcastHistory = ({ onResend }: BroadcastHistoryProps) => {
       </CardHeader>
       <CardContent>
         {!logs || logs.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>Nenhum envio realizado ainda</p>
-            <p className="text-sm">Os envios aparecerão aqui</p>
-          </div>
+          <EmptyState
+            icon={History}
+            title="Nenhum envio realizado ainda"
+            description="Os envios aparecerão aqui"
+            compact
+          />
         ) : filteredLogs.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <Filter className="w-12 h-12 mx-auto mb-3 opacity-50" />
-            <p>Nenhum registro encontrado</p>
-            <p className="text-sm">Tente ajustar os filtros</p>
-            <Button
-              variant="link"
-              size="sm"
-              onClick={clearFilters}
-              className="mt-2"
-            >
-              Limpar filtros
-            </Button>
-          </div>
+          <EmptyState
+            icon={Filter}
+            title="Nenhum registro encontrado"
+            description="Tente ajustar os filtros"
+            compact
+            action={
+              <Button variant="link" size="sm" onClick={clearFilters}>
+                Limpar filtros
+              </Button>
+            }
+          />
         ) : (
           <div className="space-y-3">
             {filteredLogs.map((log) => {

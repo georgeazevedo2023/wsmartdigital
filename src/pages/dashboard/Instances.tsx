@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import EmptyState from '@/components/ui/empty-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import InstanceCard from '@/components/dashboard/InstanceCard';
@@ -26,6 +27,7 @@ import {
 import { Plus, Search, Server, Loader2, RefreshCw, QrCode } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { cn } from '@/lib/utils';
 
 interface Instance {
@@ -506,17 +508,12 @@ const Instances = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-7xl mx-auto animate-fade-in">
-        <div className="flex justify-between items-center">
-          <Skeleton className="h-8 w-32" />
-          <Skeleton className="h-10 w-40" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-48" />
-          ))}
-        </div>
-      </div>
+      <PageSkeleton
+        header={['w-32']}
+        gridCols="grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+        cards={3}
+        cardHeight="h-48"
+      />
     );
   }
 
@@ -627,15 +624,11 @@ const Instances = () => {
 
       {/* Instances Grid */}
       {filteredInstances.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <Server className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>Nenhuma instância encontrada</p>
-          {isSuperAdmin && (
-            <p className="text-sm mt-2">
-              Clique em "Nova Instância" para criar uma
-            </p>
-          )}
-        </div>
+        <EmptyState
+          icon={Server}
+          title="Nenhuma instância encontrada"
+          description={isSuperAdmin ? 'Clique em "Nova Instância" para criar uma' : undefined}
+        />
       ) : (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredInstances.map((instance) => (

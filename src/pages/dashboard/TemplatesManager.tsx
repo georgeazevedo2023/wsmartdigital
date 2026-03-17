@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import EmptyState from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -235,11 +236,11 @@ export default function TemplatesManager() {
       {isLoading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
       ) : filteredTemplates.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <BookMarked className="w-12 h-12 mx-auto mb-3 opacity-30" />
-          <p className="font-medium">{templates.length === 0 ? 'Nenhum template criado' : 'Nenhum template encontrado'}</p>
-          <p className="text-sm mt-1">{templates.length === 0 ? 'Crie seu primeiro template para começar.' : 'Tente ajustar os filtros.'}</p>
-        </div>
+        <EmptyState
+          icon={BookMarked}
+          title={templates.length === 0 ? 'Nenhum template criado' : 'Nenhum template encontrado'}
+          description={templates.length === 0 ? 'Crie seu primeiro template para começar.' : 'Tente ajustar os filtros.'}
+        />
       ) : viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredTemplates.map(t => (

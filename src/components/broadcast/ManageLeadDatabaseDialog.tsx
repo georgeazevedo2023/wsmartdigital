@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { LoadingButton } from '@/components/ui/loading-button';
 import {
   Dialog,
   DialogContent,
@@ -312,17 +313,15 @@ const ManageLeadDatabaseDialog = ({
                   >
                     Cancelar
                   </Button>
-                  <Button
+                  <LoadingButton
                     size="sm"
                     onClick={handleSaveMeta}
-                    disabled={!editName.trim() || isSavingMeta}
+                    disabled={!editName.trim()}
+                    loading={isSavingMeta}
+                    loadingText="Salvando..."
                   >
-                    {isSavingMeta ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      'Salvar'
-                    )}
-                  </Button>
+                    Salvar
+                  </LoadingButton>
                 </div>
               </div>
             ) : (
@@ -385,20 +384,15 @@ const ManageLeadDatabaseDialog = ({
                     onChange={(e) => setNewName(e.target.value)}
                     className="flex-1"
                   />
-                  <Button
+                  <LoadingButton
                     onClick={handleAddContact}
-                    disabled={!newPhone.trim() || isAdding}
+                    disabled={!newPhone.trim()}
+                    loading={isAdding}
                     className="shrink-0"
                   >
-                    {isAdding ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <>
-                        <Plus className="w-4 h-4 mr-1" />
-                        Adicionar
-                      </>
-                    )}
-                  </Button>
+                    <Plus className="w-4 h-4 mr-1" />
+                    Adicionar
+                  </LoadingButton>
                 </div>
               </div>
             ) : (

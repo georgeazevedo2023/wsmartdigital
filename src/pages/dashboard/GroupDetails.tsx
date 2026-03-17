@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
+import EmptyState from '@/components/ui/empty-state';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { Input } from '@/components/ui/input';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
@@ -178,17 +180,13 @@ const GroupDetails = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-24" />
-          <Skeleton className="h-8 w-64" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-16 rounded-lg" />
-          ))}
-        </div>
-      </div>
+      <PageSkeleton
+        header={['w-24', 'w-64']}
+        gridCols="grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+        cards={6}
+        cardHeight="h-16 rounded-lg"
+        maxWidth="max-w-5xl"
+      />
     );
   }
 
@@ -294,9 +292,8 @@ const GroupDetails = () => {
       {/* Mensagem se não encontrar resultados */}
       {filteredParticipants.length === 0 && searchTerm && (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-8 space-y-2">
-            <Search className="w-12 h-12 text-muted-foreground" />
-            <p className="text-muted-foreground">Nenhum participante encontrado</p>
+          <CardContent className="py-0">
+            <EmptyState icon={Search} title="Nenhum participante encontrado" compact />
           </CardContent>
         </Card>
       )}

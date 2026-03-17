@@ -28,7 +28,7 @@ import AdminStatsBar from '@/components/admin/AdminStatsBar';
 import InboxCard from '@/components/admin/InboxCard';
 import UserCard from '@/components/admin/UserCard';
 import TeamSection from '@/components/admin/TeamSection';
-import EmptyState from '@/components/admin/EmptyState';
+import EmptyState from '@/components/ui/empty-state';
 import { APP_ROLE_CONFIG } from '@/components/admin/constants';
 import type { AppRole, InboxRole, InboxWithDetails, UserWithRole, InboxUser } from '@/components/admin/types';
 
@@ -339,7 +339,7 @@ const AdminPanel = () => {
           {inboxesLoading ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">{[1,2,3,4].map(i => <Skeleton key={i} className="h-40 rounded-2xl" />)}</div>
           ) : filteredInboxes.length === 0 ? (
-            <EmptyState icon={Inbox} title="Nenhuma caixa encontrada" desc="Crie a primeira caixa de entrada" />
+            <EmptyState icon={Inbox} title="Nenhuma caixa encontrada" description="Crie a primeira caixa de entrada" />
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {filteredInboxes.map(inbox => (
@@ -373,7 +373,7 @@ const AdminPanel = () => {
           {usersLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-52 rounded-2xl" />)}</div>
           ) : filteredUsers.length === 0 ? (
-            <EmptyState icon={Users} title="Nenhum usuário encontrado" desc="Crie o primeiro usuário" />
+            <EmptyState icon={Users} title="Nenhum usuário encontrado" description="Crie o primeiro usuário" />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {filteredUsers.map(u => (
@@ -397,7 +397,7 @@ const AdminPanel = () => {
           {teamLoading ? (
             <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
           ) : filteredTeam.length === 0 ? (
-            <EmptyState icon={Headphones} title="Nenhum membro na equipe" desc="Adicione membros às caixas de atendimento" />
+            <EmptyState icon={Headphones} title="Nenhum membro na equipe" description="Adicione membros às caixas de atendimento" />
           ) : (
             <TeamSection teamUsers={filteredTeam} onRemoveMembership={(userId, inboxId, userName, inboxName) => setRemoveMembership({ userId, inboxId, userName, inboxName })} onChangeTeamRole={handleChangeTeamRole} />
           )}

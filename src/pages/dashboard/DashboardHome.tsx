@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
+import EmptyState from '@/components/ui/empty-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import StatsCard from '@/components/dashboard/StatsCard';
@@ -9,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Server, Users, Wifi, WifiOff, MessageSquare, UsersRound, RefreshCw, UserPlus } from 'lucide-react';
 import HelpdeskMetricsCharts from '@/components/dashboard/HelpdeskMetricsCharts';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { Button } from '@/components/ui/button';
 import InstanceFilterSelect from '@/components/dashboard/InstanceFilterSelect';
 import { toast } from 'sonner';
@@ -321,17 +323,12 @@ const DashboardHome = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-7xl mx-auto animate-fade-in">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
-        </div>
-      </div>
+      <PageSkeleton
+        header={['w-48', 'w-64']}
+        gridCols="grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
+        cards={4}
+        cardHeight="h-32"
+      />
     );
   }
 
@@ -508,15 +505,11 @@ const DashboardHome = () => {
       <div className="space-y-4 animate-fade-in" style={{ animationDelay: '300ms' }}>
         <h2 className="text-lg font-semibold">Instâncias Recentes</h2>
         {instances.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Server className="w-12 h-12 mx-auto mb-4 opacity-50" />
-            <p>Nenhuma instância encontrada</p>
-            {isSuperAdmin && (
-              <p className="text-sm mt-2">
-                Acesse o menu "Instâncias" para criar uma nova
-              </p>
-            )}
-          </div>
+          <EmptyState
+            icon={Server}
+            title="Nenhuma instância encontrada"
+            description={isSuperAdmin ? 'Acesse o menu "Instâncias" para criar uma nova' : undefined}
+          />
         ) : (
           <div className="grid gap-3 md:gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
             {instances.slice(0, 6).map((instance) => (
