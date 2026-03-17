@@ -251,7 +251,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
     }
 
     if (!instanceId) {
-      toast({ title: 'Erro', description: 'Instância não encontrada', variant: 'destructive' });
+      toast.error('Instância não encontrada');
       return;
     }
 
