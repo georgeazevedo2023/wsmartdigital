@@ -582,7 +582,6 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
         </Button>
       </div>
     </aside>
-    </TooltipProvider>
   );
 };
 

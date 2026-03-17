@@ -405,7 +405,6 @@ const MessagePreview = ({
                 </TooltipContent>
               </Tooltip>
             </div>
-          </TooltipProvider>
 
           <span className="text-xs text-muted-foreground">
             💡 Selecione texto e clique para formatar
