@@ -246,7 +246,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
 
     const finalMediaUrl = mediaUrl.trim();
     if (!finalMediaUrl) {
-      toast({ title: 'Erro', description: 'Informe a URL da mídia', variant: 'destructive' });
+      toast.error('Informe a URL da mídia');
       return;
     }
 
