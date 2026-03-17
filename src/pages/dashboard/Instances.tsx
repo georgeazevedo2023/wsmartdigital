@@ -514,7 +514,6 @@ const Instances = () => {
         cardHeight="h-48"
       />
     );
-    );
   }
 
   return (
