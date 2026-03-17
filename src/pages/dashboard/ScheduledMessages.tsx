@@ -20,7 +20,6 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
-  Loader2,
   Shield,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";

@@ -20,7 +20,6 @@ import {
   User,
   Trash2,
   Plus,
-  Loader2,
   UserPlus,
   Users,
   Pencil,
