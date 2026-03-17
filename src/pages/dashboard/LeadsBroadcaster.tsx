@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -642,18 +643,15 @@ const LeadsBroadcaster = () => {
                       value={newDatabaseName}
                       onChange={(e) => setNewDatabaseName(e.target.value)}
                     />
-                    <Button
+                    <LoadingButton
                       onClick={handleSaveDatabase}
-                      disabled={!canSaveDatabase || isSavingDatabase}
+                      disabled={!canSaveDatabase}
+                      loading={isSavingDatabase}
                       size="sm"
                       className="shrink-0"
                     >
-                      {isSavingDatabase ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Save className="w-4 h-4" />
-                      )}
-                    </Button>
+                      <Save className="w-4 h-4" />
+                    </LoadingButton>
                   </div>
                   {hasUnsavedChanges && !newDatabaseName.trim() && (
                     <p className="text-xs text-destructive mt-2">

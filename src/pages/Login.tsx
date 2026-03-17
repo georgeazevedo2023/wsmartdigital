@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { Button } from '@/components/ui/button';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Phone, Mail, Lock, ArrowRight, Loader2, Shield } from 'lucide-react';
+import { Phone, Mail, Lock, ArrowRight, Shield } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Login = () => {
@@ -88,23 +88,15 @@ const Login = () => {
                 />
               </div>
             </div>
-            <Button
+            <LoadingButton
               type="submit"
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-              disabled={isLoading}
+              loading={isLoading}
+              loadingText="Entrando..."
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Entrando...
-                </>
-              ) : (
-                <>
-                  Entrar
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </Button>
+              Entrar
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </LoadingButton>
           </form>
 
           {/* Security badge */}

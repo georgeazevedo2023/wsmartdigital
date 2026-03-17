@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Server, Wifi, WifiOff, QrCode, MoreVertical, Trash2, Eye, UserCog, Loader2 } from 'lucide-react';
@@ -137,20 +138,16 @@ const InstanceCard = ({
 
         <div className="flex gap-2">
           {!isConnected && (
-            <Button
+            <LoadingButton
               variant="outline"
               size="sm"
               className="flex-1"
               onClick={handleConnect}
-              disabled={isLoadingQr}
+              loading={isLoadingQr}
             >
-              {isLoadingQr ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <QrCode className="w-4 h-4 mr-2" />
-              )}
+              <QrCode className="w-4 h-4 mr-2" />
               Conectar
-            </Button>
+            </LoadingButton>
           )}
           <Button
             variant="outline"

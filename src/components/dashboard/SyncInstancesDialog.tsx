@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -488,41 +489,27 @@ export default function SyncInstancesDialog({
           </Button>
           
           {orphanedInstances.length > 0 && (
-            <Button
+            <LoadingButton
               variant="destructive"
               onClick={handleDeleteOrphans}
-              disabled={deletingOrphans || selectedOrphans.size === 0}
+              disabled={selectedOrphans.size === 0}
+              loading={deletingOrphans}
+              loadingText="Removendo..."
             >
-              {deletingOrphans ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Removendo...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Remover Órfãs {selectedOrphans.size > 0 ? `(${selectedOrphans.size})` : ''}
-                </>
-              )}
-            </Button>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Remover Órfãs {selectedOrphans.size > 0 ? `(${selectedOrphans.size})` : ''}
+            </LoadingButton>
           )}
           
-          <Button
+          <LoadingButton
             onClick={handleSync}
-            disabled={syncing || selectedInstances.size === 0}
+            disabled={selectedInstances.size === 0}
+            loading={syncing}
+            loadingText="Sincronizando..."
           >
-            {syncing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Importar {selectedInstances.size > 0 ? `(${selectedInstances.size})` : ''}
-              </>
-            )}
-          </Button>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Importar {selectedInstances.size > 0 ? `(${selectedInstances.size})` : ''}
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

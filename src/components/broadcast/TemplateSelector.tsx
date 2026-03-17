@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -498,19 +499,14 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
             <Button variant="outline" onClick={() => setShowSaveDialog(false)}>
               Cancelar
             </Button>
-            <Button 
+            <LoadingButton 
               onClick={handleSave} 
-              disabled={!templateName.trim() || isSaving}
+              disabled={!templateName.trim()}
+              loading={isSaving}
+              loadingText="Salvando..."
             >
-              {isSaving ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar'
-              )}
-            </Button>
+              Salvar
+            </LoadingButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -611,19 +607,14 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
             <Button variant="outline" onClick={() => setEditingTemplate(null)}>
               Cancelar
             </Button>
-            <Button 
+            <LoadingButton 
               onClick={handleUpdate} 
-              disabled={!editName.trim() || isUpdating}
+              disabled={!editName.trim()}
+              loading={isUpdating}
+              loadingText="Salvando..."
             >
-              {isUpdating ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar alterações'
-              )}
-            </Button>
+              Salvar alterações
+            </LoadingButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

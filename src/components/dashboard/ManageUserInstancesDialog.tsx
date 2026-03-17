@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
+import { LoadingButton } from '@/components/ui/loading-button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -217,16 +218,9 @@ export default function ManageUserInstancesDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={saving || loading}>
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Salvando...
-              </>
-            ) : (
-              'Salvar'
-            )}
-          </Button>
+          <LoadingButton onClick={handleSave} disabled={loading} loading={saving} loadingText="Salvando...">
+            Salvar
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>
