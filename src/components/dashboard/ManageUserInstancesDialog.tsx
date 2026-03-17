@@ -218,16 +218,9 @@ export default function ManageUserInstancesDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSave} disabled={saving || loading}>
-            {saving ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Salvando...
-              </>
-            ) : (
-              'Salvar'
-            )}
-          </Button>
+          <LoadingButton onClick={handleSave} disabled={loading} loading={saving} loadingText="Salvando...">
+            Salvar
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

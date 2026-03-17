@@ -643,18 +643,15 @@ const LeadsBroadcaster = () => {
                       value={newDatabaseName}
                       onChange={(e) => setNewDatabaseName(e.target.value)}
                     />
-                    <Button
+                    <LoadingButton
                       onClick={handleSaveDatabase}
-                      disabled={!canSaveDatabase || isSavingDatabase}
+                      disabled={!canSaveDatabase}
+                      loading={isSavingDatabase}
                       size="sm"
                       className="shrink-0"
                     >
-                      {isSavingDatabase ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Save className="w-4 h-4" />
-                      )}
-                    </Button>
+                      <Save className="w-4 h-4" />
+                    </LoadingButton>
                   </div>
                   {hasUnsavedChanges && !newDatabaseName.trim() && (
                     <p className="text-xs text-destructive mt-2">

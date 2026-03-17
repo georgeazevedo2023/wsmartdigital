@@ -607,19 +607,14 @@ export function TemplateSelector({ onSelect, onSave, disabled }: TemplateSelecto
             <Button variant="outline" onClick={() => setEditingTemplate(null)}>
               Cancelar
             </Button>
-            <Button 
+            <LoadingButton 
               onClick={handleUpdate} 
-              disabled={!editName.trim() || isUpdating}
+              disabled={!editName.trim()}
+              loading={isUpdating}
+              loadingText="Salvando..."
             >
-              {isUpdating ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Salvando...
-                </>
-              ) : (
-                'Salvar alterações'
-              )}
-            </Button>
+              Salvar alterações
+            </LoadingButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -88,23 +88,15 @@ const Login = () => {
                 />
               </div>
             </div>
-            <Button
+            <LoadingButton
               type="submit"
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
-              disabled={isLoading}
+              loading={isLoading}
+              loadingText="Entrando..."
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Entrando...
-                </>
-              ) : (
-                <>
-                  Entrar
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </Button>
+              Entrar
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </LoadingButton>
           </form>
 
           {/* Security badge */}

@@ -501,22 +501,15 @@ export default function SyncInstancesDialog({
             </LoadingButton>
           )}
           
-          <Button
+          <LoadingButton
             onClick={handleSync}
-            disabled={syncing || selectedInstances.size === 0}
+            disabled={selectedInstances.size === 0}
+            loading={syncing}
+            loadingText="Sincronizando..."
           >
-            {syncing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Sincronizando...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Importar {selectedInstances.size > 0 ? `(${selectedInstances.size})` : ''}
-              </>
-            )}
-          </Button>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Importar {selectedInstances.size > 0 ? `(${selectedInstances.size})` : ''}
+          </LoadingButton>
         </DialogFooter>
       </DialogContent>
     </Dialog>

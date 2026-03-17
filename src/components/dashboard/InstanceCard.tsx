@@ -138,20 +138,16 @@ const InstanceCard = ({
 
         <div className="flex gap-2">
           {!isConnected && (
-            <Button
+            <LoadingButton
               variant="outline"
               size="sm"
               className="flex-1"
               onClick={handleConnect}
-              disabled={isLoadingQr}
+              loading={isLoadingQr}
             >
-              {isLoadingQr ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              ) : (
-                <QrCode className="w-4 h-4 mr-2" />
-              )}
+              <QrCode className="w-4 h-4 mr-2" />
               Conectar
-            </Button>
+            </LoadingButton>
           )}
           <Button
             variant="outline"
