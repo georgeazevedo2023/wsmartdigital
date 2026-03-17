@@ -1,78 +1,40 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-}
+import { corsResponse, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient, validateUser, isServiceToken, createServiceClient } from '../_shared/supabase-admin.ts'
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    // Validate caller: accept service role key (from webhook) or valid JWT
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-    const token = authHeader.replace('Bearer ', '')
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY') || ''
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || ''
-    
-    // If not anon key (used by webhook) and not service role key, validate as user JWT
-    if (token !== anonKey && token !== serviceRoleKey) {
-      const userSupabase = createClient(
-        Deno.env.get('SUPABASE_URL')!,
-        anonKey,
-        { global: { headers: { Authorization: authHeader } } }
-      )
-      const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token)
-      if (claimsError || !claimsData?.claims) {
-        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-          status: 401,
-          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        })
-      }
+    const auth = extractAuth(req)
+    if (!auth) return errorResponse('Unauthorized', 401)
+
+    // Accept service role key (from webhook) or valid JWT
+    if (!isServiceToken(auth.token)) {
+      const userSupabase = createUserClient(auth.authHeader)
+      const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(auth.token)
+      if (claimsError || !claimsData?.claims) return errorResponse('Unauthorized', 401)
     }
 
     const { messageId, audioUrl, conversationId } = await req.json()
-
-    if (!messageId || !audioUrl) {
-      return new Response(JSON.stringify({ error: 'messageId and audioUrl required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    if (!messageId || !audioUrl) return errorResponse('messageId and audioUrl required', 400)
 
     const GROQ_API_KEY = Deno.env.get('GROQ_API_KEY')
     if (!GROQ_API_KEY) {
       console.error('GROQ_API_KEY not configured')
-      return new Response(JSON.stringify({ error: 'GROQ_API_KEY not configured' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return errorResponse('GROQ_API_KEY not configured', 500)
     }
 
     console.log('Transcribing audio for message:', messageId, 'url:', audioUrl.substring(0, 80))
 
-    // Download audio file
     const audioResponse = await fetch(audioUrl)
     if (!audioResponse.ok) {
       console.error('Failed to download audio:', audioResponse.status)
-      return new Response(JSON.stringify({ error: 'Failed to download audio' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return errorResponse('Failed to download audio', 500)
     }
 
     const audioBlob = await audioResponse.blob()
     console.log('Audio downloaded, size:', audioBlob.size, 'type:', audioBlob.type)
 
-    // Send to Groq Whisper API
     const formData = new FormData()
     formData.append('file', audioBlob, 'audio.mp3')
     formData.append('model', 'whisper-large-v3')
@@ -83,30 +45,21 @@ Deno.serve(async (req) => {
 
     const groqResponse = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${GROQ_API_KEY}`,
-      },
+      headers: { 'Authorization': `Bearer ${GROQ_API_KEY}` },
       body: formData,
     })
 
     if (!groqResponse.ok) {
       const errText = await groqResponse.text()
       console.error('Groq API error:', groqResponse.status, errText)
-      return new Response(JSON.stringify({ error: 'Groq transcription failed', details: errText }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return errorResponse('Groq transcription failed', 500)
     }
 
     const result = await groqResponse.json()
     const transcription = result.text || ''
     console.log('Transcription result:', transcription.substring(0, 100))
 
-    // Update message in database
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
+    const supabase = createServiceClient()
 
     const { error: updateError } = await supabase
       .from('conversation_messages')
@@ -115,15 +68,11 @@ Deno.serve(async (req) => {
 
     if (updateError) {
       console.error('Failed to update transcription:', updateError)
-      return new Response(JSON.stringify({ error: 'Failed to save transcription' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return errorResponse('Failed to save transcription', 500)
     }
 
     console.log('Transcription saved for message:', messageId)
 
-    // Broadcast transcription update via Realtime REST API
     if (conversationId) {
       const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!
       const ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
@@ -145,14 +94,9 @@ Deno.serve(async (req) => {
         .catch(err => console.error('Transcription broadcast failed:', err))
     }
 
-    return new Response(JSON.stringify({ ok: true, transcription }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ ok: true, transcription })
   } catch (error) {
     console.error('Transcription error:', error)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return errorResponse('Internal server error', 500)
   }
 })
