@@ -133,32 +133,17 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
       payload.filename = filename.trim();
     }
 
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      let errorMsg = errorData.error || errorData.message || 'Erro ao enviar mídia';
-      
+    try {
+      return await callUazapiProxyWithToken(payload, accessToken);
+    } catch (err: any) {
+      let errorMsg = err.message || 'Erro ao enviar mídia';
       if (errorMsg.includes('certificate') || errorMsg.includes('tls')) {
         errorMsg = 'URL com certificado SSL inválido. Tente fazer upload direto ou usar outra URL.';
       } else if (errorMsg.includes('fetch') && errorMsg.includes('URL')) {
         errorMsg = 'Não foi possível acessar a URL. Verifique se o link é válido ou faça upload direto.';
       }
-      
       throw new Error(errorMsg);
     }
-
-    return response.json();
   };
 
   const handleSend = async () => {
