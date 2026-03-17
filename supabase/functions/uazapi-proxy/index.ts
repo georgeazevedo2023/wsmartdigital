@@ -5,6 +5,39 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+// Validate URLs to prevent SSRF attacks
+function isValidMediaUrl(url: string): boolean {
+  // Allow base64 data URIs
+  if (url.startsWith('data:')) return true;
+  try {
+    const parsed = new URL(url);
+    // Only allow https (and http for known safe Supabase storage)
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const h = parsed.hostname.toLowerCase();
+    // Block internal/private IPs
+    if (
+      h === 'localhost' ||
+      h.startsWith('127.') ||
+      h.startsWith('10.') ||
+      h.startsWith('192.168.') ||
+      h.startsWith('172.16.') || h.startsWith('172.17.') || h.startsWith('172.18.') ||
+      h.startsWith('172.19.') || h.startsWith('172.20.') || h.startsWith('172.21.') ||
+      h.startsWith('172.22.') || h.startsWith('172.23.') || h.startsWith('172.24.') ||
+      h.startsWith('172.25.') || h.startsWith('172.26.') || h.startsWith('172.27.') ||
+      h.startsWith('172.28.') || h.startsWith('172.29.') || h.startsWith('172.30.') ||
+      h.startsWith('172.31.') ||
+      h.startsWith('169.254.') ||
+      h === '0.0.0.0' ||
+      h === '[::1]' ||
+      h.endsWith('.internal') ||
+      h.endsWith('.local')
+    ) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 Deno.serve(async (req) => {
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
@@ -276,6 +309,14 @@ Deno.serve(async (req) => {
           )
         }
 
+        // Validate media URL to prevent SSRF
+        if (!isBase64 && !isValidMediaUrl(body.mediaUrl)) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid media URL' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
         const mediaEndpoint = `${uazapiUrl}/send/media`
         
         // Check if it's base64 and extract only the data part (remove prefix like "data:image/png;base64,")
@@ -361,6 +402,17 @@ Deno.serve(async (req) => {
           if (!str) return false;
           return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
         };
+
+        // Validate carousel image URLs to prevent SSRF
+        const hasInvalidImage = body.carousel.some((card: { image: string }) => 
+          card.image && !isValidMediaUrl(card.image)
+        );
+        if (hasInvalidImage) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid carousel image URL' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
 
         // Process carousel cards - handle base64 images
         const processedCards = body.carousel.map((card: { text: string; image: string; buttons: Array<{ id?: string; text?: string; label?: string; type: string; url?: string; phone?: string }> }, idx: number) => {

@@ -29,14 +29,15 @@ Deno.serve(async (req) => {
       global: { headers: { Authorization: authHeader } },
     });
 
-    const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token);
-    if (claimsError || !claimsData?.claims) {
+    const { data: userData, error: userError } = await userSupabase.auth.getUser(token);
+    if (userError || !userData?.user) {
       return new Response(
         JSON.stringify({ error: "Unauthorized" }),
         { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
+    const userId = userData.user.id;
     const { chatid, phone, instanceId } = await req.json();
 
     if (!chatid || !phone) {
@@ -46,19 +47,46 @@ Deno.serve(async (req) => {
       );
     }
 
-    const webhookResponse = await fetch(
-      "https://fluxwebhook.wsmart.com.br/webhook/receb_out_neo",
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          status_ia: "ligada",
-          chatid,
-          phone,
-          instanceId,
-        }),
+    // Verify user has access to the supplied instanceId
+    if (instanceId) {
+      const { data: access } = await userSupabase
+        .from('user_instance_access')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('instance_id', instanceId)
+        .maybeSingle();
+
+      if (!access) {
+        // Also check if user is super_admin (they have access to all instances)
+        const serviceSupabase = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        const { data: roleData } = await serviceSupabase
+          .from('user_roles')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('role', 'super_admin')
+          .maybeSingle();
+
+        if (!roleData) {
+          return new Response(
+            JSON.stringify({ error: "Forbidden: no access to this instance" }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+          );
+        }
       }
-    );
+    }
+
+    const webhookUrl = Deno.env.get("FLUX_WEBHOOK_URL") || "https://fluxwebhook.wsmart.com.br/webhook/receb_out_neo";
+
+    const webhookResponse = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status_ia: "ligada",
+        chatid,
+        phone,
+        instanceId,
+      }),
+    });
 
     const responseText = await webhookResponse.text();
     console.log("activate-ia response:", webhookResponse.status, responseText.substring(0, 200));
