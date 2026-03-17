@@ -309,6 +309,14 @@ Deno.serve(async (req) => {
           )
         }
 
+        // Validate media URL to prevent SSRF
+        if (!isBase64 && !isValidMediaUrl(body.mediaUrl)) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid media URL' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
         const mediaEndpoint = `${uazapiUrl}/send/media`
         
         // Check if it's base64 and extract only the data part (remove prefix like "data:image/png;base64,")
