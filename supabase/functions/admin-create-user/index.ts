@@ -1,75 +1,28 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeaders, corsResponse, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient, validateUser, checkRole, createServiceClient } from '../_shared/supabase-admin.ts'
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    // Validate auth
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const auth = extractAuth(req)
+    if (!auth) return errorResponse('Unauthorized', 401)
 
-    // Create client with user's token to check if they're super admin
-    const userClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
-    )
+    const userClient = createUserClient(auth.authHeader)
+    const userId = await validateUser(userClient, auth.token)
+    if (!userId) return errorResponse('Unauthorized', 401)
 
-    const token = authHeader.replace('Bearer ', '')
-    const { data: userData, error: userError } = await userClient.auth.getUser(token)
-    
-    if (userError || !userData?.user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const isAdmin = await checkRole(userId, 'super_admin')
+    if (!isAdmin) return errorResponse('Forbidden: Super admin required', 403)
 
-    // Check if user is super admin
-    const { data: roleData, error: roleError } = await userClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userData.user.id)
-      .eq('role', 'super_admin')
-      .maybeSingle()
-
-    if (roleError || !roleData) {
-      return new Response(
-        JSON.stringify({ error: 'Forbidden: Super admin required' }),
-        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
-
-    // Parse request body
     const body = await req.json()
     const { email, password, full_name, role } = body
     const validRoles = ['super_admin', 'gerente', 'user']
     const userRole = validRoles.includes(role) ? role : 'user'
 
-    if (!email || !password) {
-      return new Response(
-        JSON.stringify({ error: 'Email and password are required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    if (!email || !password) return errorResponse('Email and password are required', 400)
 
-    const adminClient = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
+    const adminClient = createServiceClient()
 
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,
@@ -78,38 +31,20 @@ Deno.serve(async (req) => {
       user_metadata: { full_name },
     })
 
-    if (createError) {
-      return new Response(
-        JSON.stringify({ error: createError.message }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    if (createError) return errorResponse(createError.message, 400)
 
-    // Insert the assigned role (replaces the default 'user' inserted by the trigger)
     if (newUser.user) {
-      // Remove default role inserted by handle_new_user trigger
       await adminClient.from('user_roles').delete().eq('user_id', newUser.user.id)
-      // Insert the correct role
       await adminClient.from('user_roles').insert({ user_id: newUser.user.id, role: userRole })
     }
 
-    return new Response(
-      JSON.stringify({ 
-        success: true, 
-        user: { 
-          id: newUser.user?.id, 
-          email: newUser.user?.email 
-        } 
-      }),
-      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
-
+    return jsonResponse({
+      success: true,
+      user: { id: newUser.user?.id, email: newUser.user?.email },
+    })
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Internal server error'
     console.error('Error:', error)
-    return new Response(
-      JSON.stringify({ error: errorMessage }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    )
+    return errorResponse(errorMessage, 500)
   }
 })

@@ -1,48 +1,23 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
+import { createUserClient, createServiceClient, SUPABASE_URL } from '../_shared/supabase-admin.ts'
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
-const serviceSupabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+const serviceSupabase = createServiceClient();
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return corsResponse();
 
   try {
-    // Validate user auth
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const auth = { authHeader: req.headers.get("Authorization") || "", token: (req.headers.get("Authorization") || "").replace("Bearer ", "") };
+    if (!auth.authHeader.startsWith("Bearer ")) return errorResponse("Unauthorized", 401);
 
-    const userSupabase = createClient(SUPABASE_URL, Deno.env.get("SUPABASE_ANON_KEY")!, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const token = authHeader.replace("Bearer ", "");
-    const { data: { user }, error: userError } = await userSupabase.auth.getUser(token);
-    if (userError || !user) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const userSupabase = createUserClient(auth.authHeader);
+    const { data: { user }, error: userError } = await userSupabase.auth.getUser(auth.token);
+    if (userError || !user) return errorResponse("Unauthorized", 401);
 
     const userId = user.id;
 
-    // Check if super admin
     const { data: roleData } = await serviceSupabase
       .from("user_roles")
       .select("role")
@@ -50,12 +25,7 @@ serve(async (req) => {
       .eq("role", "super_admin")
       .single();
 
-    if (!roleData) {
-      return new Response(JSON.stringify({ error: "Forbidden: super admin only" }), {
-        status: 403,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    if (!roleData) return errorResponse("Forbidden: super admin only", 403);
 
     const body = await req.json();
     const { inbox_id, period_days = 30 } = body;

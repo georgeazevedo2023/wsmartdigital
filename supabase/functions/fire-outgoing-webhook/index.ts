@@ -1,73 +1,45 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsResponse, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient, validateUser } from '../_shared/supabase-admin.ts'
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
+    const auth = extractAuth(req)
+    if (!auth) return errorResponse('Unauthorized', 401)
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
-    );
+    const supabase = createUserClient(auth.authHeader)
+    const userId = await validateUser(supabase, auth.token)
+    if (!userId) return errorResponse('Unauthorized', 401)
 
-    const token = authHeader.replace("Bearer ", "");
-    const { data, error } = await supabase.auth.getClaims(token);
-    if (error || !data?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
-        status: 401,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { webhook_url, payload } = await req.json();
+    const { webhook_url, payload } = await req.json()
 
     if (!webhook_url || !payload) {
-      return new Response(
-        JSON.stringify({ error: "webhook_url and payload are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return errorResponse('webhook_url and payload are required', 400)
     }
 
     const webhookResponse = await fetch(webhook_url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-    });
+    })
 
-    const responseText = await webhookResponse.text();
+    const responseText = await webhookResponse.text()
+    let responseData
+    try {
+      responseData = JSON.parse(responseText)
+    } catch {
+      responseData = responseText
+    }
 
-    return new Response(
-      JSON.stringify({
-        success: true,
-        status: webhookResponse.status,
-        response: responseText,
-      }),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-  } catch (err) {
-    console.error("fire-outgoing-webhook error:", err);
-    return new Response(
-      JSON.stringify({ error: err.message || "Internal error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    return jsonResponse({
+      ok: webhookResponse.ok,
+      status: webhookResponse.status,
+      data: responseData,
+    })
+  } catch (error: unknown) {
+    console.error('Error firing outgoing webhook:', error)
+    const msg = error instanceof Error ? error.message : 'Internal server error'
+    return errorResponse(msg, 500)
   }
-});
+})

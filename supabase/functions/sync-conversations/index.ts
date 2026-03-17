@@ -1,36 +1,16 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient, validateUser } from '../_shared/supabase-admin.ts'
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    const auth = extractAuth(req)
+    if (!auth) return errorResponse('Unauthorized', 401)
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
-    )
-
-    const token = authHeader.replace('Bearer ', '')
-    const { data: userData, error: authError } = await supabase.auth.getUser(token)
-    if (authError || !userData?.user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+    const supabase = createUserClient(auth.authHeader)
+    const userId = await validateUser(supabase, auth.token)
+    if (!userId) return errorResponse('Unauthorized', 401)
 
     const { inbox_id } = await req.json()
     if (!inbox_id) {

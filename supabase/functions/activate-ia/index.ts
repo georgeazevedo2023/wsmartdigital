@@ -1,51 +1,20 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
-};
+import { corsResponse, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient, validateUser, createServiceClient } from '../_shared/supabase-admin.ts'
 
 Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    // Validate JWT authentication
-    const authHeader = req.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    const auth = extractAuth(req)
+    if (!auth) return errorResponse('Unauthorized', 401)
 
-    const token = authHeader.replace("Bearer ", "");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const userSupabase = createUserClient(auth.authHeader)
+    const userId = await validateUser(userSupabase, auth.token)
+    if (!userId) return errorResponse('Unauthorized', 401)
 
-    const userSupabase = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    });
+    const { chatid, phone, instanceId } = await req.json()
 
-    const { data: userData, error: userError } = await userSupabase.auth.getUser(token);
-    if (userError || !userData?.user) {
-      return new Response(
-        JSON.stringify({ error: "Unauthorized" }),
-        { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const userId = userData.user.id;
-    const { chatid, phone, instanceId } = await req.json();
-
-    if (!chatid || !phone) {
-      return new Response(
-        JSON.stringify({ error: "chatid and phone are required" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
+    if (!chatid || !phone) return errorResponse('chatid and phone are required', 400)
 
     // Verify user has access to the supplied instanceId
     if (instanceId) {
@@ -54,52 +23,57 @@ Deno.serve(async (req) => {
         .select('id')
         .eq('user_id', userId)
         .eq('instance_id', instanceId)
-        .maybeSingle();
+        .maybeSingle()
 
       if (!access) {
-        // Also check if user is super_admin (they have access to all instances)
-        const serviceSupabase = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
-        const { data: roleData } = await serviceSupabase
+        // Also check if user is super_admin
+        const { data: roleData } = await userSupabase
           .from('user_roles')
-          .select('id')
+          .select('role')
           .eq('user_id', userId)
           .eq('role', 'super_admin')
-          .maybeSingle();
+          .maybeSingle()
 
-        if (!roleData) {
-          return new Response(
-            JSON.stringify({ error: "Forbidden: no access to this instance" }),
-            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-          );
-        }
+        if (!roleData) return errorResponse('Access denied to this instance', 403)
       }
     }
 
-    const webhookUrl = Deno.env.get("FLUX_WEBHOOK_URL") || "https://fluxwebhook.wsmart.com.br/webhook/receb_out_neo";
+    // Get instance token
+    const { data: instance } = await userSupabase
+      .from('instances')
+      .select('token')
+      .eq('id', instanceId)
+      .single()
 
-    const webhookResponse = await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+    if (!instance?.token) return errorResponse('Instance not found', 404)
+
+    const UAZAPI_URL = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
+
+    // Activate IA on UAZAPI
+    const response = await fetch(`${UAZAPI_URL}/instance/ia`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'token': instance.token,
+      },
       body: JSON.stringify({
-        status_ia: "ligada",
-        chatid,
+        chatId: chatid,
         phone,
-        instanceId,
+        activate: true,
       }),
-    });
+    })
 
-    const responseText = await webhookResponse.text();
-    console.log("activate-ia response:", webhookResponse.status, responseText.substring(0, 200));
+    if (!response.ok) {
+      const errText = await response.text()
+      console.error('UAZAPI error:', response.status, errText)
+      return errorResponse('Failed to activate IA', 500)
+    }
 
-    return new Response(
-      JSON.stringify({ success: true, status: webhookResponse.status }),
-      { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
-  } catch (err) {
-    console.error("activate-ia error:", err);
-    return new Response(
-      JSON.stringify({ error: "Internal error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+    const result = await response.json()
+    return jsonResponse({ ok: true, result })
+  } catch (error: unknown) {
+    console.error('Error:', error)
+    const msg = error instanceof Error ? error.message : 'Internal server error'
+    return errorResponse(msg, 500)
   }
-});
+})

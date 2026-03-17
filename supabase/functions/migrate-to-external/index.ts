@@ -1,10 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Client as PgClient } from 'https://deno.land/x/postgres@v0.19.3/mod.ts'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient, createAdminClientWithAuth, createServiceClient, checkRole } from '../_shared/supabase-admin.ts'
 
 const HIGH_VOLUME_TABLES = [
   'conversations', 'conversation_messages', 'contacts',
@@ -43,38 +40,21 @@ async function execMultiOnExternal(pgClient: PgClient, statements: string[], det
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+    const auth = extractAuth(req)
+    if (!auth) return errorResponse('Unauthorized', 401)
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('SUPABASE_PUBLISHABLE_KEY')!
-
-    const userClient = createClient(supabaseUrl, anonKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
+    const userClient = createUserClient(auth.authHeader)
     const { data: { user }, error: authError } = await userClient.auth.getUser()
-    if (authError || !user) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+    if (authError || !user) return errorResponse('Unauthorized', 401)
 
-    const adminClient = createClient(supabaseUrl, serviceRoleKey, {
-      global: { headers: { Authorization: authHeader } },
-    })
-    const pureAdminClient = createClient(supabaseUrl, serviceRoleKey)
+    const adminClient = createAdminClientWithAuth(auth.authHeader)
+    const pureAdminClient = createServiceClient()
 
-    const { data: roleData } = await adminClient
-      .from('user_roles').select('role').eq('user_id', user.id).eq('role', 'super_admin').maybeSingle()
-    if (!roleData) {
-      return new Response(JSON.stringify({ error: 'Forbidden: Super Admin only' }), { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+    const isAdmin = await checkRole(user.id, 'super_admin')
+    if (!isAdmin) return errorResponse('Forbidden: Super Admin only', 403)
 
     const body = await req.json()
     const { action, external_db_url, external_url, external_service_role_key } = body

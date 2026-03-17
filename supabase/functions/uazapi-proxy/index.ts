@@ -1,9 +1,5 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient } from '../_shared/supabase-admin.ts'
 
 // Validate URLs to prevent SSRF attacks
 function isValidMediaUrl(url: string): boolean {
@@ -39,36 +35,15 @@ function isValidMediaUrl(url: string): boolean {
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    // Validate auth
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader?.startsWith('Bearer ')) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const auth = extractAuth(req)
+    if (!auth) return errorResponse('Unauthorized', 401)
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_ANON_KEY')!,
-      { global: { headers: { Authorization: authHeader } } }
-    )
-
-    const token = authHeader.replace('Bearer ', '')
-    const { data: claimsData, error: claimsError } = await supabase.auth.getUser(token)
-    
-    if (claimsError || !claimsData?.user) {
-      return new Response(
-        JSON.stringify({ error: 'Unauthorized' }),
-        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      )
-    }
+    const supabase = createUserClient(auth.authHeader)
+    const { data: claimsData, error: claimsError } = await supabase.auth.getUser(auth.token)
+    if (claimsError || !claimsData?.user) return errorResponse('Unauthorized', 401)
 
     const body = await req.json()
     const { action, instanceName, token: bodyToken, groupjid, instanceToken: altToken } = body

@@ -1,17 +1,9 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
+import { createServiceClient, SUPABASE_URL, SERVICE_ROLE_KEY } from '../_shared/supabase-admin.ts'
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
-};
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
-const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY")!;
 
-const serviceSupabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+const serviceSupabase = createServiceClient();
 
 async function summarizeConversation(conversationId: string): Promise<boolean> {
   // Fetch messages
