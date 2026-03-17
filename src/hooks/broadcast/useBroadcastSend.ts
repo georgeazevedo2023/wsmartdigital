@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxyWithToken } from '@/lib/uazapiProxy';
 import { toast } from 'sonner';
 import { uploadCarouselImage, base64ToFile } from '@/lib/uploadCarouselImage';
 import { CarouselData } from '@/components/broadcast/CarouselEditor';
@@ -67,16 +68,7 @@ export function useBroadcastSend({ instance, selectedGroups, excludeAdmins, rand
   };
 
   const proxyCall = async (body: Record<string, unknown>, accessToken: string) => {
-    const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ ...body, token: instance.token }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || err.message || 'Erro ao enviar');
-    }
-    return response.json();
+    return callUazapiProxyWithToken({ ...body, token: instance.token }, accessToken);
   };
 
   const sendText = (jid: string, text: string, at: string) =>

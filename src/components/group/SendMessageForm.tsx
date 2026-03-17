@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import { useParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -37,30 +38,13 @@ const SendMessageForm = ({ instanceToken, groupJid, groupName, participants, onM
   const regularMembers = participants?.filter(p => !p.isAdmin && !p.isSuperAdmin) || [];
   const regularMemberCount = regularMembers.length;
 
-  const sendToNumber = async (number: string, text: string, accessToken: string) => {
-    const response = await fetch(
-      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({
-          action: 'send-message',
-          token: instanceToken,
-          groupjid: number,
-          message: text,
-        }),
-      }
-    );
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error || errorData.message || 'Erro ao enviar');
-    }
-
-    return response.json();
+  const sendToNumber = async (number: string, text: string, _accessToken: string) => {
+    return callUazapiProxy({
+      action: 'send-message',
+      token: instanceToken,
+      groupjid: number,
+      message: text,
+    });
   };
 
   const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));

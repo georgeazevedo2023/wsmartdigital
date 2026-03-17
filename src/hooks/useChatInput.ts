@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { nowBRISO } from '@/lib/dateUtils';
@@ -177,12 +178,7 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
       const audioPublicUrl = supabase.storage.from('audio-messages').getPublicUrl(fileName).data.publicUrl;
 
       const base64Audio = await blobToBase64(blob);
-      const session = await getSession();
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ action: 'send-audio', instanceToken: token, jid: contactJid, audio: base64Audio }),
-      });
-      if (!response.ok) throw new Error('Falha ao enviar áudio');
+      await callUazapiProxy({ action: 'send-audio', instanceToken: token, jid: contactJid, audio: base64Audio });
 
       const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id, direction: 'outgoing', content: null, media_type: 'audio', media_url: audioPublicUrl, sender_id: user.id,
@@ -223,12 +219,7 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
       const isImage = file.type.startsWith('image/');
       const mediaType = isImage ? 'image' : 'document';
 
-      const session = await getSession();
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ action: 'send-media', instanceToken: token, jid: contactJid, mediaUrl: dataUri, mediaType, filename: isImage ? undefined : file.name, caption: '' }),
-      });
-      if (!response.ok) throw new Error(isImage ? 'Falha ao enviar imagem' : 'Falha ao enviar documento');
+      await callUazapiProxy({ action: 'send-media', instanceToken: token, jid: contactJid, mediaUrl: dataUri, mediaType, filename: isImage ? undefined : file.name, caption: '' });
 
       const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id, direction: 'outgoing', content: isImage ? null : file.name, media_type: mediaType, media_url: filePublicUrl, sender_id: user.id,
@@ -265,12 +256,7 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
         const contactJid = getContactJid();
         if (!token || !contactJid) return;
 
-        const session = await getSession();
-        const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-          body: JSON.stringify({ action: 'send-chat', instanceToken: token, jid: contactJid, message: text.trim() }),
-        });
-        if (!response.ok) throw new Error('Falha ao enviar mensagem');
+        await callUazapiProxy({ action: 'send-chat', instanceToken: token, jid: contactJid, message: text.trim() });
 
         const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
           conversation_id: conversation.id, direction: 'outgoing', content: text.trim(), media_type: 'text', sender_id: user.id,

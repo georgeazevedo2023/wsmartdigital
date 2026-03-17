@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import { toast } from 'sonner';
 import { normalizeQrSrc, extractQrCode, checkIfConnected } from '@/lib/qrCodeUtils';
 
@@ -33,22 +34,7 @@ export const useQrPolling = ({ onConnected }: UseQrPollingOptions) => {
 
     pollingRef.current = setInterval(async () => {
       try {
-        const session = await supabase.auth.getSession();
-        if (!session.data.session) return;
-
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${session.data.session.access_token}`,
-            },
-            body: JSON.stringify({ action: 'status', token }),
-          }
-        );
-
-        const data = await response.json();
+        const data = await callUazapiProxy({ action: 'status', token });
         if (checkIfConnected(data)) {
           stopPolling();
           toast.success('Conectado com sucesso!');
@@ -68,26 +54,7 @@ export const useQrPolling = ({ onConnected }: UseQrPollingOptions) => {
     setQrCode(null);
 
     try {
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        toast.error('Sessão expirada');
-        return { connected: false, qr: null };
-      }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.data.session.access_token}`,
-          },
-          body: JSON.stringify({ action: 'connect', instanceName, token }),
-        }
-      );
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Erro ao conectar');
+      const result = await callUazapiProxy({ action: 'connect', instanceName, token });
 
       if (checkIfConnected(result)) {
         toast.success('Instância já está conectada!');

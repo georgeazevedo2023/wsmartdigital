@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import { Users, MessageSquare, Clock, Activity, Wifi, WifiOff } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
@@ -58,40 +59,24 @@ const InstanceStats = ({ instance }: InstanceStatsProps) => {
 
       // Se conectado, buscar grupos para estatísticas
       if (isConnected) {
-        const session = await supabase.auth.getSession();
-        if (session.data.session) {
-          const response = await fetch(
-            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-            {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${session.data.session.access_token}`,
-              },
-              body: JSON.stringify({
-                action: 'groups',
-                token: instance.token,
-              }),
-            }
-          );
-
-          if (response.ok) {
-            const groups = await response.json();
-            if (Array.isArray(groups)) {
-              const totalParticipants = groups.reduce(
-                (acc: number, group: any) =>
-                  acc + (group.size || group.participants?.length || 0),
-                0
-              );
-              setStats({
-                totalGroups: groups.length,
-                totalParticipants,
-                uptime,
-                lastActivity,
-              });
-              return;
-            }
+        try {
+          const groups = await callUazapiProxy({ action: 'groups', token: instance.token });
+          if (Array.isArray(groups)) {
+            const totalParticipants = groups.reduce(
+              (acc: number, group: any) =>
+                acc + (group.size || group.participants?.length || 0),
+              0
+            );
+            setStats({
+              totalGroups: groups.length,
+              totalParticipants,
+              uptime,
+              lastActivity,
+            });
+            return;
           }
+        } catch (e) {
+          console.error('Error fetching groups:', e);
         }
       }
 
