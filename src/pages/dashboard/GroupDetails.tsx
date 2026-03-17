@@ -179,17 +179,13 @@ const GroupDetails = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-5xl mx-auto animate-fade-in">
-        <div className="flex items-center gap-4">
-          <Skeleton className="h-10 w-24" />
-          <Skeleton className="h-8 w-64" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-16 rounded-lg" />
-          ))}
-        </div>
-      </div>
+      <PageSkeleton
+        header={['w-24', 'w-64']}
+        gridCols="grid-cols-1 md:grid-cols-2 lg:grid-cols-3"
+        cards={6}
+        cardHeight="h-16 rounded-lg"
+        maxWidth="max-w-5xl"
+      />
     );
   }
 

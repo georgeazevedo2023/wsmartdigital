@@ -323,17 +323,12 @@ const DashboardHome = () => {
 
   if (loading) {
     return (
-      <div className="space-y-6 max-w-7xl mx-auto animate-fade-in">
-        <div className="space-y-2">
-          <Skeleton className="h-8 w-48" />
-          <Skeleton className="h-4 w-64" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32" />
-          ))}
-        </div>
-      </div>
+      <PageSkeleton
+        header={['w-48', 'w-64']}
+        gridCols="grid-cols-1 md:grid-cols-2 lg:grid-cols-4"
+        cards={4}
+        cardHeight="h-32"
+      />
     );
   }
 
