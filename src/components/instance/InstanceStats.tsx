@@ -61,20 +61,21 @@ const InstanceStats = ({ instance }: InstanceStatsProps) => {
         try {
           const groups = await callUazapiProxy({ action: 'groups', token: instance.token });
           if (Array.isArray(groups)) {
-              const totalParticipants = groups.reduce(
-                (acc: number, group: any) =>
-                  acc + (group.size || group.participants?.length || 0),
-                0
-              );
-              setStats({
-                totalGroups: groups.length,
-                totalParticipants,
-                uptime,
-                lastActivity,
-              });
-              return;
-            }
+            const totalParticipants = groups.reduce(
+              (acc: number, group: any) =>
+                acc + (group.size || group.participants?.length || 0),
+              0
+            );
+            setStats({
+              totalGroups: groups.length,
+              totalParticipants,
+              uptime,
+              lastActivity,
+            });
+            return;
           }
+        } catch (e) {
+          console.error('Error fetching groups:', e);
         }
       }
 

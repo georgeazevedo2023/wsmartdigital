@@ -68,13 +68,6 @@ export function useBroadcastSend({ instance, selectedGroups, excludeAdmins, rand
 
   const proxyCall = async (body: Record<string, unknown>, accessToken: string) => {
     return callUazapiProxyWithToken({ ...body, token: instance.token }, accessToken);
-      body: JSON.stringify({ ...body, token: instance.token }),
-    });
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({}));
-      throw new Error(err.error || err.message || 'Erro ao enviar');
-    }
-    return response.json();
   };
 
   const sendText = (jid: string, text: string, at: string) =>
