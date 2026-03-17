@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import EmptyState from '@/components/ui/empty-state';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';

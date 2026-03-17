@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import EmptyState from '@/components/ui/empty-state';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import InstanceCard from '@/components/dashboard/InstanceCard';

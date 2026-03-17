@@ -397,7 +397,7 @@ const AdminPanel = () => {
           {teamLoading ? (
             <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-32 rounded-2xl" />)}</div>
           ) : filteredTeam.length === 0 ? (
-            <EmptyState icon={Headphones} title="Nenhum membro na equipe" desc="Adicione membros às caixas de atendimento" />
+            <EmptyState icon={Headphones} title="Nenhum membro na equipe" description="Adicione membros às caixas de atendimento" />
           ) : (
             <TeamSection teamUsers={filteredTeam} onRemoveMembership={(userId, inboxId, userName, inboxName) => setRemoveMembership({ userId, inboxId, userName, inboxName })} onChangeTeamRole={handleChangeTeamRole} />
           )}
