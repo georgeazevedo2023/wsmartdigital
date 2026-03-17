@@ -27,6 +27,7 @@ import {
 import { Plus, Search, Server, Loader2, RefreshCw, QrCode } from 'lucide-react';
 import { toast } from 'sonner';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { cn } from '@/lib/utils';
 
 interface Instance {
