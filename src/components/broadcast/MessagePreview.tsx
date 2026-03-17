@@ -5,7 +5,6 @@ import { Button } from '@/components/ui/button';
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
@@ -351,7 +350,6 @@ const MessagePreview = ({
       {/* Botões de formatação e dica quando editando */}
       {isEditing && (
         <div className="flex items-center gap-3">
-          <TooltipProvider delayDuration={300}>
             <div className="flex gap-1">
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -407,7 +405,6 @@ const MessagePreview = ({
                 </TooltipContent>
               </Tooltip>
             </div>
-          </TooltipProvider>
 
           <span className="text-xs text-muted-foreground">
             💡 Selecione texto e clique para formatar

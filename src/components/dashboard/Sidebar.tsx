@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
+import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip';
 import { useState, useEffect } from 'react';
 import {
   Collapsible,
@@ -169,7 +169,6 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
   };
 
   return (
-    <TooltipProvider>
       <aside
         className={cn(
           'h-full flex flex-col transition-all duration-300',
@@ -583,7 +582,6 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
         </Button>
       </div>
     </aside>
-    </TooltipProvider>
   );
 };
 
