@@ -1,20 +1,11 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsResponse, jsonResponse, errorResponse } from '../_shared/cors.ts'
+import { createServiceClient } from '../_shared/supabase-admin.ts'
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return corsResponse()
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    )
+    const supabase = createServiceClient()
 
     const thirtyDaysAgo = new Date()
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
@@ -26,7 +17,6 @@ Deno.serve(async (req) => {
     let totalDeleted = 0
 
     for (const bucket of buckets) {
-      // List all folders (conversation IDs)
       const { data: folders, error: listErr } = await supabase.storage
         .from(bucket)
         .list('', { limit: 1000 })
@@ -39,7 +29,6 @@ Deno.serve(async (req) => {
       for (const folder of folders || []) {
         if (!folder.name) continue
 
-        // List files in each folder
         const { data: files, error: filesErr } = await supabase.storage
           .from(bucket)
           .list(folder.name, { limit: 1000 })
@@ -68,15 +57,9 @@ Deno.serve(async (req) => {
     }
 
     console.log('Cleanup complete. Total files deleted:', totalDeleted)
-
-    return new Response(JSON.stringify({ ok: true, deleted: totalDeleted }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return jsonResponse({ ok: true, deleted: totalDeleted })
   } catch (error) {
     console.error('Cleanup error:', error)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return errorResponse('Internal server error', 500)
   }
 })
