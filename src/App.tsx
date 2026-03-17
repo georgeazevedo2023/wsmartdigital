@@ -16,7 +16,7 @@ const Instances = lazy(() => import("./pages/dashboard/Instances"));
 const InstanceDetails = lazy(() => import("./pages/dashboard/InstanceDetails"));
 const GroupDetails = lazy(() => import("./pages/dashboard/GroupDetails"));
 const SendToGroup = lazy(() => import("./pages/dashboard/SendToGroup"));
-const UsersManagement = lazy(() => import("./pages/dashboard/UsersManagement"));
+// UsersManagement removed — unified into AdminPanel
 const Settings = lazy(() => import("./pages/dashboard/Settings"));
 const ScheduledMessages = lazy(() => import("./pages/dashboard/ScheduledMessages"));
 const Broadcaster = lazy(() => import("./pages/dashboard/Broadcaster"));
