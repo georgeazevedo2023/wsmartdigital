@@ -1,7 +1,9 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useQrPolling } from '@/hooks/useQrPolling';
+import { normalizeQrSrc, extractQrCode } from '@/lib/qrCodeUtils';
 
 export interface Instance {
   id: string;
@@ -23,18 +25,6 @@ export interface UserProfile {
   full_name: string | null;
 }
 
-const normalizeQrSrc = (qr: string): string =>
-  qr.startsWith('data:image') ? qr : `data:image/png;base64,${qr}`;
-
-const extractQrCode = (data: any): string | null =>
-  data?.instance?.qrcode || data?.qrcode || data?.base64 || null;
-
-const checkIfConnected = (data: any): boolean =>
-  data?.instance?.status === 'connected' ||
-  data?.status === 'connected' ||
-  data?.status?.connected === true ||
-  data?.loggedIn === true;
-
 export const useInstances = () => {
   const { isSuperAdmin, user } = useAuth();
   const [instances, setInstances] = useState<Instance[]>([]);
@@ -48,29 +38,36 @@ export const useInstances = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [newInstanceName, setNewInstanceName] = useState('');
   const [selectedUserId, setSelectedUserId] = useState('');
-
-  // QR Code state
-  const [qrDialogOpen, setQrDialogOpen] = useState(false);
   const [selectedInstance, setSelectedInstance] = useState<Instance | null>(null);
-  const [qrCode, setQrCode] = useState<string | null>(null);
-  const [isLoadingQr, setIsLoadingQr] = useState(false);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  const fetchInstances = useCallback(async () => {
+    try {
+      const { data: instancesData, error } = await supabase
+        .from('instances').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+
+      if (instancesData && instancesData.length > 0) {
+        const userIds = [...new Set(instancesData.map(i => i.user_id))];
+        const { data: profilesData } = await supabase.from('user_profiles').select('id, full_name, email').in('id', userIds);
+        const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
+        setInstances(instancesData.map(inst => ({ ...inst, user_profiles: profilesMap.get(inst.user_id) })) as Instance[]);
+      } else {
+        setInstances([]);
+      }
+    } catch (error) {
+      console.error('Error fetching instances:', error);
+      toast.error('Erro ao carregar instâncias');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const qr = useQrPolling({ onConnected: fetchInstances });
 
   useEffect(() => {
     fetchInstances();
     if (isSuperAdmin) fetchUsers();
-  }, [isSuperAdmin]);
-
-  useEffect(() => {
-    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
-  }, []);
-
-  useEffect(() => {
-    if (!qrDialogOpen && pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, [qrDialogOpen]);
+  }, [isSuperAdmin, fetchInstances]);
 
   // Status polling every 30s
   useEffect(() => {
@@ -134,28 +131,6 @@ export const useInstances = () => {
     return () => clearInterval(interval);
   }, [instances.length > 0]);
 
-  const fetchInstances = async () => {
-    try {
-      const { data: instancesData, error } = await supabase
-        .from('instances').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-
-      if (instancesData && instancesData.length > 0) {
-        const userIds = [...new Set(instancesData.map(i => i.user_id))];
-        const { data: profilesData } = await supabase.from('user_profiles').select('id, full_name, email').in('id', userIds);
-        const profilesMap = new Map(profilesData?.map(p => [p.id, p]) || []);
-        setInstances(instancesData.map(inst => ({ ...inst, user_profiles: profilesMap.get(inst.user_id) })) as Instance[]);
-      } else {
-        setInstances([]);
-      }
-    } catch (error) {
-      console.error('Error fetching instances:', error);
-      toast.error('Erro ao carregar instâncias');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const fetchUsers = async () => {
     try {
       const { data, error } = await supabase.from('user_profiles').select('id, email, full_name').order('full_name');
@@ -165,38 +140,6 @@ export const useInstances = () => {
       console.error('Error fetching users:', error);
     }
   };
-
-  const startPolling = useCallback((instance: Instance) => {
-    if (pollingRef.current) clearInterval(pollingRef.current);
-
-    pollingRef.current = setInterval(async () => {
-      try {
-        const session = await supabase.auth.getSession();
-        if (!session.data.session) return;
-
-        const response = await fetch(
-          `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.data.session.access_token}` },
-            body: JSON.stringify({ action: 'status', token: instance.token }),
-          }
-        );
-
-        const data = await response.json();
-        if (checkIfConnected(data)) {
-          if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
-          toast.success('Conectado com sucesso!');
-          setQrDialogOpen(false);
-          setQrCode(null);
-          setSelectedInstance(null);
-          fetchInstances();
-        }
-      } catch (error) {
-        console.error('Polling error:', error);
-      }
-    }, 5000);
-  }, []);
 
   const handleCreateInstance = async () => {
     if (!newInstanceName.trim()) { toast.error('Digite um nome para a instância'); return; }
@@ -230,13 +173,13 @@ export const useInstances = () => {
       setSelectedUserId('');
       fetchInstances();
 
-      const qr = extractQrCode(result);
-      if (qr) {
+      const qrData = extractQrCode(result);
+      if (qrData) {
         const newInst: Instance = { id: instanceId, name: newInstanceName, token, user_id: targetUserId, status: 'disconnected', owner_jid: null, profile_pic_url: null };
         setSelectedInstance(newInst);
-        setQrCode(normalizeQrSrc(qr));
-        setQrDialogOpen(true);
-        startPolling(newInst);
+        qr.setQrCode(normalizeQrSrc(qrData));
+        qr.setQrDialogOpen(true);
+        qr.startPolling(token);
       }
     } catch (error: any) {
       console.error('Error creating instance:', error);
@@ -248,50 +191,17 @@ export const useInstances = () => {
 
   const handleConnect = async (instance: Instance) => {
     setSelectedInstance(instance);
-    setQrDialogOpen(true);
-    setIsLoadingQr(true);
-    setQrCode(null);
-
-    try {
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` },
-        body: JSON.stringify({ action: 'connect', instanceName: instance.name, token: instance.token }),
-      });
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Erro ao conectar');
-
-      if (checkIfConnected(result)) {
-        toast.success('Instância já está conectada!');
-        setQrDialogOpen(false);
-        fetchInstances();
-        return;
-      }
-
-      const qr = extractQrCode(result);
-      if (qr) {
-        setQrCode(normalizeQrSrc(qr));
-        startPolling(instance);
-      } else {
-        toast.error('Não foi possível gerar o QR Code');
-      }
-    } catch (error: any) {
-      console.error('Error connecting:', error);
-      toast.error(error.message || 'Erro ao gerar QR Code');
-    } finally {
-      setIsLoadingQr(false);
-    }
+    await qr.connect(instance.name, instance.token);
   };
 
   const handleCloseQrDialog = () => {
-    if (pollingRef.current) { clearInterval(pollingRef.current); pollingRef.current = null; }
-    setQrDialogOpen(false);
-    setQrCode(null);
+    qr.closeDialog();
     setSelectedInstance(null);
   };
 
-  const handleGenerateNewQr = () => { if (selectedInstance) handleConnect(selectedInstance); };
+  const handleGenerateNewQr = () => {
+    if (selectedInstance) handleConnect(selectedInstance);
+  };
 
   const handleDelete = async (instance: Instance) => {
     if (!confirm(`Tem certeza que deseja excluir a instância "${instance.name}"?`)) return;
@@ -321,7 +231,6 @@ export const useInstances = () => {
     searchQuery,
     setSearchQuery,
     filteredInstances,
-    // Create dialog
     isCreateDialogOpen,
     setIsCreateDialogOpen,
     isCreating,
@@ -331,23 +240,20 @@ export const useInstances = () => {
     setSelectedUserId,
     users,
     handleCreateInstance,
-    // Sync
     isSyncDialogOpen,
     setIsSyncDialogOpen,
     fetchInstances,
-    // Access
     isAccessDialogOpen,
     setIsAccessDialogOpen,
     selectedInstanceForAccess,
-    // QR
-    qrDialogOpen,
+    // QR — delegated from useQrPolling
+    qrDialogOpen: qr.qrDialogOpen,
     selectedInstance,
-    qrCode,
-    isLoadingQr,
+    qrCode: qr.qrCode,
+    isLoadingQr: qr.isLoadingQr,
     handleConnect,
     handleCloseQrDialog,
     handleGenerateNewQr,
-    // Actions
     handleDelete,
     handleManageAccess,
   };
