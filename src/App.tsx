@@ -24,8 +24,7 @@ const BroadcastHistoryPage = lazy(() => import("./pages/dashboard/BroadcastHisto
 const LeadsBroadcaster = lazy(() => import("./pages/dashboard/LeadsBroadcaster"));
 const TemplatesManager = lazy(() => import("./pages/dashboard/TemplatesManager"));
 const HelpDesk = lazy(() => import("./pages/dashboard/HelpDesk"));
-const InboxManagement = lazy(() => import("./pages/dashboard/InboxManagement"));
-const InboxUsersManagement = lazy(() => import("./pages/dashboard/InboxUsersManagement"));
+// InboxManagement & InboxUsersManagement removed — unified into AdminPanel
 const AdminPanel = lazy(() => import("./pages/dashboard/AdminPanel"));
 const Intelligence = lazy(() => import("./pages/dashboard/Intelligence"));
 const KanbanCRM = lazy(() => import("./pages/dashboard/KanbanCRM"));
