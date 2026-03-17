@@ -686,7 +686,6 @@ const BackupModule = () => {
             <Download className="w-4 h-4" />
             Exportar
           </LoadingButton>
-          </Button>
         </div>
       </div>
 
