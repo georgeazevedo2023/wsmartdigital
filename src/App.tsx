@@ -16,7 +16,7 @@ const Instances = lazy(() => import("./pages/dashboard/Instances"));
 const InstanceDetails = lazy(() => import("./pages/dashboard/InstanceDetails"));
 const GroupDetails = lazy(() => import("./pages/dashboard/GroupDetails"));
 const SendToGroup = lazy(() => import("./pages/dashboard/SendToGroup"));
-const UsersManagement = lazy(() => import("./pages/dashboard/UsersManagement"));
+// UsersManagement removed — unified into AdminPanel
 const Settings = lazy(() => import("./pages/dashboard/Settings"));
 const ScheduledMessages = lazy(() => import("./pages/dashboard/ScheduledMessages"));
 const Broadcaster = lazy(() => import("./pages/dashboard/Broadcaster"));
@@ -24,8 +24,7 @@ const BroadcastHistoryPage = lazy(() => import("./pages/dashboard/BroadcastHisto
 const LeadsBroadcaster = lazy(() => import("./pages/dashboard/LeadsBroadcaster"));
 const TemplatesManager = lazy(() => import("./pages/dashboard/TemplatesManager"));
 const HelpDesk = lazy(() => import("./pages/dashboard/HelpDesk"));
-const InboxManagement = lazy(() => import("./pages/dashboard/InboxManagement"));
-const InboxUsersManagement = lazy(() => import("./pages/dashboard/InboxUsersManagement"));
+// InboxManagement & InboxUsersManagement removed — unified into AdminPanel
 const AdminPanel = lazy(() => import("./pages/dashboard/AdminPanel"));
 const Intelligence = lazy(() => import("./pages/dashboard/Intelligence"));
 const KanbanCRM = lazy(() => import("./pages/dashboard/KanbanCRM"));
@@ -160,12 +159,9 @@ const AppRoutes = () => {
         <Route path="instances/:id" element={<AdminRoute><Suspense fallback={<PageLoader />}><InstanceDetails /></Suspense></AdminRoute>} />
         <Route path="instances/:instanceId/groups/:groupId" element={<AdminRoute><Suspense fallback={<PageLoader />}><GroupDetails /></Suspense></AdminRoute>} />
         <Route path="instances/:instanceId/groups/:groupId/send" element={<AdminRoute><Suspense fallback={<PageLoader />}><SendToGroup /></Suspense></AdminRoute>} />
-        <Route path="users" element={<AdminRoute><Suspense fallback={<PageLoader />}><UsersManagement /></Suspense></AdminRoute>} />
         <Route path="settings" element={<AdminRoute><Suspense fallback={<PageLoader />}><Settings /></Suspense></AdminRoute>} />
         <Route path="scheduled" element={<AdminRoute><Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense></AdminRoute>} />
         <Route path="helpdesk" element={<LazyErrorBoundary><Suspense fallback={<PageLoader />}><HelpDesk /></Suspense></LazyErrorBoundary>} />
-        <Route path="inboxes" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><InboxManagement /></Suspense></LazyErrorBoundary></AdminRoute>} />
-        <Route path="inbox-users" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="admin" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="intelligence" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="crm" element={<CrmRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense></LazyErrorBoundary></CrmRoute>} />
