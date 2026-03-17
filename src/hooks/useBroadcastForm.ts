@@ -3,10 +3,10 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { uploadCarouselImage, base64ToFile } from '@/lib/uploadCarouselImage';
 import { saveToHelpdesk } from '@/lib/saveToHelpdesk';
-import { CarouselData, createEmptyCard } from '../broadcast/CarouselEditor';
+import { CarouselData, createEmptyCard } from '@/components/broadcast/CarouselEditor';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
-import type { Instance } from '../broadcast/InstanceSelector';
-import type { Group } from '../broadcast/GroupSelector';
+import type { Instance } from '@/components/broadcast/InstanceSelector';
+import type { Group } from '@/components/broadcast/GroupSelector';
 import type { ScheduleConfig } from '@/components/group/ScheduleMessageDialog';
 
 // ─── Types ───────────────────────────────────────────────────────────
