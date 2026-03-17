@@ -1,9 +1,5 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient } from '../_shared/supabase-admin.ts'
 
 // Validate URLs to prevent SSRF attacks
 function isValidMediaUrl(url: string): boolean {
