@@ -240,11 +240,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
   const handleSchedule = async (config: ScheduleConfig) => {
     // Para agendamento de mídia, precisamos de uma URL (não arquivo local)
     if (selectedFile) {
-      toast({
-        title: 'Erro',
-        description: 'Para agendar, use uma URL de mídia ao invés de arquivo local',
-        variant: 'destructive',
-      });
+      toast.error('Para agendar, use uma URL de mídia ao invés de arquivo local');
       return;
     }
 
