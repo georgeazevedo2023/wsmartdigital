@@ -38,17 +38,7 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/hooks/use-toast";
 
@@ -117,6 +107,7 @@ function ScheduledMessageCard({
   isUpdating: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   const { data: logs } = useQuery({
     queryKey: ["scheduled-message-logs", message.id],
@@ -223,29 +214,19 @@ function ScheduledMessageCard({
             </Button>
           )}
           {(message.status === "pending" || message.status === "paused") && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="text-destructive">
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Cancelar
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Cancelar agendamento?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Esta ação não pode ser desfeita. O agendamento será cancelado permanentemente.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction onClick={onCancel}>
-                    Confirmar Cancelamento
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirmCancelOpen(true)}>
+              <Trash2 className="h-4 w-4 mr-1" />
+              Cancelar
+            </Button>
           )}
+          <ConfirmDialog
+            open={confirmCancelOpen}
+            onOpenChange={setConfirmCancelOpen}
+            title="Cancelar agendamento?"
+            description="Esta ação não pode ser desfeita. O agendamento será cancelado permanentemente."
+            confirmLabel="Confirmar Cancelamento"
+            onConfirm={onCancel}
+          />
 
           {/* Logs Collapsible */}
           <Collapsible open={isOpen} onOpenChange={setIsOpen} className="ml-auto">
