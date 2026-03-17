@@ -403,6 +403,17 @@ Deno.serve(async (req) => {
           return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
         };
 
+        // Validate carousel image URLs to prevent SSRF
+        const hasInvalidImage = body.carousel.some((card: { image: string }) => 
+          card.image && !isValidMediaUrl(card.image)
+        );
+        if (hasInvalidImage) {
+          return new Response(
+            JSON.stringify({ error: 'Invalid carousel image URL' }),
+            { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          )
+        }
+
         // Process carousel cards - handle base64 images
         const processedCards = body.carousel.map((card: { text: string; image: string; buttons: Array<{ id?: string; text?: string; label?: string; type: string; url?: string; phone?: string }> }, idx: number) => {
           // Check if image is base64 and extract just the data
