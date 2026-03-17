@@ -489,23 +489,16 @@ export default function SyncInstancesDialog({
           </Button>
           
           {orphanedInstances.length > 0 && (
-            <Button
+            <LoadingButton
               variant="destructive"
               onClick={handleDeleteOrphans}
-              disabled={deletingOrphans || selectedOrphans.size === 0}
+              disabled={selectedOrphans.size === 0}
+              loading={deletingOrphans}
+              loadingText="Removendo..."
             >
-              {deletingOrphans ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Removendo...
-                </>
-              ) : (
-                <>
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  Remover Órfãs {selectedOrphans.size > 0 ? `(${selectedOrphans.size})` : ''}
-                </>
-              )}
-            </Button>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Remover Órfãs {selectedOrphans.size > 0 ? `(${selectedOrphans.size})` : ''}
+            </LoadingButton>
           )}
           
           <Button
