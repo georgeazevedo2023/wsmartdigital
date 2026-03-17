@@ -169,7 +169,6 @@ const Sidebar = ({ isMobile = false, onNavigate }: SidebarProps) => {
   };
 
   return (
-    <TooltipProvider>
       <aside
         className={cn(
           'h-full flex flex-col transition-all duration-300',
