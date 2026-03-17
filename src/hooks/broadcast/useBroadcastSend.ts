@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxyWithToken } from '@/lib/uazapiProxy';
 import { toast } from 'sonner';
 import { uploadCarouselImage, base64ToFile } from '@/lib/uploadCarouselImage';
 import { CarouselData } from '@/components/broadcast/CarouselEditor';

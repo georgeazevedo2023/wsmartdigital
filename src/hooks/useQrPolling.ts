@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import { toast } from 'sonner';
 import { normalizeQrSrc, extractQrCode, checkIfConnected } from '@/lib/qrCodeUtils';
 

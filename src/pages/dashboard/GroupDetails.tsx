@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import EmptyState from '@/components/ui/empty-state';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Card, CardContent } from '@/components/ui/card';
