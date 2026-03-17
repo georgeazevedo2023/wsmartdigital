@@ -373,7 +373,7 @@ const AdminPanel = () => {
           {usersLoading ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">{[1,2,3,4,5,6].map(i => <Skeleton key={i} className="h-52 rounded-2xl" />)}</div>
           ) : filteredUsers.length === 0 ? (
-            <EmptyState icon={Users} title="Nenhum usuário encontrado" desc="Crie o primeiro usuário" />
+            <EmptyState icon={Users} title="Nenhum usuário encontrado" description="Crie o primeiro usuário" />
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
               {filteredUsers.map(u => (
