@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import EmptyState from '@/components/ui/empty-state';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -234,7 +235,7 @@ export default function TemplatesManager() {
 
       {/* Content */}
       {isLoading ? (
-        <div className="flex items-center justify-center py-12"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+        <LoadingSpinner />
       ) : filteredTemplates.length === 0 ? (
         <EmptyState
           icon={BookMarked}

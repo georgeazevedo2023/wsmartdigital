@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { LoadingButton } from '@/components/ui/loading-button';
 import {
   Dialog,
@@ -19,7 +20,6 @@ import {
   User,
   Trash2,
   Plus,
-  Loader2,
   UserPlus,
   Users,
   Pencil,
@@ -427,9 +427,7 @@ const ManageLeadDatabaseDialog = ({
 
             {/* Contact list */}
             {isLoading ? (
-              <div className="flex items-center justify-center py-12">
-                <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
-              </div>
+              <LoadingSpinner />
             ) : (
               <ScrollArea className="flex-1 min-h-0 border rounded-lg">
                 <div className="p-2 space-y-1">

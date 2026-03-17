@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { formatBR } from "@/lib/dateUtils";
 import {
@@ -19,7 +20,6 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
-  Loader2,
   Shield,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -369,9 +369,7 @@ export default function ScheduledMessages() {
 
         <TabsContent value={activeTab} className="mt-6">
           {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingSpinner size="lg" />
           ) : getTabMessages().length === 0 ? (
             <Card className="glass-card">
               <CardContent className="flex flex-col items-center justify-center py-12 text-center">

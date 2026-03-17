@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { cn } from '@/lib/utils';
 import { Server, Users, MessageSquare, ChevronRight, Check, ArrowLeft, ShieldCheck, Loader2, Database, Save, Plus, MessageCircle, Settings2 } from 'lucide-react';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { toast } from 'sonner';
 import InstanceSelector, { Instance } from '@/components/broadcast/InstanceSelector';
 import BroadcasterHeader from '@/components/broadcast/BroadcasterHeader';
@@ -603,10 +604,7 @@ const LeadsBroadcaster = () => {
                 </Button>
 
                 {isLoadingDatabases ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-                    <span className="ml-2 text-sm text-muted-foreground">Carregando...</span>
-                  </div>
+                  <LoadingSpinner size="sm" label="Carregando..." className="py-4" />
                 ) : (
                   databases.map(db => {
                     const isSelected = selectedDatabases.some(d => d.id === db.id);

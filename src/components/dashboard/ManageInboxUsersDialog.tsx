@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/select';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Plus, Loader2, Trash2, UserPlus } from 'lucide-react';
+import { LoadingSpinner } from '@/components/ui/loading-spinner';
 import { toast } from 'sonner';
 import type { Database } from '@/integrations/supabase/types';
 
@@ -267,9 +268,7 @@ const ManageInboxUsersDialog = ({
         {/* Members list */}
         <div className="mt-4 space-y-2 max-h-72 overflow-y-auto">
           {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
+            <LoadingSpinner size="sm" className="py-8" />
           ) : members.length === 0 ? (
             <div className="text-center py-8 text-sm text-muted-foreground">
               Nenhum membro adicionado

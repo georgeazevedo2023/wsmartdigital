@@ -42,7 +42,7 @@ const BackupModule = () => {
       {backup.progress && (
         <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
           <div className="flex items-center gap-3">
-            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <Loader2 className="w-4 h-4 animate-spin text-primary" /> {/* inline – contextual progress */}
             <div className="flex-1">
               <p className="text-sm font-medium">{backup.progress.label}</p>
               <div className="mt-1.5 h-1.5 rounded-full bg-muted overflow-hidden">
