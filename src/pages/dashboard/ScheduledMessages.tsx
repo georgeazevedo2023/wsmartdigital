@@ -214,28 +214,18 @@ function ScheduledMessageCard({
             </Button>
           )}
           {(message.status === "pending" || message.status === "paused") && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button variant="outline" size="sm" className="text-destructive">
-                  <Trash2 className="h-4 w-4 mr-1" />
-                  Cancelar
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Cancelar agendamento?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Esta ação não pode ser desfeita. O agendamento será cancelado permanentemente.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Voltar</AlertDialogCancel>
-                  <AlertDialogAction onClick={onCancel}>
-                    Confirmar Cancelamento
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <Button variant="outline" size="sm" className="text-destructive" onClick={() => setConfirmCancelOpen(true)}>
+              <Trash2 className="h-4 w-4 mr-1" />
+              Cancelar
+            </Button>
+            <ConfirmDialog
+              open={confirmCancelOpen}
+              onOpenChange={setConfirmCancelOpen}
+              title="Cancelar agendamento?"
+              description="Esta ação não pode ser desfeita. O agendamento será cancelado permanentemente."
+              confirmLabel="Confirmar Cancelamento"
+              onConfirm={onCancel}
+            />
           )}
 
           {/* Logs Collapsible */}
