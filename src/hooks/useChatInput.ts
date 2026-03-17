@@ -177,12 +177,7 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
       const audioPublicUrl = supabase.storage.from('audio-messages').getPublicUrl(fileName).data.publicUrl;
 
       const base64Audio = await blobToBase64(blob);
-      const session = await getSession();
-      const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session?.access_token}` },
-        body: JSON.stringify({ action: 'send-audio', instanceToken: token, jid: contactJid, audio: base64Audio }),
-      });
-      if (!response.ok) throw new Error('Falha ao enviar áudio');
+      await callUazapiProxy({ action: 'send-audio', instanceToken: token, jid: contactJid, audio: base64Audio });
 
       const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id, direction: 'outgoing', content: null, media_type: 'audio', media_url: audioPublicUrl, sender_id: user.id,
