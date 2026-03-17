@@ -11,17 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { MoreVertical, Edit, Copy, Trash2, ArrowRight, Columns, FileText, Users, Lock, MessageSquare } from 'lucide-react';
 import { useState } from 'react';
 import { EditBoardDialog } from './EditBoardDialog';
