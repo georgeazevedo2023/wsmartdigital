@@ -6,7 +6,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Search, CheckSquare, Square, User, CheckCircle, XCircle, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
-import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
+import type { Lead } from '@/hooks/useLeadsBroadcaster';
 
 interface LeadListProps {
   leads: Lead[];

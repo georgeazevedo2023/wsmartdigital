@@ -6,7 +6,7 @@ import { saveToHelpdesk } from '@/lib/saveToHelpdesk';
 import { CarouselData, createEmptyCard } from '@/components/broadcast/CarouselEditor';
 import type { MessageTemplate } from '@/hooks/useMessageTemplates';
 import type { Instance } from '@/components/broadcast/InstanceSelector';
-import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
+import type { Lead } from '@/hooks/useLeadsBroadcaster';
 import type { MediaType, ActiveTab, InitialData } from '@/hooks/useBroadcastForm';
 import { MAX_MESSAGE_LENGTH, MAX_FILE_SIZE } from '@/hooks/useBroadcastForm';
 
