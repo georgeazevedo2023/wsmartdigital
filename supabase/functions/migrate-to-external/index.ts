@@ -1,10 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { Client as PgClient } from 'https://deno.land/x/postgres@v0.19.3/mod.ts'
-
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-}
+import { corsHeaders, corsResponse, errorResponse, jsonResponse } from '../_shared/cors.ts'
+import { extractAuth, createUserClient, createAdminClientWithAuth, createServiceClient, checkRole } from '../_shared/supabase-admin.ts'
 
 const HIGH_VOLUME_TABLES = [
   'conversations', 'conversation_messages', 'contacts',
