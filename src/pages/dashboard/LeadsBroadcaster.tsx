@@ -62,7 +62,7 @@ const LeadsBroadcaster = () => {
             showDatabase={false}
           />
 
-          <LeadDatabaseSelector
+          <LeadDatabasePicker
             databases={h.databases}
             selectedDatabases={h.selectedDatabases}
             isLoading={h.isLoadingDatabases}
