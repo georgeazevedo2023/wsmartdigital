@@ -48,6 +48,7 @@ export function BoardCard({ board, inboxes, onRefresh, canManage = false }: Boar
   const { user } = useAuth();
   const [editOpen, setEditOpen] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   const handleDuplicate = async () => {
     if (!user) return;
