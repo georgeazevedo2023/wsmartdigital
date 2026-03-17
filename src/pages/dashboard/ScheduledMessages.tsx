@@ -218,15 +218,15 @@ function ScheduledMessageCard({
               <Trash2 className="h-4 w-4 mr-1" />
               Cancelar
             </Button>
-            <ConfirmDialog
-              open={confirmCancelOpen}
-              onOpenChange={setConfirmCancelOpen}
-              title="Cancelar agendamento?"
-              description="Esta ação não pode ser desfeita. O agendamento será cancelado permanentemente."
-              confirmLabel="Confirmar Cancelamento"
-              onConfirm={onCancel}
-            />
           )}
+          <ConfirmDialog
+            open={confirmCancelOpen}
+            onOpenChange={setConfirmCancelOpen}
+            title="Cancelar agendamento?"
+            description="Esta ação não pode ser desfeita. O agendamento será cancelado permanentemente."
+            confirmLabel="Confirmar Cancelamento"
+            onConfirm={onCancel}
+          />
 
           {/* Logs Collapsible */}
           <Collapsible open={isOpen} onOpenChange={setIsOpen} className="ml-auto">
