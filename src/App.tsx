@@ -159,12 +159,9 @@ const AppRoutes = () => {
         <Route path="instances/:id" element={<AdminRoute><Suspense fallback={<PageLoader />}><InstanceDetails /></Suspense></AdminRoute>} />
         <Route path="instances/:instanceId/groups/:groupId" element={<AdminRoute><Suspense fallback={<PageLoader />}><GroupDetails /></Suspense></AdminRoute>} />
         <Route path="instances/:instanceId/groups/:groupId/send" element={<AdminRoute><Suspense fallback={<PageLoader />}><SendToGroup /></Suspense></AdminRoute>} />
-        <Route path="users" element={<AdminRoute><Suspense fallback={<PageLoader />}><UsersManagement /></Suspense></AdminRoute>} />
         <Route path="settings" element={<AdminRoute><Suspense fallback={<PageLoader />}><Settings /></Suspense></AdminRoute>} />
         <Route path="scheduled" element={<AdminRoute><Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense></AdminRoute>} />
         <Route path="helpdesk" element={<LazyErrorBoundary><Suspense fallback={<PageLoader />}><HelpDesk /></Suspense></LazyErrorBoundary>} />
-        <Route path="inboxes" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><InboxManagement /></Suspense></LazyErrorBoundary></AdminRoute>} />
-        <Route path="inbox-users" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><InboxUsersManagement /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="admin" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="intelligence" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="crm" element={<CrmRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense></LazyErrorBoundary></CrmRoute>} />
