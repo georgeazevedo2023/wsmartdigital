@@ -16,6 +16,7 @@ import { MoreVertical, Edit, Copy, Trash2, ArrowRight, Columns, FileText, Users,
 import { useState } from 'react';
 import { EditBoardDialog } from './EditBoardDialog';
 
+
 interface KanbanBoard {
   id: string;
   name: string;
