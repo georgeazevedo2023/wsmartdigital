@@ -305,11 +305,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
       onMediaSent?.();
     } catch (error) {
       console.error('Error scheduling media:', error);
-      toast({
-        title: 'Erro ao agendar',
-        description: error instanceof Error ? error.message : 'Erro desconhecido',
-        variant: 'destructive',
-      });
+      toast.error(error instanceof Error ? error.message : 'Erro ao agendar');
     } finally {
       setIsScheduling(false);
     }
