@@ -311,6 +311,14 @@ export function CardDetailSheet({
           </Button>
         </div>
       </SheetContent>
+      <ConfirmDialog
+        open={deleteOpen}
+        onOpenChange={setDeleteOpen}
+        title="Excluir Card?"
+        description="Todos os dados deste card serão excluídos permanentemente."
+        onConfirm={handleDelete}
+        confirmLabel="Excluir"
+      />
     </Sheet>
   );
 }
