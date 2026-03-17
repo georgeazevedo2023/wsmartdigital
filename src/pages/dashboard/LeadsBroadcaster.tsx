@@ -5,7 +5,7 @@ import InstanceSelector from '@/components/broadcast/InstanceSelector';
 import BroadcasterHeader from '@/components/broadcast/BroadcasterHeader';
 import LeadImporter from '@/components/broadcast/LeadImporter';
 import LeadMessageForm from '@/components/broadcast/LeadMessageForm';
-import LeadDatabaseSelector from '@/components/broadcast/LeadDatabaseSelector';
+import LeadDatabasePicker from '@/components/broadcast/LeadDatabasePicker';
 import LeadContactsCard from '@/components/broadcast/LeadContactsCard';
 import LeadsSummaryCard from '@/components/broadcast/LeadsSummaryCard';
 import ResendBanner from '@/components/broadcast/ResendBanner';
