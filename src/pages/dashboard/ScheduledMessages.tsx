@@ -107,6 +107,7 @@ function ScheduledMessageCard({
   isUpdating: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
 
   const { data: logs } = useQuery({
     queryKey: ["scheduled-message-logs", message.id],
