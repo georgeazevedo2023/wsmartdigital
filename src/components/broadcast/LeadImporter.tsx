@@ -16,7 +16,7 @@ import { ClipboardPaste, Users, Plus, Search, Loader2, FileSpreadsheet, Upload, 
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
 import type { Instance } from './InstanceSelector';
-import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
+import type { Lead } from '@/hooks/useLeadsBroadcaster';
 
 interface ParsedFileData {
   headers: string[];

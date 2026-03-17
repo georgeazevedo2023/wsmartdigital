@@ -11,7 +11,7 @@ import LeadSendControls from './LeadSendControls';
 import { useLeadMessageForm } from '@/hooks/useLeadMessageForm';
 import type { ActiveTab } from '@/hooks/useBroadcastForm';
 import type { Instance } from './InstanceSelector';
-import type { Lead } from '@/pages/dashboard/LeadsBroadcaster';
+import type { Lead } from '@/hooks/useLeadsBroadcaster';
 
 interface InitialData {
   messageType: string;
