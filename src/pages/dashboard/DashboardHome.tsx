@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import { Server, Users, Wifi, WifiOff, MessageSquare, UsersRound, RefreshCw, UserPlus } from 'lucide-react';
 import HelpdeskMetricsCharts from '@/components/dashboard/HelpdeskMetricsCharts';
 import { Skeleton } from '@/components/ui/skeleton';
+import { PageSkeleton } from '@/components/ui/page-skeleton';
 import { Button } from '@/components/ui/button';
 import InstanceFilterSelect from '@/components/dashboard/InstanceFilterSelect';
 import { toast } from 'sonner';
