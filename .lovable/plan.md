@@ -1,69 +1,42 @@
 
-# Melhorias de UX/UI no Painel Administrativo
 
-## Problema Identificado
-Faltam opcoes de edicao em varias areas do painel: nao e possivel editar nome de caixas de entrada, editar dados de usuarios (nome/email), nem alterar o papel de membros da equipe inline. Alem disso, faltam tooltips e recursos de usabilidade.
+## Refatoração do ChatPanel.tsx
 
-## Mudancas Planejadas
+O arquivo tem ~375 linhas com lógica de mensagens, realtime, IA e renderização misturadas. A refatoração separa em 4 partes.
 
-### 1. Editar Caixa de Entrada (Inbox)
-- Adicionar opcao "Editar Nome" no menu contextual (DropdownMenu) de cada InboxCard
-- Ao clicar, o nome da caixa entra em modo de edicao inline (input com botoes salvar/cancelar)
-- Salvar atualiza diretamente na tabela `inboxes`
+### Estrutura final
 
-### 2. Editar Usuario
-- Adicionar opcao "Editar" no UserCard (botao com icone de lapis no footer, ao lado de "Instancias")
-- Abre um Dialog para editar nome completo do usuario
-- Salva na tabela `user_profiles`
-
-### 3. Editar Papel do Membro na Equipe
-- No TeamSection, adicionar um seletor de papel (dropdown) ao lado do badge de papel de cada membro
-- Permitir alterar entre admin/gestor/agente diretamente inline
-- Salva na tabela `inbox_users`
-
-### 4. Tooltips em Acoes
-- Envolver todos os botoes de icone (excluir, instancias, editar, menu contextual) com Tooltip descritivo
-- Adicionar tooltips nos filtros de papel, nos stats cards e nos badges de contagem
-
-### 5. Melhorias de UX Adicionais
-- Botao "Editar" na caixa de entrada para renomear inline com animacao suave
-- Feedback visual ao salvar (toast + animacao de check)
-- Transicao suave ao mudar entre modo visualizacao e edicao
-- Empty states com CTAs mais claros e botoes de acao diretos
-- Touch targets de 44px minimos em todos os botoes de acao no mobile
-
-## Detalhes Tecnicos
-
-### Arquivos modificados
-- `src/pages/dashboard/AdminPanel.tsx` -- Adicionar funcionalidades de edicao e tooltips
-
-### Novos estados necessarios
 ```text
-editingInboxName: { id: string; value: string } | null
-editingUser: UserWithRole | null (para dialog de edicao)
+src/components/helpdesk/
+├── ChatPanel.tsx          (~80 linhas - orquestrador)
+├── ChatHeader.tsx         (~120 linhas - header com status, IA, notas)
+├── ChatMessageList.tsx    (~50 linhas - lista de mensagens + scroll)
+├── ChatInput.tsx          (já existe, sem mudanças)
+├── MessageBubble.tsx      (já existe, sem mudanças)
+└── useChatMessages.ts     (~120 linhas - hook dedicado)
 ```
 
-### Novos handlers
-```text
-handleEditInboxName(inboxId, newName) -- UPDATE inboxes SET name WHERE id
-handleEditUserProfile(userId, fullName) -- UPDATE user_profiles SET full_name WHERE id
-handleChangeTeamRole(userId, inboxId, newRole) -- UPDATE inbox_users SET role WHERE user_id AND inbox_id
-```
+### 1. Hook `useChatMessages.ts`
+Extrai toda a lógica de dados do ChatPanel:
+- Estado `messages`, `loading`
+- `fetchMessages` (query ao banco)
+- Realtime via broadcast (`new-message` e `transcription-updated`)
+- Auto-scroll com `bottomRef`
+- Separação `chatMessages` / `notes`
+- Estado e lógica de IA (`iaAtivada`, `handleActivateIA`)
 
-### InboxCard -- mudancas
-- Nova prop: onEditName
-- Menu contextual ganha item "Editar Nome" com icone Pencil
-- Modo de edicao inline no header (substituir texto por Input)
+Interface: `useChatMessages(conversation)` retorna `{ chatMessages, notes, loading, bottomRef, iaAtivada, ativandoIa, handleActivateIA, fetchMessages, setMessages, setIaAtivada }`
 
-### UserCard -- mudancas
-- Nova prop: onEdit
-- Botao "Editar" no footer (ao lado de Instancias)
-- Dialog de edicao com campo de nome
+### 2. Sub-componente `ChatHeader.tsx`
+Recebe via props: `conversation`, `agentName`, `iaAtivada`, `ativandoIa`, `notes`, `onActivateIA`, `onUpdateConversation`, callbacks de toggle (info, list, back, notes).
 
-### TeamSection -- mudancas
-- Cada membro ganha um DropdownMenu ou Select para trocar papel (admin/gestor/agente)
-- Atualiza inline sem dialog
+Renderiza: botões de navegação, nome do contato, select de status, badge/botão de IA, botão de notas, botões info/toggle.
 
-### Tooltips
-- Todos os Button size="icon" envolvidos com TooltipProvider > Tooltip > TooltipTrigger/Content
-- Labels descritivos: "Excluir usuario", "Gerenciar instancias", "Editar nome", "Copiar ID", etc.
+### 3. Sub-componente `ChatMessageList.tsx`
+Recebe: `chatMessages`, `loading`, `bottomRef`, `instanceId`, `agentNamesMap`.
+
+Renderiza: spinner de loading, empty state, lista de `MessageBubble`, div de scroll anchor.
+
+### 4. `ChatPanel.tsx` simplificado (~80 linhas)
+Orquestra os 3 elementos: chama `useChatMessages`, renderiza `ChatHeader` + `ChatMessageList` + `ChatInput` + `NotesPanel`. Mantém 100% da API de props existente.
+
