@@ -29,6 +29,7 @@ const AdminPanel = lazy(() => import("./pages/dashboard/AdminPanel"));
 const Intelligence = lazy(() => import("./pages/dashboard/Intelligence"));
 const KanbanCRM = lazy(() => import("./pages/dashboard/KanbanCRM"));
 const KanbanBoard = lazy(() => import("./pages/dashboard/KanbanBoard"));
+const HelpdeskReports = lazy(() => import("./pages/dashboard/HelpdeskReports"));
 
 const queryClient = new QueryClient();
 
