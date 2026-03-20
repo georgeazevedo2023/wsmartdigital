@@ -4,6 +4,7 @@ import {
   BrainCircuit,
   ShieldCheck,
   Settings,
+  FileBarChart,
   type LucideIcon,
 } from 'lucide-react';
 
