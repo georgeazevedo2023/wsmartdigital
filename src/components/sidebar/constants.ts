@@ -36,6 +36,7 @@ export const NAV_ITEMS: NavItem[] = [
 ];
 
 export const ADMIN_ITEMS: NavItem[] = [
+  { icon: FileBarChart, label: 'Relatórios', path: '/dashboard/reports' },
   { icon: BrainCircuit, label: 'Inteligência', path: '/dashboard/intelligence' },
   { icon: ShieldCheck, label: 'Administração', path: '/dashboard/admin' },
   { icon: Settings, label: 'Configurações', path: '/dashboard/settings' },
