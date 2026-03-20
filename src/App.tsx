@@ -29,6 +29,7 @@ const AdminPanel = lazy(() => import("./pages/dashboard/AdminPanel"));
 const Intelligence = lazy(() => import("./pages/dashboard/Intelligence"));
 const KanbanCRM = lazy(() => import("./pages/dashboard/KanbanCRM"));
 const KanbanBoard = lazy(() => import("./pages/dashboard/KanbanBoard"));
+const HelpdeskReports = lazy(() => import("./pages/dashboard/HelpdeskReports"));
 
 const queryClient = new QueryClient();
 
@@ -162,6 +163,7 @@ const AppRoutes = () => {
         <Route path="settings" element={<AdminRoute><Suspense fallback={<PageLoader />}><Settings /></Suspense></AdminRoute>} />
         <Route path="scheduled" element={<AdminRoute><Suspense fallback={<PageLoader />}><ScheduledMessages /></Suspense></AdminRoute>} />
         <Route path="helpdesk" element={<LazyErrorBoundary><Suspense fallback={<PageLoader />}><HelpDesk /></Suspense></LazyErrorBoundary>} />
+        <Route path="reports" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><HelpdeskReports /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="admin" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><AdminPanel /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="intelligence" element={<AdminRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><Intelligence /></Suspense></LazyErrorBoundary></AdminRoute>} />
         <Route path="crm" element={<CrmRoute><LazyErrorBoundary><Suspense fallback={<PageLoader />}><KanbanCRM /></Suspense></LazyErrorBoundary></CrmRoute>} />
