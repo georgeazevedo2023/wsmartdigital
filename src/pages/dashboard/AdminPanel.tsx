@@ -71,6 +71,7 @@ const AdminPanel = () => {
             { value: 'users', icon: Shield, label: 'Usuários', count: h.users.length },
             { value: 'team', icon: Headphones, label: 'Equipe', count: h.teamUsers.length },
             { value: 'tools', icon: Wrench, label: 'Ferramentas' },
+            { value: 'docs', icon: FileText, label: 'Documentação' },
           ].map(t => (
             <TabsTrigger key={t.value} value={t.value} className="gap-2 min-h-[36px]">
               <t.icon className="w-4 h-4" />
