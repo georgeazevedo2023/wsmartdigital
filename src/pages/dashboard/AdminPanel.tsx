@@ -12,13 +12,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   ShieldCheck, Plus, Search, Inbox, Users, Headphones, Loader2, Shield,
-  ChevronDown, UserPlus, AlertTriangle, Briefcase, MonitorSmartphone, Wrench,
+  ChevronDown, UserPlus, AlertTriangle, Briefcase, MonitorSmartphone, Wrench, FileText,
 } from 'lucide-react';
 import ManageInboxUsersDialog from '@/components/dashboard/ManageInboxUsersDialog';
 import ManageUserInstancesDialog from '@/components/dashboard/ManageUserInstancesDialog';
 import CreateInboxUserDialog from '@/components/dashboard/CreateInboxUserDialog';
 import BackupModule from '@/components/dashboard/BackupModule';
 import MigrationWizard from '@/components/dashboard/MigrationWizard';
+import BroadcasterDocsTab from '@/components/admin/BroadcasterDocsTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 import AdminStatsBar from '@/components/admin/AdminStatsBar';
@@ -70,6 +71,7 @@ const AdminPanel = () => {
             { value: 'users', icon: Shield, label: 'Usuários', count: h.users.length },
             { value: 'team', icon: Headphones, label: 'Equipe', count: h.teamUsers.length },
             { value: 'tools', icon: Wrench, label: 'Ferramentas' },
+            { value: 'docs', icon: FileText, label: 'Documentação' },
           ].map(t => (
             <TabsTrigger key={t.value} value={t.value} className="gap-2 min-h-[36px]">
               <t.icon className="w-4 h-4" />
@@ -162,6 +164,11 @@ const AdminPanel = () => {
             <h2 className="text-lg font-display font-semibold flex items-center gap-2"><MonitorSmartphone className="w-5 h-5 text-primary" />Migração</h2>
             <MigrationWizard />
           </div>
+        </TabsContent>
+
+        {/* TAB: Documentation */}
+        <TabsContent value="docs" className="mt-5">
+          <BroadcasterDocsTab />
         </TabsContent>
       </Tabs>
 
