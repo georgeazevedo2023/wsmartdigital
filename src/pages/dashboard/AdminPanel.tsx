@@ -19,6 +19,7 @@ import ManageUserInstancesDialog from '@/components/dashboard/ManageUserInstance
 import CreateInboxUserDialog from '@/components/dashboard/CreateInboxUserDialog';
 import BackupModule from '@/components/dashboard/BackupModule';
 import MigrationWizard from '@/components/dashboard/MigrationWizard';
+import BroadcasterDocsTab from '@/components/admin/BroadcasterDocsTab';
 import { useIsMobile } from '@/hooks/use-mobile';
 
 import AdminStatsBar from '@/components/admin/AdminStatsBar';
