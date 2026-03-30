@@ -316,7 +316,6 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
         let imageUrl = card.image;
         if (card.imageFile) {
           imageUrl = await fileToBase64(card.imageFile);
-          imageUrl = imageUrl.split(',')[1] || imageUrl;
         }
         return { text: card.text, image: imageUrl, buttons: card.buttons };
       })
