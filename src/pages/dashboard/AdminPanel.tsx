@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import {
   ShieldCheck, Plus, Search, Inbox, Users, Headphones, Loader2, Shield,
-  ChevronDown, UserPlus, AlertTriangle, Briefcase, MonitorSmartphone, Wrench,
+  ChevronDown, UserPlus, AlertTriangle, Briefcase, MonitorSmartphone, Wrench, FileText,
 } from 'lucide-react';
 import ManageInboxUsersDialog from '@/components/dashboard/ManageInboxUsersDialog';
 import ManageUserInstancesDialog from '@/components/dashboard/ManageUserInstancesDialog';
