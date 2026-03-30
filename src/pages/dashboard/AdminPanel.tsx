@@ -165,6 +165,11 @@ const AdminPanel = () => {
             <MigrationWizard />
           </div>
         </TabsContent>
+
+        {/* TAB: Documentation */}
+        <TabsContent value="docs" className="mt-5">
+          <BroadcasterDocsTab />
+        </TabsContent>
       </Tabs>
 
       {/* ── Dialogs ── */}
