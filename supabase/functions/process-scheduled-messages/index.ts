@@ -352,16 +352,14 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders })
   }
 
-  // Validate cron secret
+  // Validate cron secret (mandatory)
   const cronSecret = Deno.env.get('CRON_SECRET')
-  if (cronSecret) {
-    const authHeader = req.headers.get('Authorization')
-    if (!authHeader || authHeader !== `Bearer ${cronSecret}`) {
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
+  const authHeader = req.headers.get('Authorization')
+  if (!cronSecret || !authHeader || authHeader !== `Bearer ${cronSecret}`) {
+    return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+      status: 401,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    })
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!

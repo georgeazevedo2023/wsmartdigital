@@ -1,5 +1,5 @@
 import { corsResponse, jsonResponse, errorResponse } from '../_shared/cors.ts'
-import { extractAuth, createUserClient, validateUser, isServiceToken, createServiceClient } from '../_shared/supabase-admin.ts'
+import { extractAuth, createUserClient, validateUser, isServiceRoleToken, createServiceClient } from '../_shared/supabase-admin.ts'
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return corsResponse()
@@ -8,8 +8,9 @@ Deno.serve(async (req) => {
     const auth = extractAuth(req)
     if (!auth) return errorResponse('Unauthorized', 401)
 
-    // Accept service role key (from webhook) or valid JWT
-    if (!isServiceToken(auth.token)) {
+    // Accept ONLY service role key (from trusted edge callers) or a valid user JWT.
+    // The anon/publishable key is NOT acceptable here — it is public.
+    if (!isServiceRoleToken(auth.token)) {
       const userSupabase = createUserClient(auth.authHeader)
       const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(auth.token)
       if (claimsError || !claimsData?.claims) return errorResponse('Unauthorized', 401)

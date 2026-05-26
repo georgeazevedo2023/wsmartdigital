@@ -50,6 +50,14 @@ export function isServiceToken(token: string): boolean {
 }
 
 /**
+ * Strict check: only the service-role key counts as a privileged service token.
+ * Anon/publishable keys must NOT bypass user-level auth.
+ */
+export function isServiceRoleToken(token: string): boolean {
+  return !!SERVICE_ROLE_KEY && token === SERVICE_ROLE_KEY
+}
+
+/**
  * Check if user has a specific role. Uses service client to bypass RLS.
  */
 export async function checkRole(userId: string, role: string): Promise<boolean> {
