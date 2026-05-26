@@ -5,6 +5,13 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return corsResponse()
 
   try {
+    // Require CRON_SECRET for all callers
+    const cronSecret = Deno.env.get('CRON_SECRET')
+    const authHeader = req.headers.get('Authorization')
+    if (!cronSecret || !authHeader || authHeader !== `Bearer ${cronSecret}`) {
+      return errorResponse('Unauthorized', 401)
+    }
+
     const supabase = createServiceClient()
 
     const thirtyDaysAgo = new Date()
