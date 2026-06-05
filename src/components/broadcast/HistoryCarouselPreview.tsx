@@ -184,10 +184,10 @@ export function HistoryCarouselPreview({ data }: HistoryCarouselPreviewProps) {
                         className={`aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden ${card.image ? 'cursor-pointer group' : ''}`}
                         onClick={(e) => card.image && openLightbox(card.image, e)}
                       >
-                        {card.image ? (
+                        {card.image && !isUnloadableUrl(card.image) ? (
                           <>
                             <img 
-                              src={card.image}
+                              src={safeImageSrc(card.image)}
                               alt={`Card ${idx + 1}`}
                               className="absolute inset-0 w-full h-full object-contain bg-muted"
                               onError={(e) => {
@@ -352,10 +352,10 @@ export function HistoryCarouselPreview({ data }: HistoryCarouselPreviewProps) {
                           className={`aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden ${card.image ? 'cursor-pointer group' : ''}`}
                           onClick={(e) => card.image && openLightbox(card.image, e)}
                         >
-                          {card.image ? (
+                          {card.image && !isUnloadableUrl(card.image) ? (
                             <>
                               <img 
-                                src={card.image}
+                                src={safeImageSrc(card.image)}
                                 alt={`Card ${idx + 1}`}
                                 className="absolute inset-0 w-full h-full object-contain bg-muted"
                                 onError={(e) => {
