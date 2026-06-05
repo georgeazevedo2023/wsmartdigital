@@ -65,6 +65,14 @@ const getButtonIcon = (type: CarouselButton['type']) => {
   }
 };
 
+// WhatsApp CDN URLs (pps.whatsapp.net, mmg.whatsapp.net) require WA session auth
+// and always 403 when loaded from the browser. Treat them as unavailable.
+const isUnloadableUrl = (url?: string): boolean => {
+  if (!url) return true;
+  return /(^https?:\/\/)?(pps|mmg)\.whatsapp\.net/i.test(url);
+};
+const safeImageSrc = (url?: string): string => (isUnloadableUrl(url) ? '' : url || '');
+
 export function HistoryCarouselPreview({ data }: HistoryCarouselPreviewProps) {
   const [activeIndex, setActiveIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
@@ -176,10 +184,10 @@ export function HistoryCarouselPreview({ data }: HistoryCarouselPreviewProps) {
                         className={`aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden ${card.image ? 'cursor-pointer group' : ''}`}
                         onClick={(e) => card.image && openLightbox(card.image, e)}
                       >
-                        {card.image ? (
+                        {card.image && !isUnloadableUrl(card.image) ? (
                           <>
                             <img 
-                              src={card.image}
+                              src={safeImageSrc(card.image)}
                               alt={`Card ${idx + 1}`}
                               className="absolute inset-0 w-full h-full object-contain bg-muted"
                               onError={(e) => {
@@ -344,10 +352,10 @@ export function HistoryCarouselPreview({ data }: HistoryCarouselPreviewProps) {
                           className={`aspect-[4/3] bg-muted flex items-center justify-center relative overflow-hidden ${card.image ? 'cursor-pointer group' : ''}`}
                           onClick={(e) => card.image && openLightbox(card.image, e)}
                         >
-                          {card.image ? (
+                          {card.image && !isUnloadableUrl(card.image) ? (
                             <>
                               <img 
-                                src={card.image}
+                                src={safeImageSrc(card.image)}
                                 alt={`Card ${idx + 1}`}
                                 className="absolute inset-0 w-full h-full object-contain bg-muted"
                                 onError={(e) => {

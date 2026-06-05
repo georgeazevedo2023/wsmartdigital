@@ -290,14 +290,21 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
   }, [activeTab, carouselData, message, mediaUrl, selectedFile, mediaType, isPtt, caption, filename]);
 
   // ─ API calls
+  const INVALID_TOKEN_MARKER = '__UAZAPI_INVALID_TOKEN__';
+  const handleSendResponse = async (response: Response, fallback: string) => {
+    if (response.ok) return response.json();
+    const err = await response.json().catch(() => ({} as any));
+    if (response.status === 401) throw new Error(INVALID_TOKEN_MARKER);
+    throw new Error(err.error || err.message || fallback);
+  };
+
   const sendToNumber = async (jid: string, text: string, accessToken: string) => {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ action: 'send-message', token: instance.token, groupjid: jid, message: text }),
     });
-    if (!response.ok) { const err = await response.json().catch(() => ({})); throw new Error(err.error || err.message || 'Erro ao enviar'); }
-    return response.json();
+    return handleSendResponse(response, 'Erro ao enviar');
   };
 
   const sendMediaToNumber = async (jid: string, mediaData: string, type: string, captionText: string, docName: string, accessToken: string) => {
@@ -306,8 +313,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ action: 'send-media', token: instance.token, groupjid: jid, mediaUrl: mediaData, mediaType: type, caption: captionText, filename: docName }),
     });
-    if (!response.ok) { const err = await response.json().catch(() => ({})); throw new Error(err.error || err.message || 'Erro ao enviar mídia'); }
-    return response.json();
+    return handleSendResponse(response, 'Erro ao enviar mídia');
   };
 
   const sendCarouselToNumber = async (jid: string, carousel: CarouselData, accessToken: string) => {
@@ -325,8 +331,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ action: 'send-carousel', token: instance.token, groupjid: jid, message: carousel.message, carousel: processedCards }),
     });
-    if (!response.ok) { const err = await response.json().catch(() => ({})); throw new Error(err.error || err.message || 'Erro ao enviar carrossel'); }
-    return response.json();
+    return handleSendResponse(response, 'Erro ao enviar carrossel');
   };
 
   // ─ Save broadcast log
@@ -382,12 +387,26 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
     const accessToken = session.data.session.access_token;
     const startedAt = Date.now();
 
+    // Preflight: validate that the instance token is still accepted by UAZAPI
+    try {
+      const statusRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+        body: JSON.stringify({ action: 'status', token: instance.token }),
+      });
+      if (statusRes.status === 401) {
+        toast.error('Token da instância inválido. Reconecte a instância em Instâncias → ' + instance.name + '.');
+        return null;
+      }
+    } catch { /* ignore preflight network errors; loop will surface them */ }
+
     isPausedRef.current = false;
     isCancelledRef.current = false;
 
     setProgress({ current: 0, total: selectedLeads.length, currentName: '', status: 'sending', results: [], startedAt });
 
     const results: LeadSendProgress['results'] = [];
+    let invalidTokenAbort = false;
 
     for (let i = 0; i < selectedLeads.length; i++) {
       if (isCancelledRef.current) {
@@ -406,6 +425,12 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
         results.push({ name: displayName, success: true });
         try { helpdeskFn(lead); } catch {}
       } catch (error: any) {
+        if (error?.message === INVALID_TOKEN_MARKER) {
+          invalidTokenAbort = true;
+          results.push({ name: displayName, success: false, error: 'Token inválido' });
+          setProgress(p => ({ ...p, results: [...results] }));
+          break;
+        }
         results.push({ name: displayName, success: false, error: error.message });
       }
 
@@ -416,7 +441,10 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
     const successCount = results.filter(r => r.success).length;
     const failCount = results.filter(r => !r.success).length;
 
-    if (!isCancelledRef.current) {
+    if (invalidTokenAbort) {
+      setProgress(p => ({ ...p, status: 'error' }));
+      toast.error(`Token da instância "${instance.name}" foi rejeitado pelo WhatsApp. Reconecte a instância e tente novamente.`);
+    } else if (!isCancelledRef.current) {
       setProgress(p => ({ ...p, status: failCount > 0 ? 'error' : 'success' }));
       const label = failCount === 0
         ? `Enviado para ${successCount} contato${successCount !== 1 ? 's' : ''}`
