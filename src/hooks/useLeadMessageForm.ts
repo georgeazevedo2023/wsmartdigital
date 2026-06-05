@@ -290,14 +290,21 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
   }, [activeTab, carouselData, message, mediaUrl, selectedFile, mediaType, isPtt, caption, filename]);
 
   // ─ API calls
+  const INVALID_TOKEN_MARKER = '__UAZAPI_INVALID_TOKEN__';
+  const handleSendResponse = async (response: Response, fallback: string) => {
+    if (response.ok) return response.json();
+    const err = await response.json().catch(() => ({} as any));
+    if (response.status === 401) throw new Error(INVALID_TOKEN_MARKER);
+    throw new Error(err.error || err.message || fallback);
+  };
+
   const sendToNumber = async (jid: string, text: string, accessToken: string) => {
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ action: 'send-message', token: instance.token, groupjid: jid, message: text }),
     });
-    if (!response.ok) { const err = await response.json().catch(() => ({})); throw new Error(err.error || err.message || 'Erro ao enviar'); }
-    return response.json();
+    return handleSendResponse(response, 'Erro ao enviar');
   };
 
   const sendMediaToNumber = async (jid: string, mediaData: string, type: string, captionText: string, docName: string, accessToken: string) => {
@@ -306,8 +313,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ action: 'send-media', token: instance.token, groupjid: jid, mediaUrl: mediaData, mediaType: type, caption: captionText, filename: docName }),
     });
-    if (!response.ok) { const err = await response.json().catch(() => ({})); throw new Error(err.error || err.message || 'Erro ao enviar mídia'); }
-    return response.json();
+    return handleSendResponse(response, 'Erro ao enviar mídia');
   };
 
   const sendCarouselToNumber = async (jid: string, carousel: CarouselData, accessToken: string) => {
@@ -325,8 +331,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
       body: JSON.stringify({ action: 'send-carousel', token: instance.token, groupjid: jid, message: carousel.message, carousel: processedCards }),
     });
-    if (!response.ok) { const err = await response.json().catch(() => ({})); throw new Error(err.error || err.message || 'Erro ao enviar carrossel'); }
-    return response.json();
+    return handleSendResponse(response, 'Erro ao enviar carrossel');
   };
 
   // ─ Save broadcast log
