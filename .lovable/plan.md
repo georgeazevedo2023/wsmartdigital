@@ -1,55 +1,42 @@
+## Diagnóstico
 
+### 1) Erros `Failed to load resource ... pps.whatsapp.net ... 403` no console
+São thumbnails da CDN do WhatsApp (`pps.whatsapp.net`) usados em **previews de templates de carrossel salvos**. Essas URLs expiram / são privadas — o WhatsApp bloqueia acesso externo com 403. **Não afeta envio**, é só ruído visual no preview.
 
-## Documentação do Disparador — Sub-módulo em Administração
+### 2) Falha no envio (`401 Unauthorized` em `/functions/v1/uazapi-proxy`)
+Olhando os logs da edge function:
+```
+Sending message to group: 5581993836363@s.whatsapp.net
+Send response status: 401
+Sending media type: image isBase64: true
+Media response status: 401
+```
+O 401 **não vem do nosso proxy** — vem do servidor UAZAPI. Segundo a [doc](https://docs.uazapi.com) ("Autenticação"), todo endpoint `/send/*` exige o header `token: <token-da-instância>`. Quando o UAZAPI devolve 401, significa que o **token da instância salvo no banco não é mais válido** para a instância `motorac` no servidor UAZAPI (instância foi recriada/recriada o pareamento, token rotacionado, ou a instância foi removida do servidor).
 
-### Visão Geral
+O fluxo `Disparador → Leads` está enviando corretamente (`token` no header, payload correto conforme doc) — o problema é o token em si.
 
-Criar uma nova aba "Documentação" no Painel de Administração que gera e disponibiliza para download um arquivo Markdown completo com toda a documentação técnica do módulo Disparador.
+---
 
-### Arquivos a criar/editar
+## Plano de correção
 
-| Ação | Arquivo |
-|------|---------|
-| Criar | `src/components/admin/BroadcasterDocsTab.tsx` |
-| Editar | `src/pages/dashboard/AdminPanel.tsx` |
+### A. Resolver o 401 do envio
+1. **Resincronizar token** da instância `motorac`:
+   - Usar o botão **"Sincronizar Instâncias"** (já existente em `SyncInstancesDialog`) para reler tokens do UAZAPI; OU
+   - Reconectar a instância via QR Code (em `Instâncias → motorac → Conectar`).
+2. **Melhorar mensagem de erro** no `useLeadMessageForm.ts`: quando a UAZAPI retornar 401, mostrar toast claro:
+   > "Token da instância inválido. Reconecte a instância em Instâncias."
+   em vez do genérico "Erro ao enviar".
+3. **Validar token antes do disparo** no `LeadsBroadcaster`: fazer uma chamada leve a `action: 'status'` antes de iniciar o loop; se 401, abortar com instrução de reconectar (evita marcar leads como "falha" em massa).
 
-### 1. `BroadcasterDocsTab.tsx` (~120 linhas)
+### B. Limpar o ruído `pps.whatsapp.net 403` no console
+- No `HistoryCarouselPreview` / `CarouselPreview`, adicionar `onError` nas `<img>` que troca a fonte para um placeholder local (`/placeholder.svg`) quando a URL do WhatsApp CDN falhar. Isso elimina os 403 e mostra fallback visual.
 
-Componente que exibe a documentação em formato legível na tela e oferece botão de download como `.md`.
+### Arquivos a editar
+| Arquivo | Mudança |
+|---|---|
+| `src/hooks/useLeadMessageForm.ts` | Detectar 401 da UAZAPI → toast amigável; validar status antes do loop |
+| `src/components/broadcast/HistoryCarouselPreview.tsx` | `onError` nas imgs com fallback |
+| `src/components/broadcast/CarouselPreview.tsx` | `onError` nas imgs com fallback |
 
-**Conteúdo da documentação gerada:**
-
-1. **Visão Geral do Módulo** — Descrição do Disparador (grupos e leads), tipos de mensagem suportados (texto, mídia, carrossel)
-2. **Arquitetura de Código** — Mapa de todos os arquivos com descrição:
-   - Páginas: `Broadcaster.tsx`, `LeadsBroadcaster.tsx`, `BroadcastHistoryPage.tsx`
-   - Hooks: `useBroadcastForm.ts`, `useBroadcastSend.ts`, `useBroadcastMedia.ts`, `useBroadcastCarousel.ts`, `useLeadMessageForm.ts`, `useLeadsBroadcaster.ts`, `useBroadcastHistory.ts`, `useLeadImport.ts`
-   - Componentes: todos em `src/components/broadcast/`
-   - Utilitários: `uazapiProxy.ts`, `saveToHelpdesk.ts`, `uploadCarouselImage.ts`
-3. **Tabelas do Banco de Dados** — Schema completo de `broadcast_logs`, `lead_databases`, `lead_database_entries`, `scheduled_messages`, `scheduled_message_logs` com colunas, tipos e RLS
-4. **Storage Buckets** — `carousel-images` (público)
-5. **Endpoints UAZAPI (via proxy)** — Documentação das actions:
-   - `send-message` → `/send/text`
-   - `send-media` → `/send/media`
-   - `send-carousel` → `/send/carousel`
-   - `send-chat` → `/send/text` (chat direto)
-   - `send-audio` → `/send/audio`
-   - `check-numbers` → `/chat/check`
-   - Payload de cada endpoint, normalização, validação SSRF
-6. **Fluxo de Envio** — Diagrama do loop unificado (`runSendLoop`): deduplicação, delays, pause/resume/cancel, log de broadcast
-7. **Constantes e Limites** — `MAX_MESSAGE_LENGTH`, `MAX_FILE_SIZE`, delays, tipos permitidos
-8. **Integração com Helpdesk** — `saveToHelpdesk` e sincronização de mensagens enviadas
-9. **Agendamento** — Como funciona o `scheduled_messages` + edge function `process-scheduled-messages`
-
-O conteúdo será uma string template literal dentro do componente, renderizado com `prose` styling e com botão para download via `Blob` + `URL.createObjectURL`.
-
-### 2. Edição em `AdminPanel.tsx`
-
-- Adicionar aba "Documentação" (ícone `FileText`) ao `TabsList`
-- Adicionar `TabsContent` que renderiza `<BroadcasterDocsTab />`
-
-### Detalhes técnicos
-
-- O download será feito client-side criando um `Blob` com o conteúdo Markdown e disparando um click em um `<a>` temporário
-- A documentação será renderizada na tela usando `whitespace-pre-wrap` dentro de um card com scroll
-- Sem dependência de backend — tudo é estático no componente
-
+### Fora de escopo
+Não vou alterar o `uazapi-proxy` — ele está correto e propagando o status da UAZAPI como manda a doc.
