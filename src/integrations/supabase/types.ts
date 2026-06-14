@@ -362,6 +362,35 @@ export type Database = {
         }
         Relationships: []
       }
+      instance_secrets: {
+        Row: {
+          created_at: string
+          instance_id: string
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          instance_id: string
+          token: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          instance_id?: string
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "instance_secrets_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: true
+            referencedRelation: "instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       instances: {
         Row: {
           created_at: string
@@ -370,7 +399,6 @@ export type Database = {
           owner_jid: string | null
           profile_pic_url: string | null
           status: string
-          token: string
           updated_at: string
           user_id: string
         }
@@ -381,7 +409,6 @@ export type Database = {
           owner_jid?: string | null
           profile_pic_url?: string | null
           status?: string
-          token: string
           updated_at?: string
           user_id: string
         }
@@ -392,7 +419,6 @@ export type Database = {
           owner_jid?: string | null
           profile_pic_url?: string | null
           status?: string
-          token?: string
           updated_at?: string
           user_id?: string
         }
