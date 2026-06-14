@@ -14,7 +14,7 @@ import { ScheduleMessageDialog, ScheduleConfig } from './ScheduleMessageDialog';
 import type { Participant } from '@/pages/dashboard/SendToGroup';
 
 interface SendMessageFormProps {
-  instanceToken: string;
+  instanceId: string;
   groupJid: string;
   groupName?: string;
   participants?: Participant[];
@@ -24,8 +24,7 @@ interface SendMessageFormProps {
 const MAX_MESSAGE_LENGTH = 4096;
 const SEND_DELAY_MS = 350; // Delay entre envios para rate limiting
 
-const SendMessageForm = ({ instanceToken, groupJid, groupName, participants, onMessageSent }: SendMessageFormProps) => {
-  const { instanceId } = useParams<{ instanceId: string }>();
+const SendMessageForm = ({ instanceId, groupJid, groupName, participants, onMessageSent }: SendMessageFormProps) => {
   const [message, setMessage] = useState('');
   const [excludeAdmins, setExcludeAdmins] = useState(false);
   const [sendStatus, setSendStatus] = useState<SendStatus>('idle');
@@ -41,7 +40,7 @@ const SendMessageForm = ({ instanceToken, groupJid, groupName, participants, onM
   const sendToNumber = async (number: string, text: string, _accessToken: string) => {
     return callUazapiProxy({
       action: 'send-message',
-      token: instanceToken,
+      instanceId,
       groupjid: number,
       message: text,
     });
