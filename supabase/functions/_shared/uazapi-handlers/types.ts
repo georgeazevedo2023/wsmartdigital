@@ -3,10 +3,14 @@ import { corsHeaders } from '../cors.ts'
 /** Context passed to every action handler */
 export interface HandlerContext {
   body: Record<string, unknown>
+  instanceId?: string
   instanceToken: string | undefined
   groupjid: string | undefined
   uazapiUrl: string
   adminToken: string
+  userId: string
+  isSuperAdmin: boolean
+  accessibleInstanceIds?: Set<string>
 }
 
 /** Helper – build a JSON Response with CORS headers */
