@@ -302,7 +302,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ action: 'send-message', token: instance.token, groupjid: jid, message: text }),
+      body: JSON.stringify({ action: 'send-message', instanceId: instance.id, groupjid: jid, message: text }),
     });
     return handleSendResponse(response, 'Erro ao enviar');
   };
@@ -311,7 +311,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ action: 'send-media', token: instance.token, groupjid: jid, mediaUrl: mediaData, mediaType: type, caption: captionText, filename: docName }),
+      body: JSON.stringify({ action: 'send-media', instanceId: instance.id, groupjid: jid, mediaUrl: mediaData, mediaType: type, caption: captionText, filename: docName }),
     });
     return handleSendResponse(response, 'Erro ao enviar mídia');
   };
@@ -329,7 +329,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
     const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-      body: JSON.stringify({ action: 'send-carousel', token: instance.token, groupjid: jid, message: carousel.message, carousel: processedCards }),
+      body: JSON.stringify({ action: 'send-carousel', instanceId: instance.id, groupjid: jid, message: carousel.message, carousel: processedCards }),
     });
     return handleSendResponse(response, 'Erro ao enviar carrossel');
   };
@@ -392,7 +392,7 @@ export function useLeadMessageForm({ instance, selectedLeads, onComplete, initia
       const statusRes = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ action: 'status', token: instance.token }),
+        body: JSON.stringify({ action: 'status', instanceId: instance.id }),
       });
       if (statusRes.status === 401) {
         toast.error('Token da instância inválido. Reconecte a instância em Instâncias → ' + instance.name + '.');
