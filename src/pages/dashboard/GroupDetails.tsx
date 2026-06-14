@@ -31,7 +31,6 @@ interface Group {
 interface Instance {
   id: string;
   name: string;
-  token: string;
   status: string;
 }
 
@@ -67,7 +66,7 @@ const GroupDetails = () => {
       setInstance(instanceData);
 
       // Buscar grupos da instância
-      const data = await callUazapiProxy({ action: 'groups', token: instanceData.token });
+      const data = await callUazapiProxy({ action: 'groups', instanceId: instanceData.id });
       
       // Normalizar resposta
       let rawGroups: any[];

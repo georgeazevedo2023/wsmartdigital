@@ -261,7 +261,7 @@ export function useLeadsBroadcaster() {
       for (let i = 0; i < phones.length; i += BATCH_SIZE) {
         const batch = phones.slice(i, i + BATCH_SIZE);
         const response = await supabase.functions.invoke('uazapi-proxy', {
-          body: { action: 'check-numbers', token: selectedInstance.token, phones: batch },
+          body: { action: 'check-numbers', instanceId: selectedInstance.id, phones: batch },
         });
         if (response.error) { toast.error('Erro ao verificar números'); break; }
 

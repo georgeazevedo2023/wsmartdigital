@@ -8,6 +8,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { ArrowLeft, Users, MessageSquare, Image } from 'lucide-react';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import SendMessageForm from '@/components/group/SendMessageForm';
 import SendMediaForm from '@/components/group/SendMediaForm';
 
@@ -28,7 +29,6 @@ interface Group {
 interface Instance {
   id: string;
   name: string;
-  token: string;
   status: string;
 }
 
@@ -64,32 +64,7 @@ const SendToGroup = () => {
       setInstance(instanceData);
 
       // Buscar grupos da instância
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        toast.error('Sessão expirada');
-        return;
-      }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.data.session.access_token}`,
-          },
-          body: JSON.stringify({
-            action: 'groups',
-            token: instanceData.token,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar grupos');
-      }
-
-      const data = await response.json();
+      const data = await callUazapiProxy({ action: 'groups', instanceId: instanceData.id });
       
       // Normalizar resposta
       let rawGroups: any[];
@@ -219,7 +194,7 @@ const SendToGroup = () => {
             
             <TabsContent value="text">
               <SendMessageForm
-                instanceToken={instance.token}
+                instanceId={instance.id}
                 groupJid={group.id}
                 groupName={group.name}
                 participants={participants}
@@ -228,7 +203,7 @@ const SendToGroup = () => {
             
             <TabsContent value="media">
               <SendMediaForm
-                instanceToken={instance.token}
+                instanceId={instance.id}
                 groupJid={group.id}
                 groupName={group.name}
                 participants={participants}

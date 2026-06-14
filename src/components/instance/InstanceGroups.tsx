@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Skeleton } from '@/components/ui/skeleton';
 import { supabase } from '@/integrations/supabase/client';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 import { toast } from 'sonner';
 import { Users, Search, RefreshCw, MessageSquare, WifiOff, ChevronRight } from 'lucide-react';
 
@@ -14,7 +15,6 @@ interface Instance {
   id: string;
   name: string;
   status: string;
-  token: string;
   owner_jid: string | null;
   profile_pic_url: string | null;
   user_id: string;
@@ -63,32 +63,7 @@ const InstanceGroups = ({ instance }: InstanceGroupsProps) => {
   const fetchGroups = async (): Promise<number> => {
     try {
       setLoading(true);
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        toast.error('Sessão expirada');
-        return 0;
-      }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.data.session.access_token}`,
-          },
-          body: JSON.stringify({
-            action: 'groups',
-            token: instance.token,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar grupos');
-      }
-
-      const data = await response.json();
+      const data = await callUazapiProxy({ action: 'groups', instanceId: instance.id });
       console.log('Groups API response:', data);
       console.log('Response type:', typeof data, 'Is array:', Array.isArray(data));
       

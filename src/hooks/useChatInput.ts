@@ -46,12 +46,10 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
 
   // ─── Helpers ───
 
-  const getInstanceToken = async () => {
-    const { data } = await supabase
-      .from('instances').select('token')
-      .eq('id', conversation.inbox?.instance_id || '').maybeSingle();
-    if (!data?.token) { toast.error('Instância não encontrada'); return null; }
-    return data.token;
+  const getInstanceId = () => {
+    const instanceId = conversation.inbox?.instance_id;
+    if (!instanceId) toast.error('Instância não encontrada');
+    return instanceId || null;
   };
 
   const getContactJid = () => {
@@ -168,9 +166,9 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
     if (!blob || !user) return;
     setSending(true);
     try {
-      const token = await getInstanceToken();
+      const instanceId = getInstanceId();
       const contactJid = getContactJid();
-      if (!token || !contactJid) return;
+      if (!instanceId || !contactJid) return;
 
       const fileName = `${conversation.id}/${Date.now()}.ogg`;
       const { error: uploadError } = await supabase.storage.from('audio-messages').upload(fileName, blob, { contentType: blob.type });
@@ -178,7 +176,7 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
       const audioPublicUrl = supabase.storage.from('audio-messages').getPublicUrl(fileName).data.publicUrl;
 
       const base64Audio = await blobToBase64(blob);
-      await callUazapiProxy({ action: 'send-audio', instanceToken: token, jid: contactJid, audio: base64Audio });
+      await callUazapiProxy({ action: 'send-audio', instanceId, jid: contactJid, audio: base64Audio });
 
       const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id, direction: 'outgoing', content: null, media_type: 'audio', media_url: audioPublicUrl, sender_id: user.id,
@@ -200,9 +198,9 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
     if (!user) return;
     setSendingFile(true);
     try {
-      const token = await getInstanceToken();
+      const instanceId = getInstanceId();
       const contactJid = getContactJid();
-      if (!token || !contactJid) return;
+      if (!instanceId || !contactJid) return;
 
       const ext = file.name.split('.').pop() || 'bin';
       const fileName = `${conversation.id}/${Date.now()}.${ext}`;
@@ -219,7 +217,7 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
       const isImage = file.type.startsWith('image/');
       const mediaType = isImage ? 'image' : 'document';
 
-      await callUazapiProxy({ action: 'send-media', instanceToken: token, jid: contactJid, mediaUrl: dataUri, mediaType, filename: isImage ? undefined : file.name, caption: '' });
+      await callUazapiProxy({ action: 'send-media', instanceId, jid: contactJid, mediaUrl: dataUri, mediaType, filename: isImage ? undefined : file.name, caption: '' });
 
       const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
         conversation_id: conversation.id, direction: 'outgoing', content: isImage ? null : file.name, media_type: mediaType, media_url: filePublicUrl, sender_id: user.id,
@@ -252,11 +250,11 @@ export function useChatInput({ conversation, onMessageSent, onAgentAssigned, onS
         });
         if (error) throw error;
       } else {
-        const token = await getInstanceToken();
+        const instanceId = getInstanceId();
         const contactJid = getContactJid();
-        if (!token || !contactJid) return;
+        if (!instanceId || !contactJid) return;
 
-        await callUazapiProxy({ action: 'send-chat', instanceToken: token, jid: contactJid, message: text.trim() });
+        await callUazapiProxy({ action: 'send-chat', instanceId, jid: contactJid, message: text.trim() });
 
         const { data: insertedMsg, error } = await supabase.from('conversation_messages').insert({
           conversation_id: conversation.id, direction: 'outgoing', content: text.trim(), media_type: 'text', sender_id: user.id,

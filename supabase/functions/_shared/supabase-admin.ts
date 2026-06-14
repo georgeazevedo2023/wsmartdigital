@@ -71,6 +71,33 @@ export async function checkRole(userId: string, role: string): Promise<boolean> 
   return !!data
 }
 
+export async function getAccessibleInstanceIds(userId: string, isSuperAdmin = false): Promise<Set<string>> {
+  if (isSuperAdmin) {
+    const client = createServiceClient()
+    const { data } = await client.from('instances').select('id')
+    return new Set((data || []).map((row) => row.id))
+  }
+
+  const client = createServiceClient()
+  const { data } = await client
+    .from('user_instance_access')
+    .select('instance_id')
+    .eq('user_id', userId)
+
+  return new Set((data || []).map((row) => row.instance_id))
+}
+
+export async function getInstanceToken(instanceId: string): Promise<string | null> {
+  const client = createServiceClient()
+  const { data } = await client
+    .from('instance_secrets')
+    .select('token')
+    .eq('instance_id', instanceId)
+    .maybeSingle()
+
+  return data?.token || null
+}
+
 /**
  * Require super_admin role. Returns userId or throws.
  */

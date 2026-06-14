@@ -1,11 +1,8 @@
-import { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { toast } from 'sonner';
-import { Copy, Eye, EyeOff, QrCode as QrCodeIcon, User, Calendar, Key, Phone, Wifi, WifiOff } from 'lucide-react';
+import { QrCode as QrCodeIcon, User, Calendar, Key, Phone, Wifi, WifiOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatBR } from '@/lib/dateUtils';
 import { QrCodeDialog } from './QrCodeDialog';
@@ -15,7 +12,6 @@ interface Instance {
   id: string;
   name: string;
   status: string;
-  token: string;
   owner_jid: string | null;
   profile_pic_url: string | null;
   user_id: string;
@@ -33,20 +29,13 @@ interface InstanceOverviewProps {
 }
 
 const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
-  const [showToken, setShowToken] = useState(false);
-
   const qr = useQrPolling({ onConnected: onUpdate });
 
   const isConnected = instance.status === 'connected' || instance.status === 'online';
   const phoneNumber = instance.owner_jid?.split('@')[0];
 
-  const copyToken = () => {
-    navigator.clipboard.writeText(instance.token);
-    toast.success('Token copiado para a área de transferência');
-  };
-
   const handleConnect = () => {
-    qr.connect(instance.name, instance.token);
+    qr.connect(instance.name, instance.id);
   };
 
   return (
@@ -106,28 +95,19 @@ const InstanceOverview = ({ instance, onUpdate }: InstanceOverviewProps) => {
         </CardContent>
       </Card>
 
-      {/* Token e Segurança */}
+      {/* Segurança */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Key className="w-5 h-5" />
-            Token de Acesso
+            Segurança da Instância
           </CardTitle>
-          <CardDescription>Token para autenticação na API</CardDescription>
+          <CardDescription>O token de acesso fica protegido no backend</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-muted-foreground text-xs uppercase">Token</Label>
-            <div className="flex gap-2">
-              <Input type={showToken ? 'text' : 'password'} value={instance.token} readOnly className="font-mono text-sm" />
-              <Button variant="outline" size="icon" onClick={() => setShowToken(!showToken)}>
-                {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </Button>
-              <Button variant="outline" size="icon" onClick={copyToken}>
-                <Copy className="w-4 h-4" />
-              </Button>
-            </div>
-          </div>
+          <p className="text-sm text-muted-foreground">
+            A credencial da instância não é mais exposta na interface. O envio, a leitura de grupos e a conexão por QR continuam funcionando pelo backend seguro.
+          </p>
         </CardContent>
       </Card>
 

@@ -10,7 +10,6 @@ export interface Instance {
   id: string;
   name: string;
   status: string;
-  token: string;
   owner_jid: string | null;
   profile_pic_url: string | null;
   user_id: string;
@@ -134,20 +133,17 @@ export const useInstances = () => {
     setIsCreating(true);
     try {
       const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-      let token = '';
-      for (let i = 0; i < 32; i++) token += chars.charAt(Math.floor(Math.random() * chars.length));
-
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${(await supabase.auth.getSession()).data.session?.access_token}` },
-        body: JSON.stringify({ action: 'connect', instanceName: newInstanceName, token }),
+        body: JSON.stringify({ action: 'connect', instanceName: newInstanceName }),
       });
 
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Erro ao criar instância');
 
       const instanceId = result.instance?.instanceId || `inst_${Date.now()}`;
-      const { error: dbError } = await supabase.from('instances').insert({ id: instanceId, name: newInstanceName, token, user_id: targetUserId, status: 'disconnected' });
+      const { error: dbError } = await supabase.from('instances').insert({ id: instanceId, name: newInstanceName, user_id: targetUserId, status: 'disconnected' });
       if (dbError) throw dbError;
 
       await supabase.from('user_instance_access').insert({ instance_id: instanceId, user_id: targetUserId });
@@ -160,11 +156,11 @@ export const useInstances = () => {
 
       const qrData = extractQrCode(result);
       if (qrData) {
-        const newInst: Instance = { id: instanceId, name: newInstanceName, token, user_id: targetUserId, status: 'disconnected', owner_jid: null, profile_pic_url: null };
+        const newInst: Instance = { id: instanceId, name: newInstanceName, user_id: targetUserId, status: 'disconnected', owner_jid: null, profile_pic_url: null };
         setSelectedInstance(newInst);
         qr.setQrCode(normalizeQrSrc(qrData));
         qr.setQrDialogOpen(true);
-        qr.startPolling(token);
+        qr.startPolling(instanceId);
       }
     } catch (error: any) {
       console.error('Error creating instance:', error);
@@ -176,7 +172,7 @@ export const useInstances = () => {
 
   const handleConnect = async (instance: Instance) => {
     setSelectedInstance(instance);
-    await qr.connect(instance.name, instance.token);
+    await qr.connect(instance.name, instance.id);
   };
 
   const handleCloseQrDialog = () => {
