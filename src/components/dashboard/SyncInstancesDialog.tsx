@@ -27,7 +27,6 @@ import { toast } from 'sonner';
 interface UazapiInstance {
   id: string;
   instanceName: string;
-  token: string;
   connectionStatus: string;
   ownerJid?: string;
   profilePicUrl?: string;
@@ -111,7 +110,6 @@ export default function SyncInstancesDialog({
         instances = result.map((inst: any) => ({
           id: inst.id || inst.instanceId || inst.key,
           instanceName: inst.instanceName || inst.name || inst.key,
-          token: inst.token || '',
           connectionStatus: inst.connectionStatus || inst.status || 'disconnected',
           ownerJid: inst.ownerJid || inst.owner?.jid,
           profilePicUrl: inst.profilePicUrl || inst.profilePic,
@@ -121,7 +119,6 @@ export default function SyncInstancesDialog({
         instances = result.instances.map((inst: any) => ({
           id: inst.id || inst.instanceId || inst.key,
           instanceName: inst.instanceName || inst.name || inst.key,
-          token: inst.token || '',
           connectionStatus: inst.connectionStatus || inst.status || 'disconnected',
           ownerJid: inst.ownerJid || inst.owner?.jid,
           profilePicUrl: inst.profilePicUrl || inst.profilePic,
@@ -252,7 +249,6 @@ export default function SyncInstancesDialog({
       const inserts = toSync.map((inst) => ({
         id: inst.id,
         name: inst.instanceName,
-        token: inst.token,
         status: inst.connectionStatus === 'connected' ? 'connected' : 'disconnected',
         owner_jid: inst.ownerJid || null,
         profile_pic_url: inst.profilePicUrl || null,
