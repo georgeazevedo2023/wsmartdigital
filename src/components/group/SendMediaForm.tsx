@@ -16,7 +16,7 @@ import { ScheduleMessageDialog, ScheduleConfig } from './ScheduleMessageDialog';
 import type { Participant } from '@/pages/dashboard/SendToGroup';
 
 interface SendMediaFormProps {
-  instanceToken: string;
+  instanceId: string;
   groupJid: string;
   groupName?: string;
   participants?: Participant[];
@@ -30,8 +30,7 @@ const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/ogg', 'audio/mp3'];
 
 const SEND_DELAY_MS = 350; // Delay entre envios para rate limiting
 
-const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMediaSent }: SendMediaFormProps) => {
-  const { instanceId } = useParams<{ instanceId: string }>();
+const SendMediaForm = ({ instanceId, groupJid, groupName, participants, onMediaSent }: SendMediaFormProps) => {
   const [mediaType, setMediaType] = useState<'image' | 'video' | 'audio' | 'file'>('image');
   const [isPtt, setIsPtt] = useState(false);
   const [mediaUrl, setMediaUrl] = useState('');
@@ -116,7 +115,7 @@ const SendMediaForm = ({ instanceToken, groupJid, groupName, participants, onMed
   const sendMediaToNumber = async (number: string, finalMediaUrl: string, accessToken: string) => {
     const payload: Record<string, unknown> = {
       action: 'send-media',
-      token: instanceToken,
+        instanceId,
       groupjid: number,
       mediaUrl: finalMediaUrl,
       mediaType: mediaType === 'image' 
