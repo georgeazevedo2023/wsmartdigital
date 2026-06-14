@@ -10,6 +10,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { Search, Users, CheckSquare, Square, MessageSquare } from 'lucide-react';
 import type { Instance } from './InstanceSelector';
+import { callUazapiProxy } from '@/lib/uazapiProxy';
 
 export interface Participant {
   jid: string;
@@ -47,32 +48,7 @@ const GroupSelector = ({ instance, selectedGroups, onSelectionChange }: GroupSel
   const fetchGroups = async () => {
     try {
       setLoading(true);
-      const session = await supabase.auth.getSession();
-      if (!session.data.session) {
-        toast.error('Sessão expirada');
-        return;
-      }
-
-      const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/uazapi-proxy`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${session.data.session.access_token}`,
-          },
-          body: JSON.stringify({
-            action: 'groups',
-            token: instance.token,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error('Erro ao buscar grupos');
-      }
-
-      const data = await response.json();
+      const data = await callUazapiProxy({ action: 'groups', instanceId: instance.id });
       
       // Normalizar resposta
       let rawGroups: any[];
