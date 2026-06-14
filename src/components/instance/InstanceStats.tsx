@@ -11,7 +11,6 @@ interface Instance {
   id: string;
   name: string;
   status: string;
-  token: string;
   owner_jid: string | null;
   profile_pic_url: string | null;
   user_id: string;
@@ -60,7 +59,7 @@ const InstanceStats = ({ instance }: InstanceStatsProps) => {
       // Se conectado, buscar grupos para estatísticas
       if (isConnected) {
         try {
-          const groups = await callUazapiProxy({ action: 'groups', token: instance.token });
+          const groups = await callUazapiProxy({ action: 'groups', instanceId: instance.id });
           if (Array.isArray(groups)) {
             const totalParticipants = groups.reduce(
               (acc: number, group: any) =>
