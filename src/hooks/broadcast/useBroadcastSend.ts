@@ -68,7 +68,7 @@ export function useBroadcastSend({ instance, selectedGroups, excludeAdmins, rand
   };
 
   const proxyCall = async (body: Record<string, unknown>, accessToken: string) => {
-    return callUazapiProxyWithToken({ ...body, token: instance.token }, accessToken);
+    return callUazapiProxyWithToken({ ...body, instanceId: instance.id }, accessToken);
   };
 
   const sendText = (jid: string, text: string, at: string) =>
