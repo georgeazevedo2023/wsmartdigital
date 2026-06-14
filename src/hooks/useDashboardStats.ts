@@ -12,7 +12,6 @@ export interface DashboardInstance {
   owner_jid: string | null;
   profile_pic_url: string | null;
   user_id: string;
-  token: string;
   user_profiles?: {
     full_name: string | null;
     email: string;
@@ -124,7 +123,7 @@ export function useDashboardStats() {
       connectedList.map(async (instance) => {
         try {
           const { data, error } = await supabase.functions.invoke('uazapi-proxy', {
-            body: { action: 'groups', token: instance.token },
+            body: { action: 'groups', instanceId: instance.id },
           });
           if (error) throw error;
 
