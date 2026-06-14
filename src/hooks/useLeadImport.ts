@@ -278,7 +278,7 @@ export function useLeadImport({ instance, onLeadsImported }: UseLeadImportOption
   const fetchGroups = async () => {
     setLoadingGroups(true);
     try {
-      const data = await callUazapiProxy({ action: 'groups', token: instance.token });
+      const data = await callUazapiProxy({ action: 'groups', instanceId: instance.id });
 
       let groupsData: any[] = [];
       if (Array.isArray(data)) groupsData = data;
