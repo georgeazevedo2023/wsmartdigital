@@ -1,5 +1,11 @@
 import { corsResponse, errorResponse } from '../_shared/cors.ts'
-import { extractAuth, createUserClient } from '../_shared/supabase-admin.ts'
+import {
+  extractAuth,
+  createUserClient,
+  getInstanceToken,
+  getAccessibleInstanceIds,
+  checkRole,
+} from '../_shared/supabase-admin.ts'
 import { type HandlerContext, respond } from '../_shared/uazapi-handlers/types.ts'
 import { handleConnect } from '../_shared/uazapi-handlers/connect.ts'
 import { handleStatus } from '../_shared/uazapi-handlers/status.ts'
@@ -43,17 +49,53 @@ Deno.serve(async (req) => {
     const supabase = createUserClient(auth.authHeader)
     const { data: claimsData, error: claimsError } = await supabase.auth.getUser(auth.token)
     if (claimsError || !claimsData?.user) return errorResponse('Unauthorized', 401)
+    const userId = claimsData.user.id
 
     // ── Parse body & build context ──
     const body = await req.json()
-    const { action, token: bodyToken, instanceToken: altToken, groupjid } = body
-    const instanceToken = bodyToken || altToken
+    const {
+      action,
+      instanceId,
+      token: bodyToken,
+      instanceToken: altToken,
+      groupjid,
+    } = body as Record<string, unknown>
+
+    const isSuperAdmin = await checkRole(userId, 'super_admin')
+
+    // Resolve instance token server-side from instanceId (preferred, secure path).
+    // Fall back to a token supplied in the body only for legacy callers.
+    let instanceToken: string | undefined
+    let accessibleInstanceIds: Set<string> | undefined
+
+    if (typeof instanceId === 'string' && instanceId.length > 0) {
+      accessibleInstanceIds = await getAccessibleInstanceIds(userId, isSuperAdmin)
+      if (!accessibleInstanceIds.has(instanceId)) {
+        return respond({ error: 'Forbidden: no access to this instance' }, 403)
+      }
+      const resolved = await getInstanceToken(instanceId)
+      if (!resolved) return respond({ error: 'Instance token not found' }, 400)
+      instanceToken = resolved
+    } else if (typeof bodyToken === 'string' || typeof altToken === 'string') {
+      console.warn('[uazapi-proxy] legacy call without instanceId; using token from body')
+      instanceToken = (bodyToken as string) || (altToken as string)
+    }
 
     const uazapiUrl = Deno.env.get('UAZAPI_SERVER_URL') || 'https://wsmart.uazapi.com'
     const adminToken = Deno.env.get('UAZAPI_ADMIN_TOKEN')
     if (!adminToken) return respond({ error: 'UAZAPI admin token not configured' }, 500)
 
-    const ctx: HandlerContext = { body, instanceToken, groupjid, uazapiUrl, adminToken }
+    const ctx: HandlerContext = {
+      body: body as Record<string, unknown>,
+      instanceId: typeof instanceId === 'string' ? instanceId : undefined,
+      instanceToken,
+      groupjid: typeof groupjid === 'string' ? groupjid : undefined,
+      uazapiUrl,
+      adminToken,
+      userId,
+      isSuperAdmin,
+      accessibleInstanceIds,
+    }
 
     // ── Route to handler ──
     const handler = handlers[action]
